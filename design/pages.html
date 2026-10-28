@@ -1,0 +1,885 @@
+<title>agent-orb Studio Pages</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>/* Proposed studio library, scoped to .prop. Tokens are the approved Live v3 language (design/live-v3.html). */
+.prop {
+  --bg: #f5f5f9; --surface: #ffffff; --sunk: #f0f0f6; --line: #e2e3ec; --line-strong: #cfd1de;
+  --ink: #15162a; --muted: #585b73; --faint: #80839b;
+  --accent: #4f4bd0; --accent-soft: #ecebfb; --accent-ink: #3a36b0; --on-accent: #ffffff;
+  --data: #5c6488; --data-soft: #e3e5ee;
+  --ok: #15703f; --ok-bg: #e2f3e8; --ok-dot: #1f9d55;
+  --wait: #7f4f00; --wait-bg: #fff1d1; --wait-dot: #d99300;
+  --bad: #ae1f27; --bad-bg: #fde8e8; --bad-dot: #e0343c;
+  --done: #5f6378; --done-bg: #eceef4; --done-dot: #9a9db0;
+  --opus: #b03a8e; --sonnet: #2566d6; --haiku: #009a85;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --shadow: 0 1px 2px rgba(21, 22, 42, .04), 0 2px 8px rgba(21, 22, 42, .04);
+  --pop: 0 8px 28px rgba(21, 22, 42, .16);
+  background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .prop {
+  --bg: #0e0f17; --surface: #161826; --sunk: #12131f; --line: #262839; --line-strong: #34374d;
+  --ink: #e9eaf4; --muted: #a3a6c0; --faint: #74778f;
+  --accent: #9c9aff; --accent-soft: #24244a; --accent-ink: #c2c1ff; --on-accent: #0e0f17;
+  --data: #8c93b8; --data-soft: #23263a;
+  --ok: #56d48f; --ok-bg: #11301f; --ok-dot: #3fc47c;
+  --wait: #f2bd4d; --wait-bg: #36290b; --wait-dot: #e6a823;
+  --bad: #ff8a8f; --bad-bg: #3b1518; --bad-dot: #f0545b;
+  --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
+  --opus: #cf62bd; --sonnet: #5f92f2; --haiku: #18a690;
+  --shadow: none; --pop: 0 8px 28px rgba(0, 0, 0, .5); } }
+:root[data-theme="dark"] .prop {
+  --bg: #0e0f17; --surface: #161826; --sunk: #12131f; --line: #262839; --line-strong: #34374d;
+  --ink: #e9eaf4; --muted: #a3a6c0; --faint: #74778f;
+  --accent: #9c9aff; --accent-soft: #24244a; --accent-ink: #c2c1ff; --on-accent: #0e0f17;
+  --data: #8c93b8; --data-soft: #23263a;
+  --ok: #56d48f; --ok-bg: #11301f; --ok-dot: #3fc47c;
+  --wait: #f2bd4d; --wait-bg: #36290b; --wait-dot: #e6a823;
+  --bad: #ff8a8f; --bad-bg: #3b1518; --bad-dot: #f0545b;
+  --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
+  --opus: #cf62bd; --sonnet: #5f92f2; --haiku: #18a690;
+  --shadow: none; --pop: 0 8px 28px rgba(0, 0, 0, .5); }
+
+.prop *, .prop *::before, .prop *::after { box-sizing: border-box; }
+.prop .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.prop :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Shell */
+.prop .p-top { display: flex; align-items: center; gap: 24px; height: 56px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.prop .p-brand { display: flex; align-items: center; gap: 10px; font: 700 17px/1 var(--display); letter-spacing: -.01em; }
+.prop .p-orb { width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 32% 30%, #c9cbff 0, #7b7cf0 38%, #3c3aa8 78%, #26246e 100%); box-shadow: 0 0 0 3px var(--accent-soft); }
+.prop .p-nav { display: flex; gap: 2px; align-self: stretch; }
+.prop .p-nav a { display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; min-height: 44px; color: var(--muted); text-decoration: none; font-weight: 500; border-bottom: 2px solid transparent; }
+.prop .p-nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+.prop .p-count { font: 500 12px/1 var(--mono); padding: 3px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
+.prop .p-conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.prop .p-conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok-dot); box-shadow: 0 0 0 3px var(--ok-bg); }
+
+/* Page header and tally */
+.prop .p-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; }
+.prop .p-head h1 { margin: 0; font: 700 30px/1.1 var(--display); letter-spacing: -.02em; }
+.prop .p-head .p-sub { font-size: 14px; color: var(--muted); }
+.prop .p-tally { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--muted); }
+.prop .p-tally span { display: inline-flex; align-items: center; gap: 7px; }
+.prop .p-tally span::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-dot); }
+
+/* Buttons and links */
+.prop .p-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font: 600 14px/1 var(--sans); cursor: pointer; text-decoration: none; }
+.prop .p-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+.prop .p-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.prop .p-btn.primary:hover { filter: brightness(1.08); color: var(--on-accent); }
+.prop .p-btn[disabled] { background: var(--sunk); border-color: var(--line); color: var(--faint); cursor: not-allowed; filter: none; }
+.prop .p-link { color: var(--accent-ink); font-weight: 600; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
+.prop .p-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Segmented toggle */
+.prop .p-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
+.prop .p-seg button { min-height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--muted); font: 500 14px/1 var(--sans); cursor: pointer; }
+.prop .p-seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); border-color: var(--line-strong); font-weight: 600; box-shadow: var(--shadow); }
+
+/* Fields */
+.prop .p-field { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.prop .p-select, .prop .p-input { min-height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-strong); background-color: var(--surface); color: var(--ink); font: 400 14px/1 var(--sans); }
+.prop .p-select { appearance: none; padding-right: 32px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+.prop .p-input.money { font-family: var(--mono); width: 120px; }
+.prop .p-select:focus, .prop .p-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+
+/* Card */
+.prop .p-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+.prop .p-card-h { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.prop .p-card-h h3 { margin: 0; font: 600 15px/1.3 var(--sans); }
+.prop .p-card-h .p-hint { font-size: 13px; color: var(--muted); }
+.prop .p-card-b { padding: 16px 20px; }
+
+/* State pill, model tag, chips */
+.prop .p-state { display: inline-flex; align-items: center; gap: 7px; font: 600 13px/1 var(--sans); white-space: nowrap; padding: 6px 10px; border-radius: 999px; }
+.prop .p-state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-dot); }
+.prop .s-working { --c-dot: var(--ok-dot); color: var(--ok); background: var(--ok-bg); }
+.prop .s-waiting { --c-dot: var(--wait-dot); color: var(--wait); background: var(--wait-bg); }
+.prop .s-stalled, .prop .s-error { --c-dot: var(--bad-dot); color: var(--bad); background: var(--bad-bg); }
+.prop .s-done { --c-dot: var(--done-dot); color: var(--done); background: var(--done-bg); }
+.prop .p-model { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; white-space: nowrap; }
+.prop .p-model::before { content: ""; width: 9px; height: 9px; border-radius: 2px; background: var(--m); }
+.prop .m-opus { --m: var(--opus); } .prop .m-sonnet { --m: var(--sonnet); } .prop .m-haiku { --m: var(--haiku); }
+.prop .p-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line); color: var(--ink); font-size: 13px; white-space: nowrap; }
+.prop .p-chip .mono { font-family: var(--mono); color: var(--accent-ink); }
+.prop .p-chip .how { color: var(--muted); }
+.prop .p-chip.branch { font-family: var(--mono); color: var(--muted); }
+.prop .p-chip.warn { background: var(--wait-bg); border-color: transparent; color: var(--wait); }
+
+/* Tabs */
+.prop .p-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.prop .p-tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: 500 15px/1 var(--sans); cursor: pointer; }
+.prop .p-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.prop .p-tabs .n { font: 500 12px/1 var(--mono); padding: 3px 6px; border-radius: 999px; background: var(--sunk); }
+
+/* Table */
+.prop .p-tablewrap { overflow-x: auto; }
+.prop table.p-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.prop .p-table th { text-align: left; font: 500 12px/1.2 var(--sans); color: var(--muted); padding: 10px 20px; background: var(--sunk); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.prop .p-table td { padding: 12px 20px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.prop .p-table tr:last-child td { border-bottom: 0; }
+.prop .p-table .r { text-align: right; }
+.prop .p-table .num { font-size: 14px; }
+.prop .p-table .sub { display: block; font-size: 13px; color: var(--muted); }
+.prop .p-table tbody tr:hover { background: var(--sunk); }
+
+/* Meter and bars */
+.prop .p-meter { display: grid; gap: 6px; min-width: 120px; }
+.prop .p-meter .k { font-size: 12px; font-weight: 500; color: var(--muted); }
+.prop .p-track { height: 6px; border-radius: 3px; background: var(--data-soft); overflow: hidden; }
+.prop .p-track i { display: block; height: 100%; border-radius: 3px; background: var(--data); }
+.prop .p-track.warn i { background: var(--wait-dot); }
+.prop .p-track.ok i { background: var(--ok-dot); }
+.prop .p-track.m-opus i { background: var(--opus); } .prop .p-track.m-sonnet i { background: var(--sonnet); } .prop .p-track.m-haiku i { background: var(--haiku); }
+
+/* Avatar */
+.prop .p-av { width: 28px; height: 28px; border-radius: 8px; display: inline-grid; place-items: center; font: 600 13px/1 var(--sans); color: #fff; background: var(--m, var(--data)); flex: none; }
+
+/* Stat */
+.prop .p-stat { display: grid; gap: 2px; }
+.prop .p-stat .k { font-size: 12px; font-weight: 500; color: var(--muted); }
+.prop .p-stat .v { font: 500 22px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.prop .p-stat .d { font-size: 13px; color: var(--muted); }
+
+/* Notice */
+.prop .p-notice { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: start; padding: 12px 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); font-size: 14px; }
+.prop .p-notice .i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 700 13px/1 var(--sans); background: var(--line); color: var(--ink); }
+.prop .p-notice p { margin: 0; }
+.prop .p-notice code { font-family: var(--mono); font-size: 13px; }
+.prop .p-notice.warn { background: var(--wait-bg); border-color: transparent; color: var(--wait); }
+.prop .p-notice.warn .i { background: var(--wait-dot); color: #fff; }
+.prop .p-notice.bad { background: var(--bad-bg); border-color: transparent; color: var(--bad); }
+.prop .p-notice.bad .i { background: var(--bad-dot); color: #fff; }
+
+/* Tooltip */
+.prop .p-tip { display: inline-grid; gap: 4px; max-width: 280px; padding: 9px 12px; border-radius: 9px; background: var(--ink); color: var(--bg); font-size: 13px; box-shadow: var(--pop); }
+.prop .p-tip b { font-weight: 600; }
+.prop .p-tip .row { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); }
+
+/* Empty and loading */
+.prop .p-empty { display: grid; gap: 6px; justify-items: start; padding: 20px; }
+.prop .p-empty b { font-weight: 600; }
+.prop .p-empty p { margin: 0; color: var(--muted); font-size: 14px; max-width: 52ch; }
+.prop .p-skel { display: grid; gap: 10px; padding: 16px 20px; }
+.prop .p-skel i { display: block; height: 12px; border-radius: 6px; background: var(--sunk); }
+@media (prefers-reduced-motion: no-preference) {
+  .prop .p-skel i { background: linear-gradient(90deg, var(--sunk) 0, var(--line) 50%, var(--sunk) 100%); background-size: 200% 100%; animation: p-shimmer 1.4s linear infinite; }
+}
+@keyframes p-shimmer { to { background-position: -200% 0; } }
+
+/* Drawer */
+.prop .p-drawer { background: var(--surface); border: 1px solid var(--line); border-radius: 14px 0 0 14px; box-shadow: var(--pop); display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+.prop .p-dh { display: grid; gap: 8px; padding: 16px 20px 12px; border-bottom: 1px solid var(--line); }
+.prop .p-dh .r1 { display: flex; align-items: center; gap: 10px; }
+.prop .p-dh h3 { margin: 0; font: 600 20px/1.2 var(--display); }
+.prop .p-x { margin-left: auto; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 20px; cursor: pointer; }
+.prop .p-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+
+/* Timeline */
+.prop .p-ev { display: grid; grid-template-columns: 64px 72px 1fr auto; gap: 12px; align-items: baseline; padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.prop .p-ev .t { font: 13px var(--mono); color: var(--faint); }
+.prop .p-ev .tool { font: 500 13px var(--mono); }
+.prop .p-ev .target { font: 13px var(--mono); color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.prop .p-ev .res { font: 13px var(--mono); white-space: nowrap; }
+.prop .ok { color: var(--ok); } .prop .bad { color: var(--bad); } .prop .run { color: var(--accent-ink); }
+
+/* Explain: replaces the grey paragraphs at the foot of pages */
+.prop details.p-explain { border-top: 1px solid var(--line); }
+.prop details.p-explain summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; font-size: 14px; font-weight: 500; color: var(--accent-ink); }
+.prop details.p-explain p { margin: 0; padding: 0 20px 16px; font-size: 14px; color: var(--muted); max-width: 72ch; }
+
+/* Legend */
+.prop .p-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.prop .p-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.prop .p-legend span::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--m); }
+
+/* Checkbox: the platform control in the accent colour, on a 44px row */
+.prop .p-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; cursor: pointer; }
+.prop .p-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.prop .p-tasklist { list-style: none; margin: 0; padding: 0; display: grid; }
+.prop .p-tasklist li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.prop .p-tasklist li:last-child { border-bottom: 0; }
+.prop .p-tasklist .mk { font-family: var(--mono); color: var(--faint); }
+.prop .p-tasklist .done .mk { color: var(--ok); } .prop .p-tasklist .now .mk { color: var(--accent-ink); }
+.prop .p-tasklist .done span:last-child { color: var(--muted); }
+</style>
+<style>/* Page layouts for the studio mocks, on top of prop.css (the approved library). Phone = the app's own width <= 720px. */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--rv-bg); color: var(--rv-ink); font: 14px/1.5 "IBM Plex Sans", system-ui, sans-serif; }
+:root { --rv-bg: #e9e9f1; --rv-ink: #15162a; --rv-muted: #585b73; --rv-line: #cfd1de; --rv-surface: #ffffff; --rv-accent: #4f4bd0; --rv-on: #ffffff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --rv-bg: #08090f; --rv-ink: #e9eaf4; --rv-muted: #a3a6c0; --rv-line: #34374d; --rv-surface: #161826; --rv-accent: #9c9aff; --rv-on: #0e0f17; color-scheme: dark; } }
+:root[data-theme="dark"] { --rv-bg: #08090f; --rv-ink: #e9eaf4; --rv-muted: #a3a6c0; --rv-line: #34374d; --rv-surface: #161826; --rv-accent: #9c9aff; --rv-on: #0e0f17; color-scheme: dark; }
+
+/* Review bar: not part of the app */
+.rv { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px dashed var(--rv-line); font-size: 13px; color: var(--rv-muted); }
+.rv b { color: var(--rv-ink); font-weight: 600; }
+.rv-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rv-line); border-radius: 8px; overflow: hidden; }
+.rv-seg button { border: 0; background: var(--rv-surface); color: var(--rv-ink); padding: 6px 11px; min-height: 32px; font: inherit; cursor: pointer; }
+.rv-seg button + button { border-left: 1px solid var(--rv-line); }
+.rv-seg button[aria-pressed="true"] { background: var(--rv-accent); color: var(--rv-on); }
+.stage.phone { padding-block: 24px; }
+.stage.phone .app { width: 390px; margin: 0 auto; border: 1px solid var(--rv-line); border-radius: 22px; overflow: hidden; min-height: 820px; }
+.decide { max-width: 1280px; margin: 0 auto; padding-block: 24px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.decide h2 { margin: 0 0 8px; font: 700 20px/1.2 "Bricolage Grotesque", system-ui, sans-serif; color: var(--rv-ink); }
+.decide ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 100ch; color: var(--rv-ink); font-size: 14px; }
+.decide code { font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+
+/* App shell */
+.app { container: app / inline-size; position: relative; min-height: 100vh; }
+.app .p-top { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.app .p-nav a { cursor: pointer; }
+.app .menu { display: none; }
+.app .page { max-width: 1280px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 20px; }
+.app .page > * { min-width: 0; }
+.app .hrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.app .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.app .foot { font-size: 13px; color: var(--faint); }
+.app .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.app .grid2 { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.app .stack { display: grid; gap: 16px; align-content: start; }
+
+/* Live (the approved v3 rows) */
+.app .needs .need { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px 16px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .needs .need:first-of-type { border-top: 0; }
+.app .need .since { color: var(--muted); font-size: 14px; }
+.app .shead { display: grid; grid-template-columns: 1fr auto; gap: 12px 32px; align-items: end; padding: 18px 20px 14px; }
+.app .who { display: grid; gap: 4px; min-width: 0; }
+.app .who .l1 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.app .who h2 { margin: 0; font: 600 21px/1.2 var(--display); letter-spacing: -.01em; }
+.app .meta { font-size: 13px; color: var(--muted); }
+.app .stats { display: flex; gap: 28px; align-items: end; }
+.app .stats .p-stat .v { font-size: 20px; }
+.app .skills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0 20px 14px; font-size: 13px; color: var(--muted); }
+.app .cols, .app .agent { display: grid; grid-template-columns: minmax(200px, 1.1fr) minmax(220px, 2fr) 116px 76px 64px 150px; gap: 16px; align-items: center; }
+.app .cols { padding: 8px 20px; background: var(--sunk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .r { text-align: right; }
+.app .agent { padding: 12px 20px; min-height: 60px; border-top: 1px solid var(--line); cursor: pointer; position: relative; }
+.app .cols + .agent { border-top: 0; }
+.app .agent:hover { background: var(--sunk); }
+.app .agent[aria-expanded="true"] { background: var(--accent-soft); }
+.app .name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.app .name > span:last-child { display: grid; min-width: 0; line-height: 1.3; }
+.app .name b { font-weight: 600; }
+.app .name small { color: var(--muted); font-size: 13px; }
+.app .d1 .name { padding-left: 30px; }
+.app .d1 .name::before { content: ""; position: absolute; left: 34px; top: 0; height: 50%; width: 16px; border-left: 1.5px solid var(--line-strong); border-bottom: 1.5px solid var(--line-strong); border-bottom-left-radius: 8px; }
+.app .d1.more .name::after { content: ""; position: absolute; left: 34px; top: 50%; bottom: 0; border-left: 1.5px solid var(--line-strong); }
+.app .doing { display: grid; gap: 2px; min-width: 0; }
+.app .doing .what { font-weight: 500; overflow-wrap: anywhere; }
+.app .doing .sub { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.app .doing .sub .num { color: var(--ink); }
+.app .mini { display: inline-flex; align-items: center; gap: 6px; }
+.app .mini .p-track { width: 44px; }
+.app .agent.is-done .name b, .app .agent.is-done .doing .what { color: var(--muted); font-weight: 500; }
+.app .agent.is-stalled { box-shadow: inset 3px 0 0 var(--bad-dot); }
+.app .agent.is-waiting { box-shadow: inset 3px 0 0 var(--wait-dot); }
+.app .agent .p-state { justify-self: end; }
+.app .agent .facts { display: none; }
+
+/* Drawer */
+.app .scrim { position: fixed; inset: 0; background: rgba(10, 11, 20, .28); z-index: 20; }
+.app .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(500px, 100%); border-radius: 0; border-top: 0; border-bottom: 0; border-right: 0; z-index: 21; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.app .drawer .p-dh { padding-top: max(16px, env(safe-area-inset-top, 0px)); }
+.app .drawer .dbody { overflow-y: auto; padding-bottom: 24px; }
+.app .note2 { margin: 12px 20px 0; }
+
+/* Ledger chart */
+.app .chartbox { position: relative; padding: 16px 20px 8px; }
+.app .chartbox svg { display: block; width: 100%; height: auto; overflow: visible; }
+.app .chartbox .grid line { stroke: var(--line); stroke-width: 1; }
+.app .chartbox .axis text { font: 12px var(--mono); fill: var(--muted); }
+.app .chartbox .bar { cursor: pointer; }
+.app .chartbox .bar:focus { outline: none; }
+.app .chartbox .bar:focus-visible rect.hit, .app .chartbox .bar:hover rect.hit { fill: var(--accent); fill-opacity: .06; }
+.app .chartbox .p-tip { position: absolute; pointer-events: none; transform: translate(-50%, calc(-100% - 10px)); z-index: 2; min-width: 200px; }
+.app .tableview summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; color: var(--accent-ink); font-weight: 500; border-top: 1px solid var(--line); }
+.app .tableview[open] summary { border-bottom: 1px solid var(--line); }
+.app .warnnum { color: var(--wait); }
+.app .badnum { color: var(--bad); }
+
+/* Pipeline roles: HTML nodes over an SVG edge layer */
+.app .orgwrap { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.app .orgscroll { overflow-x: auto; }
+.app .org { position: relative; width: 1000px; height: 440px; margin: 8px auto 16px; }
+.app .org svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.app .org .edge { fill: none; stroke: var(--data); stroke-opacity: .35; stroke-linecap: round; }
+.app .org .elabel { font: 500 12px var(--mono); fill: var(--muted); }
+.app .node { position: absolute; width: 190px; height: 94px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); box-shadow: var(--shadow); display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-content: start; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.app .node:hover { border-color: var(--accent); }
+.app .node[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.app .node .p-av { grid-row: span 2; background: var(--data); }
+.app .node b { font-weight: 600; font-size: 15px; line-height: 1.2; }
+.app .node .ty { font-size: 13px; color: var(--muted); line-height: 1.2; }
+.app .node .nu { grid-column: 1 / -1; font: 13px var(--mono); color: var(--ink); margin-top: 6px; }
+.app .node .nu span { color: var(--muted); }
+.app .rolelist { display: none; }
+.app .panel .p-card-b { display: grid; gap: 14px; }
+.app .panel .rinfo { color: var(--muted); font-size: 14px; }
+.app .alist { list-style: none; margin: 0; padding: 0; display: grid; }
+.app .alist li { display: grid; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.app .alist li:last-child { border-bottom: 0; }
+.app .alist .d { font-size: 13px; color: var(--muted); }
+.app .fix { display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); }
+.app .fix .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.app .ok-msg { color: var(--ok); font-size: 14px; }
+
+/* Lanes */
+.app .lanes { display: grid; grid-template-columns: 170px minmax(0, 1fr); padding: 12px 20px 16px; gap: 0 16px; }
+.app .lanes .lh { font-size: 14px; display: flex; align-items: center; gap: 8px; min-height: 44px; border-bottom: 1px solid var(--line); }
+.app .lanes .lh small { color: var(--muted); font-size: 13px; }
+.app .lanes .lt { position: relative; min-height: 44px; border-bottom: 1px solid var(--line); }
+.app .lanes .seg-bar { position: absolute; top: 14px; height: 16px; border-radius: 4px; background: var(--m); }
+.app .lanes .seg-bar.stall { background: repeating-linear-gradient(45deg, var(--bad-dot) 0 6px, var(--bad-bg) 6px 12px); }
+.app .lanes .seg-bar.tool { top: 18px; height: 8px; opacity: .55; }
+.app .lanes .ax { grid-column: 2; position: relative; height: 24px; }
+.app .lanes .ax span { position: absolute; top: 6px; transform: translateX(-50%); font: 12px var(--mono); color: var(--muted); }
+.app .lanes .slabel { position: absolute; top: 12px; font: 600 12px var(--sans); color: var(--bad); white-space: nowrap; }
+
+/* Skills graph */
+.app .skg { position: relative; width: 760px; height: 300px; margin: 8px 0 12px; }
+.app .skg svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.app .skg .e { fill: none; stroke: var(--accent); stroke-opacity: .45; stroke-linecap: round; }
+.app .skg .e.named { stroke: var(--muted); stroke-opacity: .7; stroke-dasharray: 5 5; stroke-width: 1.5; }
+.app .skg .el { font: 500 12px var(--mono); fill: var(--muted); }
+.app .skg .colt { position: absolute; top: 0; font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .sknode { position: absolute; width: 176px; height: 58px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); display: grid; align-content: center; gap: 2px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.app .sknode.skill b { font-family: var(--mono); color: var(--accent-ink); font-weight: 500; }
+.app .sknode.agent { border-radius: 29px; padding-left: 16px; }
+.app .sknode.ghost { border-style: dashed; background: transparent; color: var(--muted); }
+.app .sknode small { font-size: 12px; color: var(--muted); }
+.app .sknode:hover { border-color: var(--accent); }
+.app .runs { display: flex; align-items: center; gap: 10px; }
+.app .runs .p-track { flex: 1; min-width: 60px; }
+.app .spark { display: block; }
+.app .spark rect { fill: var(--data); }
+.app .idle { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 20px; }
+
+/* Office */
+.app .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.app .room .scene { display: block; width: 100%; height: auto; background: var(--sunk); border-bottom: 1px solid var(--line); image-rendering: pixelated; }
+.app .roster { list-style: none; margin: 0; padding: 0; }
+.app .roster li { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; min-height: 52px; padding: 8px 20px; border-top: 1px solid var(--line); cursor: pointer; }
+.app .roster li:first-child { border-top: 0; }
+.app .roster li:hover { background: var(--sunk); }
+.app .roster .w { display: grid; line-height: 1.3; min-width: 0; }
+.app .roster .w small { font-size: 13px; color: var(--muted); }
+.app .roomh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.app .roomh h3 { margin: 0; font: 600 18px/1.2 var(--display); }
+.app .roomh .nums { display: flex; gap: 14px; align-items: center; font-size: 13px; color: var(--muted); }
+.app .roomh .nums b { font: 500 14px var(--mono); color: var(--ink); }
+.app .roomh .p-track { width: 64px; display: inline-block; vertical-align: middle; }
+
+/* Analysis */
+.app .fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
+.app .fields .p-select { width: 100%; }
+.app .reads { display: flex; flex-wrap: wrap; gap: 8px; }
+.app .est { display: grid; gap: 14px; padding: 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--sunk); }
+.app .est .big { display: flex; flex-wrap: wrap; gap: 16px 36px; }
+.app .est .alt { font-size: 14px; color: var(--muted); }
+.app .est .alt b { color: var(--ink); font-weight: 600; }
+.app .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.app .reports { list-style: none; margin: 0; padding: 0; }
+.app .reports li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 12px 20px; border-top: 1px solid var(--line); cursor: pointer; }
+.app .reports li:first-child { border-top: 0; }
+.app .reports li[aria-current="true"] { background: var(--accent-soft); }
+.app .reports .d { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.app .report { display: grid; gap: 18px; padding: 18px 20px 22px; }
+.app .report h4 { margin: 0 0 6px; font: 600 16px/1.3 var(--display); }
+.app .report p, .app .report li { font-size: 14px; line-height: 1.55; }
+.app .report p { margin: 0; color: var(--ink); max-width: 72ch; }
+.app .report ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 72ch; }
+.app .excerpt { font-size: 12px; font-weight: 600; color: var(--muted); }
+
+@container app (max-width: 720px) {
+  .app .p-nav { display: none; }
+  .app .menu { display: inline-flex; margin-left: auto; min-height: 44px; }
+  .app .p-conn .url { display: none; }
+  .app .p-conn { margin-left: 0; }
+  .app .p-head h1 { font-size: 26px; }
+  .app .p-seg button { min-height: 40px; }
+  .app .p-select, .app .p-input { min-height: 44px; font-size: 16px; }
+  .app .p-btn { min-height: 44px; }
+  .app .grid3, .app .grid2, .app .orgwrap { grid-template-columns: 1fr; }
+  .app .needs .need { grid-template-columns: 1fr auto; padding: 12px 16px; }
+  .app .needs .need .p-state { grid-column: 1 / -1; justify-self: start; }
+  .app .needs .need .since { grid-column: 1; }
+  .app .needs .need .p-btn { grid-column: 2; grid-row: 2 / span 2; }
+  .app .shead { grid-template-columns: 1fr; padding: 16px; }
+  .app .stats { gap: 20px; flex-wrap: wrap; }
+  .app .skills { padding: 0 16px 12px; }
+  .app .cols { display: none; }
+  .app .agent { grid-template-columns: 1fr auto; grid-template-areas: "name state" "doing doing" "facts facts"; gap: 6px 10px; padding: 14px 16px; }
+  .app .agent .name { grid-area: name; } .app .agent .p-state { grid-area: state; } .app .agent .doing { grid-area: doing; }
+  .app .agent .m, .app .agent .tok, .app .agent .cost { display: none; }
+  .app .agent .facts { grid-area: facts; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+  .app .d1 { padding-left: 34px; }
+  .app .d1 .name { padding-left: 0; }
+  .app .d1 .name::before, .app .d1.more .name::after { left: 20px; }
+  .app .drawer { top: auto; height: 88%; width: 100%; border-radius: 18px 18px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+  .app .p-ev { grid-template-columns: 56px 1fr auto; padding: 10px 16px; }
+  .app .p-ev .target { grid-column: 2 / -1; grid-row: 2; }
+  .app .p-card-h, .app .p-card-b { padding-left: 16px; padding-right: 16px; }
+  .app .p-table td, .app .p-table th { padding-left: 16px; padding-right: 16px; }
+  .app .hide-phone { display: none; }
+  .app .chartbox { padding: 12px 12px 4px; }
+  .app .orgscroll { display: none; }
+  .app .rolelist { display: block; }
+  .app .lanes { grid-template-columns: 96px minmax(0, 1fr); padding: 8px 16px 12px; gap: 0 10px; }
+  .app .skgscroll { overflow-x: auto; }
+  .app .rooms { grid-template-columns: 1fr; }
+  .app .fields { grid-template-columns: 1fr; }
+  .app .roster li { padding: 8px 16px; }
+}
+.stage.phone .drawer { left: 50%; right: auto; transform: translateX(-50%); width: 390px; top: auto; height: 720px; border-radius: 18px 18px 0 0; }
+.stage.phone .scrim { left: 50%; transform: translateX(-50%); width: 390px; }
+
+/* Fixes from the first look */
+.app .orgwrap { grid-template-columns: 1fr; }
+.app .panel .p-card-b { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 24px; align-items: start; }
+.app .panel .pcol { display: grid; gap: 12px; }
+.app td.rk { width: 100%; }
+.app td.rk .p-track { margin-top: 8px; }
+.app .sknode { overflow: hidden; }
+.app .sknode small, .app .sknode b, .app .sknode span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app .sklist { display: none; list-style: none; margin: 0; padding: 0 16px; }
+.app .sklist li { display: grid; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.app .sklist .sub { font-size: 13px; color: var(--muted); }
+.app .daybars { display: none; padding: 12px 16px 4px; gap: 8px; }
+.app .dayrow { display: grid; grid-template-columns: 56px 1fr 48px; gap: 10px; align-items: center; font-size: 13px; }
+.app .dayrow .dl { color: var(--muted); }
+.app .dayrow .stk { display: flex; gap: 2px; height: 12px; }
+.app .dayrow .stk i { display: block; height: 100%; border-radius: 2px; }
+.app .dayrow .num { text-align: right; }
+@container app (max-width: 720px) {
+  .app .panel .p-card-b { grid-template-columns: 1fr; }
+  .app .skgscroll { display: none; }
+  .app .sklist { display: block; }
+  .app .chartbox { display: none; }
+  .app .daybars { display: grid; }
+  .app .lanes .ax span.odd { display: none; }
+}
+</style>
+<div class="rv" role="region" aria-label="Mock controls">
+  <span><b>Mock controls</b>, not part of the app</span>
+  <span>Board <span class="rv-seg" id="rv-page"><button type="button" data-v="live" aria-pressed="true">Live</button><button type="button" data-v="ledger" aria-pressed="false">Ledger</button><button type="button" data-v="roles" aria-pressed="false">Pipeline · roles</button><button type="button" data-v="session" aria-pressed="false">Pipeline · session</button><button type="button" data-v="skills" aria-pressed="false">Skills</button><button type="button" data-v="office" aria-pressed="false">Office</button><button type="button" data-v="analysis" aria-pressed="false">Analysis</button></span></span>
+  <span>Theme <span class="rv-seg" id="rv-theme"><button type="button" data-v="system" aria-pressed="true">System</button><button type="button" data-v="light" aria-pressed="false">Light</button><button type="button" data-v="dark" aria-pressed="false">Dark</button></span></span>
+  <span>Width <span class="rv-seg" id="rv-width"><button type="button" data-v="desktop" aria-pressed="true">Desktop</button><button type="button" data-v="phone" aria-pressed="false">Phone</button></span></span>
+  <span id="rv-akey" hidden>Analysis <span class="rv-seg" id="rv-key"><button type="button" data-v="key" aria-pressed="true">Key set</button><button type="button" data-v="nokey" aria-pressed="false">No key</button></span></span>
+  <span>Synthetic data. Agent rows, Open buttons and roster rows open the history.</span>
+</div>
+<div class="stage" id="stage"><div class="app prop" id="app">
+  <header class="p-top"><span class="p-brand"><span class="p-orb" aria-hidden="true"></span>agent-orb</span>
+    <nav class="p-nav" aria-label="Studio"><a href="#live" data-go="live" aria-current="page">Live <span class="p-count" aria-label="3 sessions running">3</span></a><a href="#ledger" data-go="ledger">Ledger</a><a href="#pipeline" data-go="pipeline">Pipeline</a><a href="#office" data-go="office">Office</a><a href="#analysis" data-go="analysis">Analysis</a></nav>
+    <span class="p-conn"><i></i>Live <span class="url">· 127.0.0.1:4040</span></span>
+    <button type="button" class="p-btn menu" aria-label="Open the menu">Menu</button></header>
+  <main class="page" id="page"></main>
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="p-drawer drawer" id="drawer" hidden role="dialog" aria-labelledby="d-name"><div class="p-dh" id="d-head"></div><div class="p-tabs" role="tablist" id="d-tabs" style="padding:0 12px"></div><div class="dbody" id="d-body"></div></aside>
+</div></div>
+<section class="decide" id="decide" aria-live="polite"></section>
+<script>(() => {
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const MODEL = { opus: 'Opus 5.5', sonnet: 'Sonnet 5.5', haiku: 'Haiku 5.5' };
+  const STATE = { working: 'working', waiting: 'waiting for you', stalled: 'stalled', done: 'done' };
+  const pill = (s) => `<span class="p-state s-${s}">${STATE[s]}</span>`;
+  const model = (m) => `<span class="p-model m-${m}">${MODEL[m]}</span>`;
+  const av = (letter, m) => `<span class="p-av" style="--m:var(--${m})" aria-hidden="true">${letter}</span>`;
+  const tok = (k) => (k >= 1000 ? `${+(k / 1000).toFixed(2)}M` : `${k}k`);
+  const usd = (v) => (v < 0.01 ? '&lt;$0.01' : `$${v.toFixed(2)}`);
+
+  /* ---------- Synthetic data: one week, three made-up projects; every total is the sum of its parts ---------- */
+  const SESSIONS = [
+    { id: 's1', project: 'shop-api', branch: 'main', meta: 'dev-laptop · started 17:33 · running 6m 12s', ctx: 41,
+      skills: [['/code', 'you typed it'], ['/review', 'the model called it']],
+      agents: [
+        { id: 'a1', name: 'main', role: 'orchestrator', m: 'opus', st: 'working', what: 'Waiting on implementer', sub: [['Agent', '2m 10s']], tasks: [2, 4], tok: 214, cost: 0.21, d: 0,
+          facts: ['started 17:33', '6m 12s', '11 tool calls', '0 failed'],
+          h: [['17:33:41', 'Skill', '/code', 'ok', '0.1s'], ['17:33:48', 'Read', 'issues/142.md', 'ok', '0.2s'], ['17:34:02', 'Agent', 'Explore: find where orders are validated', 'ok', '31s'], ['17:34:40', 'TaskCreate', '4 tasks', 'ok', '0.1s'], ['17:35:02', 'Agent', 'implementer: implement #142', 'run', '2m 10s']],
+          tl: [['done', 'Read the issue and the failing test'], ['done', 'Write the failing test'], ['run', 'Fix the cause in the shared handler'], ['todo', 'Run the gate']] },
+        { id: 'a2', name: 'Explore', role: 'researcher', m: 'haiku', st: 'done', what: 'Found where orders are validated', sub: [['done in', '31s'], ['task', 'Find where orders are validated']], tok: 62, cost: 0.006, d: 1, more: true,
+          facts: ['17:34:02 to 17:34:33', '7 tool calls', '0 failed'],
+          h: [['17:34:04', 'Grep', 'validateOrder', 'ok', '0.3s'], ['17:34:07', 'Read', 'src/orders/validate.ts', 'ok', '0.1s'], ['17:34:11', 'Read', 'src/orders/refund.ts', 'ok', '0.1s'], ['17:34:15', 'Glob', 'src/orders/**/*.test.ts', 'ok', '0.1s']] },
+        { id: 'a3', name: 'implementer', role: 'developer', m: 'sonnet', st: 'working', what: 'Editing src/orders/refund.ts', sub: [['Edit', '50s']], tok: 213, cost: 0.14, d: 1,
+          facts: ['started 17:35:02', '9 tool calls', '1 failed'],
+          h: [['17:35:06', 'Read', 'src/orders/refund.ts', 'ok', '0.2s'], ['17:35:09', 'Read', 'src/orders/refund.test.ts', 'ok', '0.1s'], ['17:35:24', 'Edit', 'src/orders/refund.test.ts', 'ok', '0.3s'], ['17:35:45', 'Bash', 'the test run', 'bad', 'exit 1 · 12.4s'], ['17:36:31', 'Edit', 'src/orders/refund.ts', 'ok', '0.4s'], ['17:36:53', 'Bash', 'the test run', 'ok', '9.8s'], ['17:38:22', 'Edit', 'src/orders/refund.ts', 'run', '50s']],
+          tl: [['done', 'Write the failing test'], ['run', 'Fix the cause in the shared handler']] },
+      ] },
+    { id: 's2', project: 'mobile-app', branch: 'feat/offline-sync', meta: 'dev-laptop · started 17:36 · running 3m 05s', ctx: null,
+      skills: [['/grill', 'the model called it']],
+      agents: [
+        { id: 'b1', name: 'main', role: 'orchestrator', m: 'sonnet', st: 'waiting', what: 'Wants to run Bash', sub: [['waiting', '1m 52s']], tok: 196, cost: 0.08, d: 0,
+          facts: ['started 17:36', '3m 05s', '2 tool calls', '0 failed'],
+          h: [['17:36:20', 'Skill', '/grill', 'ok', '0.1s'], ['17:36:44', 'Read', 'src/sync/queue.ts', 'ok', '0.2s'], ['17:37:13', 'Bash', 'waiting for your OK', 'run', '1m 52s']] },
+      ] },
+    { id: 's3', project: 'docs-site', branch: 'main', meta: 'dev-laptop · started 17:13 · running 26m 40s', ctx: 58,
+      skills: [],
+      agents: [
+        { id: 'c1', name: 'main', role: 'orchestrator', m: 'opus', st: 'working', what: 'Waiting on Explore', sub: [['Agent', '17m 40s']], tok: 301, cost: 0.33, d: 0,
+          facts: ['started 17:13', '26m 40s', '8 tool calls', '0 failed'],
+          h: [['17:14:02', 'Read', 'docs/getting-started.md', 'ok', '0.2s'], ['17:15:10', 'Agent', 'Plan: plan the search page', 'ok', '48s'], ['17:21:52', 'Agent', 'Explore: check the external links', 'run', '17m 40s']] },
+        { id: 'c2', name: 'Plan', role: 'planner', m: 'sonnet', st: 'done', what: 'Planned the search page', sub: [['done in', '48s'], ['task', 'Plan the search page']], tok: 109, cost: 0.07, d: 1, more: true,
+          facts: ['17:15:10 to 17:15:58', '5 tool calls', '0 failed'],
+          h: [['17:15:13', 'Glob', 'docs/**/*.md', 'ok', '0.1s'], ['17:15:20', 'Read', 'docs/search.md', 'ok', '0.1s']] },
+        { id: 'c3', name: 'Explore', role: 'researcher', m: 'haiku', st: 'stalled', what: 'Stuck on WebFetch for 17 minutes', sub: [['WebFetch', '17m 02s'], ['task', 'Check the external links']], tok: 62, cost: 0.006, d: 1,
+          facts: ['started 17:21:52', '6 tool calls', '0 failed'],
+          h: [['17:21:55', 'Grep', 'https://', 'ok', '0.4s'], ['17:22:03', 'WebFetch', 'example.org/guide', 'ok', '1.9s'], ['17:22:38', 'WebFetch', 'legacy-wiki.example.net', 'run', '17m 02s']] },
+      ] },
+  ];
+  const AGENTS = Object.fromEntries(SESSIONS.flatMap((s) => s.agents.map((a) => [a.id, { ...a, session: s }])));
+
+  const WEEK = { // millions of tokens per day, by model; sums: Opus 13.6, Sonnet 10.3, Haiku 6.0, total 29.9
+    days: ['Fri 16', 'Sat 17', 'Sun 18', 'Mon 19', 'Tue 20', 'Wed 21', 'Thu 22'],
+    opus: [1.6, 1.0, 2.1, 1.6, 1.2, 4.5, 1.6], sonnet: [0.9, 1.1, 0.6, 2.8, 2.2, 1.6, 1.1], haiku: [0.5, 0.7, 0.9, 1.0, 0.8, 1.2, 0.9],
+    cost: [1.38, 0.95, 1.71, 1.92, 1.42, 4.71, 1.37], // a day's API-equivalent; sums to 13.46 + ... see BY_MODEL for the totals
+  };
+  const BY_PROJECT = [['docs-site', '10 sessions · 43 agents', 15.2, 8.52], ['mobile-app', '7 sessions · 29 agents', 8.6, 4.76], ['shop-api', '7 sessions · 21 agents', 6.1, 3.93]];
+  const BY_MODEL = [['opus', '27 agents', 13.6, 12.08], ['sonnet', '36 agents', 10.3, 4.94], ['haiku', '30 agents', 6.0, 0.19]];
+  const BY_ROLE = [['orchestrator', 'main · 24', 14.6, 11.34], ['developer', 'implementer · 16', 4.5, 2.15], ['researcher', 'Explore · 20', 4.3, 0.14], ['reviewer', 'reviewer · 10', 2.9, 2.46], ['tester', 'test-runner · 10', 1.8, 0.06], ['generalist', 'general-purpose · 8', 1.3, 0.73], ['planner', 'Plan · 5', 0.5, 0.33]];
+  const EFFICIENCY = [['docs-site', '410k', 37, '4.8%', 9, 188, '90.6%', '0s', 212], ['mobile-app', '290k', 30, '6.1%', 8, 131, '89.2%', '0s', 140], ['shop-api', '240k', 25, '4.5%', 4, 89, '90.4%', '0s', 118]];
+  // Costs per day follow the model mix at list prices; they add up to the week's $17.21.
+  WEEK.cost = [2.06, 1.37, 2.67, 2.62, 2.01, 4.98, 1.50];
+
+  const ROLES = [ // docs-site, last 7 days: 43 agents, 15.2M tokens, $8.52
+    { key: 'orchestrator', types: 'main', agents: 10, tok: 7100, cost: 5.48, avg: null, info: 'Runs the session: takes the request, plans it and hands pieces to other agents.', x: 405, y: 10 },
+    { key: 'planner', types: 'Plan', agents: 2, tok: 311, cost: 0.18, avg: '21s', info: 'Designs how a change should be made before anyone builds it.', x: 5, y: 172, from: 'orchestrator', give: 311 },
+    { key: 'researcher', types: 'Explore', agents: 10, tok: 2400, cost: 0.08, avg: '31s', info: 'Reads and searches (files, docs, the web) and reports back; changes nothing.', x: 205, y: 172, from: 'orchestrator', give: 2400 },
+    { key: 'developer', types: 'implementer', agents: 9, tok: 2600, cost: 1.17, avg: '35s', info: 'Writes and changes code.', x: 405, y: 172, from: 'orchestrator', give: 2600 },
+    { key: 'generalist', types: 'general-purpose', agents: 4, tok: 396, cost: 0.22, avg: '12s', info: 'A general-purpose agent that takes whatever task it is given.', x: 605, y: 172, from: 'orchestrator', give: 396 },
+    { key: 'tester', types: 'test-runner', agents: 4, tok: 728, cost: 0.02, avg: '48s', info: 'Runs the tests and checks, and reports what passed and what failed.', x: 805, y: 172, from: 'orchestrator', give: 728 },
+    { key: 'reviewer', types: 'reviewer', agents: 4, tok: 1600, cost: 1.37, avg: '27s', info: 'Reads finished work and judges it against the request and the rules.', x: 405, y: 334, from: 'developer', give: 1600 },
+  ];
+  const DEV_AGENTS = [['implementer', 'sonnet', 'Implement #88: search page paginates', 'session 90a86e · 412k tok · 6m 02s'], ['implementer', 'sonnet', 'Implement #91: fix broken anchors', 'session 4c21d0 · 318k tok · 4m 40s'], ['implementer', 'sonnet', 'Implement #93: sidebar keeps its scroll', 'session 1b7e55 · 286k tok · 3m 51s']];
+
+  const SKILL_USAGE = [['/review', 2, 'model 2', 1200, 576, 0.74, '1m ago', [0, 0, 0, 1, 0, 0, 1]], ['/grill', 2, 'model 2', 816, 408, 0.63, '31h ago', [0, 0, 1, 0, 1, 0, 0]], ['/pr', 1, 'model 1', 369, 369, 0.37, '103h ago', [0, 1, 0, 0, 0, 0, 0]]];
+  const IDLE = [['code', 'project', 820], ['pdf', 'plugin', 610], ['release', 'project', 540], ['grill', 'user', 290, true], ['changelog', 'user', 210]];
+
+  const state = { board: 'live', key: true, role: 'developer', report: 0, tab: 'did', agent: null, opener: null };
+
+  /* ---------- Live ---------- */
+  function liveRow(a) {
+    return `<div class="agent d${a.d}${a.more ? ' more' : ''} is-${a.st}" role="button" tabindex="0" data-agent="${a.id}" aria-expanded="false" aria-label="${esc(a.name)}, ${STATE[a.st]}: open its history">
+      <span class="name">${av(a.name[0].toUpperCase(), a.m)}<span><b>${esc(a.name)}</b><small>${esc(a.role)}</small></span></span>
+      <span class="doing"><span class="what">${esc(a.what)}</span><span class="sub">${a.sub.map(([k, v]) => `<span>${esc(k)} <span class="num">${esc(v)}</span></span>`).join('')}${a.tasks ? `<span class="mini">tasks <span class="num">${a.tasks[0]} of ${a.tasks[1]}</span><span class="p-track ok"><i style="width:${(a.tasks[0] / a.tasks[1]) * 100}%"></i></span></span>` : ''}</span></span>
+      <span class="m">${model(a.m)}</span><span class="tok r num">${tok(a.tok)}</span><span class="cost r num">${usd(a.cost)}</span>
+      <span class="facts">${model(a.m)}<span class="num">${tok(a.tok)} tok</span><span class="num">${usd(a.cost)}</span></span>
+      ${pill(a.st)}</div>`;
+  }
+  function live() {
+    const all = Object.values(AGENTS), c = { working: 0, waiting: 0, stalled: 0, done: 0 };
+    all.forEach((a) => c[a.st]++);
+    const needs = all.filter((a) => a.st === 'waiting' || a.st === 'stalled');
+    return `<div class="p-head"><h1>3 sessions running</h1><div class="p-tally"><span style="--c-dot:var(--ok-dot)">${c.working} at work</span><span style="--c-dot:var(--wait-dot)">${c.waiting} waiting for you</span><span style="--c-dot:var(--bad-dot)">${c.stalled} stalled</span><span style="--c-dot:var(--done-dot)">${c.done} done</span></div></div>
+    <section class="p-card needs" aria-labelledby="needs-h"><div class="p-card-h"><h3 id="needs-h">Needs you</h3><span class="p-hint">${needs.length} agents</span></div>
+      ${needs.map((a) => `<div class="need">${pill(a.st)}<span><b>${esc(a.name)}</b> in <b>${esc(a.session.project)}</b> ${a.st === 'waiting' ? 'wants to run <span class="num">Bash</span>' : 'is stuck on <span class="num">WebFetch</span>'}</span><span class="since num">${a.sub[0][1]}</span><button type="button" class="p-btn" data-agent="${a.id}">Open</button></div>`).join('')}
+    </section>
+    ${SESSIONS.map((s) => {
+      const t = s.agents.reduce((n, a) => n + a.tok, 0), cost = s.agents.reduce((n, a) => n + a.cost, 0);
+      return `<section class="p-card" aria-label="${esc(s.project)}">
+        <div class="shead"><div class="who"><div class="l1"><h2>${esc(s.project)}</h2><span class="p-chip branch">${esc(s.branch)}</span></div><span class="meta">${esc(s.meta)}</span></div>
+          <div class="stats"><span class="p-stat"><span class="k">Tokens</span><span class="v">${tok(t)}</span></span><span class="p-stat"><span class="k">API-equivalent</span><span class="v">${usd(cost)}</span></span>
+          ${s.ctx == null ? '<span class="p-stat"><span class="k">Context</span><span class="d">after the first turn</span></span>' : `<span class="p-meter" style="width:132px"><span class="k">Context ${s.ctx}%</span><span class="p-track"><i style="width:${s.ctx}%"></i></span></span>`}</div></div>
+        ${s.skills.length ? `<div class="skills">Skills ${s.skills.map(([n, how]) => `<span class="p-chip"><span class="mono">${esc(n)}</span><span class="how">${esc(how)}</span></span>`).join('')}</div>` : ''}
+        <div class="cols" aria-hidden="true"><span>Agent</span><span>Doing now</span><span>Model</span><span class="r">Tokens</span><span class="r">Cost</span><span class="r">State</span></div>
+        ${s.agents.map((a) => liveRow(AGENTS[a.id])).join('')}
+      </section>`;
+    }).join('')}
+    <p class="foot">Cost is API-equivalent: what these tokens would cost at list prices, not what a plan bills.</p>`;
+  }
+
+  /* ---------- Ledger ---------- */
+  function filterBar(extra = '') {
+    return `<div class="filters"><span class="p-seg" role="group" aria-label="Period"><button type="button" aria-pressed="false">Today</button><button type="button" aria-pressed="true">7 days</button><button type="button" aria-pressed="false">30 days</button></span>${extra}<select class="p-select" aria-label="Project"><option>All projects</option><option>docs-site</option><option>mobile-app</option><option>shop-api</option></select></div>`;
+  }
+  function ranked(title, rows, kind) {
+    const max = Math.max(...rows.map((r) => r[2]));
+    return `<section class="p-card"><div class="p-card-h"><h3>${title}</h3><span class="p-hint">tokens · API-equivalent</span></div><div class="p-tablewrap"><table class="p-table"><tbody>
+      ${rows.map(([n, sub, t, c]) => `<tr><td class="rk">${kind === 'model' ? model(n) : `<b style="font-weight:600">${esc(n)}</b>`}<span class="sub">${esc(sub)}</span><div class="p-track${kind === 'model' ? ` m-${n}` : ''}"><i style="width:${(t / max) * 100}%"></i></div></td><td class="r num">${t.toFixed(1)}M</td><td class="r num">${usd(c)}</td></tr>`).join('')}
+    </tbody></table></div></section>`;
+  }
+  function chart() {
+    const W = 1000, H = 250, L = 52, R = 12, T = 14, B = 30, max = 8, bw = 30, n = WEEK.days.length;
+    const y = (v) => T + (H - T - B) * (1 - v / max), slot = (W - L - R) / n;
+    let g = '<g class="grid">' + [0, 2, 4, 6, 8].map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>`).join('') + '</g>';
+    g += '<g class="axis">' + [0, 2, 4, 6, 8].map((v) => `<text x="${L - 10}" y="${y(v) + 4}" text-anchor="end">${v ? v + 'M' : '0'}</text>`).join('');
+    g += WEEK.days.map((d, i) => `<text x="${L + slot * i + slot / 2}" y="${H - 8}" text-anchor="middle">${d}</text>`).join('') + '</g>';
+    const top = (x, yy, w, h, r) => `M${x},${yy + h}V${yy + r}Q${x},${yy} ${x + r},${yy}H${x + w - r}Q${x + w},${yy} ${x + w},${yy + r}V${yy + h}Z`;
+    WEEK.days.forEach((d, i) => {
+      const x = L + slot * i + (slot - bw) / 2;
+      let acc = 0, segs = '';
+      const parts = [['haiku', WEEK.haiku[i]], ['sonnet', WEEK.sonnet[i]], ['opus', WEEK.opus[i]]];
+      parts.forEach(([m, v], k) => {
+        const y0 = y(acc + v), h = y(acc) - y(acc + v) - (k < 2 ? 2 : 0);
+        segs += k === 2 ? `<path d="${top(x, y0, bw, h, 4)}" style="fill:var(--${m})"/>` : `<rect x="${x}" y="${y0}" width="${bw}" height="${Math.max(h, 0)}" style="fill:var(--${m})"/>`;
+        acc += v;
+      });
+      const total = WEEK.opus[i] + WEEK.sonnet[i] + WEEK.haiku[i];
+      g += `<g class="bar" tabindex="0" data-i="${i}" aria-label="${d}: ${total.toFixed(1)}M tokens"><rect class="hit" x="${L + slot * i}" y="${T}" width="${slot}" height="${H - T - B}" fill="transparent"/>${segs}${i === 5 ? `<text x="${x + bw / 2}" y="${y(total) - 8}" text-anchor="middle" style="font:500 12px var(--mono);fill:var(--ink)">${total.toFixed(1)}M</text>` : ''}</g>`;
+    });
+    const maxT = Math.max(...WEEK.days.map((_, i) => WEEK.opus[i] + WEEK.sonnet[i] + WEEK.haiku[i]));
+    const daybars = `<div class="daybars">${WEEK.days.map((d, i) => { const t = WEEK.opus[i] + WEEK.sonnet[i] + WEEK.haiku[i]; return `<div class="dayrow"><span class="dl">${d}</span><span class="stk" style="width:${(t / maxT) * 100}%">${['opus', 'sonnet', 'haiku'].map((m) => `<i style="flex:${WEEK[m][i]};background:var(--${m})"></i>`).join('')}</span><span class="num">${t.toFixed(1)}M</span></div>`; }).join('')}</div>`;
+    return daybars + `<div class="chartbox" id="chartbox"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Tokens per day by model, last 7 days">${g}</svg><div class="p-tip" id="ctip" hidden></div></div>`;
+  }
+  function ledger() {
+    const tot = WEEK.days.map((_, i) => WEEK.opus[i] + WEEK.sonnet[i] + WEEK.haiku[i]);
+    return `<div class="hrow"><div class="p-head"><h1>Ledger</h1><span class="p-sub">Last 7 days · all projects · 24 sessions · 93 agents</span></div>
+      ${filterBar('<span class="p-seg" role="group" aria-label="Group by"><button type="button" aria-pressed="true">Day</button><button type="button" aria-pressed="false">Week</button><button type="button" aria-pressed="false">Month</button></span>')}</div>
+    <section class="p-card"><div class="p-card-b" style="display:flex;flex-wrap:wrap;gap:20px 44px">
+      <div class="p-stat"><span class="k">Tokens</span><span class="v">29.9M</span><span class="d">nothing the week before</span></div>
+      <div class="p-stat"><span class="k">API-equivalent</span><span class="v">$17.21</span><span class="d">at list prices, not a bill</span></div>
+      <div class="p-stat"><span class="k">Cache share</span><span class="v">90.1%</span><span class="d">of input read from cache</span></div>
+      <div class="p-stat"><span class="k">Failed tool calls</span><span class="v">5.1%</span><span class="d">21 of 408</span></div>
+      <div class="p-stat"><span class="k">Waiting on you</span><span class="v">0s</span><span class="d">1 permission prompt, still open</span></div>
+    </div></section>
+    <section class="p-card"><div class="p-card-h"><h3>Tokens per day, by model</h3><span class="p-hint">point at a day, or tab to it, for its split and cost</span></div>
+      ${chart()}
+      <div style="padding:0 20px 14px"><div class="p-legend"><span style="--m:var(--opus)">Opus</span><span style="--m:var(--sonnet)">Sonnet</span><span style="--m:var(--haiku)">Haiku</span></div></div>
+      <details class="tableview"><summary>Show as a table</summary><div class="p-tablewrap"><table class="p-table"><thead><tr><th>Day</th><th class="r">Opus</th><th class="r">Sonnet</th><th class="r">Haiku</th><th class="r">Total</th><th class="r">API-equivalent</th></tr></thead><tbody>
+        ${WEEK.days.map((d, i) => `<tr><td>${d}</td><td class="r num">${WEEK.opus[i].toFixed(1)}M</td><td class="r num">${WEEK.sonnet[i].toFixed(1)}M</td><td class="r num">${WEEK.haiku[i].toFixed(1)}M</td><td class="r num">${tot[i].toFixed(1)}M</td><td class="r num">${usd(WEEK.cost[i])}</td></tr>`).join('')}
+        <tr><td><b>Week</b></td><td class="r num"><b>13.6M</b></td><td class="r num"><b>10.3M</b></td><td class="r num"><b>6.0M</b></td><td class="r num"><b>29.9M</b></td><td class="r num"><b>$17.21</b></td></tr>
+      </tbody></table></div></details></section>
+    <div class="grid3">${ranked('By project', BY_PROJECT, 'project')}${ranked('By model', BY_MODEL, 'model')}${ranked('By role', BY_ROLE, 'role')}</div>
+    <section class="p-card"><div class="p-card-h"><h3>Efficiency by project</h3><span class="p-hint">lower is better, except cache share</span></div><div class="p-tablewrap"><table class="p-table">
+      <thead><tr><th>Project</th><th class="r">Tokens per file changed</th><th class="r">Failed tool calls</th><th class="r">Cache share</th><th class="r hide-phone">Waiting on you</th><th class="r hide-phone">Requests</th></tr></thead><tbody>
+      ${EFFICIENCY.map(([p, tpf, files, fp, f, calls, cache, wait, req]) => `<tr><td><b style="font-weight:600">${p}</b><span class="sub">${files} files changed</span></td><td class="r num">${tpf}</td><td class="r num${parseFloat(fp) > 6 ? ' warnnum' : ''}">${fp}<span class="sub">${f} of ${calls}</span></td><td class="r num">${cache}</td><td class="r num hide-phone">${wait}</td><td class="r num hide-phone">${req}</td></tr>`).join('')}
+    </tbody></table></div></section>`;
+  }
+
+  /* ---------- Pipeline ---------- */
+  function pipeHead(view, scope) {
+    return `<div class="hrow"><div class="p-head"><h1>Pipeline</h1><span class="p-sub">${scope === 'session' ? 'docs-site · session 90a86e · 3 agents' : 'docs-site · last 7 days · 43 agents'}</span></div>
+      <div class="filters"><span class="p-seg" role="group" aria-label="View"><button type="button" data-board="roles" aria-pressed="${view === 'roles'}">Roles</button><button type="button" data-board="skills" aria-pressed="${view === 'skills'}">Skills</button></span>
+      <select class="p-select" aria-label="Project"><option>docs-site</option><option>mobile-app</option><option>shop-api</option></select>
+      <span class="p-seg" role="group" aria-label="Scope"><button type="button" data-board="session" aria-pressed="${scope === 'session'}">Session</button><button type="button" aria-pressed="false">Day</button><button type="button" data-board="${view === 'skills' ? 'skills' : 'roles'}" aria-pressed="${scope === 'week'}">Week</button></span>
+      ${scope === 'session' ? '<select class="p-select" aria-label="Session"><option>Oct 22, 17:13 · 472k tok</option><option>Oct 22, 11:02 · 1.31M tok</option></select>' : ''}</div></div>`;
+  }
+  function org(roles, h) {
+    const max = Math.max(...roles.filter((r) => r.give).map((r) => r.give));
+    const byKey = Object.fromEntries(roles.map((r) => [r.key, r]));
+    let edges = '', labels = '';
+    roles.filter((r) => r.from).forEach((r) => {
+      const p = byKey[r.from], pcx = p.x + 95, cx = r.x + 95, sx = pcx + (cx - pcx) * 0.22, sy = p.y + 94, ey = r.y, my = (sy + ey) / 2;
+      edges += `<path class="edge" d="M${sx},${sy} C${sx},${my} ${cx},${my} ${cx},${ey}" stroke-width="${(2 + 14 * (r.give / max)).toFixed(1)}"/>`;
+      labels += `<text class="elabel" x="${cx + 10}" y="${ey - 8}">${tok(r.give)}</text>`;
+    });
+    const nodes = roles.map((r) => `<button type="button" class="node" style="left:${r.x}px;top:${r.y}px" data-role="${r.key}" aria-pressed="${state.role === r.key}"><span class="p-av">${r.key[0].toUpperCase()}</span><b>${r.key}</b><span class="ty">${r.types}</span><span class="nu">${r.agents} agent${r.agents > 1 ? 's' : ''} · ${tok(r.tok)} tok · ${usd(r.cost)}${r.avg ? ` <span>· avg ${r.avg}</span>` : ''}</span></button>`).join('');
+    return `<div class="orgscroll"><div class="org" style="height:${h}px"><svg viewBox="0 0 1000 ${h}" aria-hidden="true">${edges}${labels}</svg>${nodes}</div></div>`;
+  }
+  function rolePanel() {
+    const r = ROLES.find((x) => x.key === state.role) || ROLES[3];
+    const dev = r.key === 'developer';
+    return `<aside class="p-card panel" aria-label="${r.key}"><div class="p-card-h"><h3>${r.key} · ${r.types}</h3><span class="p-hint">${r.agents} agents · ${tok(r.tok)} tok · ${usd(r.cost)}</span></div><div class="p-card-b"><div class="pcol">
+      <p class="rinfo" style="margin:0">${r.info}</p>
+      ${dev ? `<ul class="alist">${DEV_AGENTS.map(([n, m, task, d]) => `<li><span><b>${n}</b> · ${model(m)}</span><span class="d">“${task}” · ${d}</span></li>`).join('')}<li class="d">and 6 more</li></ul></div>
+      <div class="fix"><label class="p-field">Role for implementer<select class="p-select" aria-label="Role for implementer"><option>developer</option><option>reviewer</option><option>tester</option></select></label>
+        <label class="p-check"><input type="checkbox" checked> For every implementer agent in docs-site, now and later</label>
+        <div class="row"><button type="button" class="p-btn primary">Save role</button><span class="ok-msg" hidden>Saved.</span></div></div>` : `<p style="margin:0;color:var(--muted);font-size:14px">Pick developer to see the role fix and its agents; every role opens the same way.</p></div>`}
+    </div><details class="p-explain"><summary>Where a role comes from</summary><p>Declared in the agent file (orb-role), then the project's roles.json, then a rule set here for a type, then one set here for a single agent, which wins over all.</p></details></aside>`;
+  }
+  function roles() {
+    return `${pipeHead('roles', 'week')}
+    <div class="orgwrap"><section class="p-card"><div class="p-card-h"><h3>Who delegates to whom</h3><span class="p-hint">nodes are roles; an edge is as thick as the tokens it handed down; pick a role</span></div>
+      ${org(ROLES, 440)}
+      <div class="rolelist"><table class="p-table"><tbody>${ROLES.map((r) => `<tr data-role="${r.key}" style="cursor:pointer"><td><b style="font-weight:600">${r.key}</b><span class="sub">${r.types} · ${r.agents} agents${r.avg ? ` · avg ${r.avg}` : ''}</span></td><td class="r num">${tok(r.tok)}<span class="sub">${usd(r.cost)}</span></td></tr>`).join('')}</tbody></table></div>
+    </section>${rolePanel()}</div>`;
+  }
+  function session() {
+    const SR = [
+      { key: 'orchestrator', types: 'main', agents: 1, tok: 301, cost: 0.33, info: '', x: 405, y: 10 },
+      { key: 'planner', types: 'Plan', agents: 1, tok: 109, cost: 0.07, avg: '48s', x: 280, y: 166, from: 'orchestrator', give: 109 },
+      { key: 'researcher', types: 'Explore', agents: 1, tok: 62, cost: 0.006, avg: null, x: 530, y: 166, from: 'orchestrator', give: 62 },
+    ];
+    const t0 = 13 * 60, t1 = 40 * 60; // seconds after 17:00
+    const sec = (s) => { const [h, m, x] = s.split(':').map(Number); return (h - 17) * 3600 + m * 60 + (x || 0); };
+    const pct = (s) => ((sec(s) - t0) / (t1 - t0)) * 100;
+    const span = (a, b, cls, m) => `<span class="seg-bar ${cls}" style="left:${pct(a)}%;width:${pct(b) - pct(a)}%;--m:var(--${m})"></span>`;
+    const lanes = [
+      ['main', 'orchestrator', 'opus', span('17:13:05', '17:15:10', '', 'opus') + span('17:15:10', '17:15:58', 'tool', 'opus') + span('17:15:58', '17:21:52', '', 'opus') + span('17:21:52', '17:39:40', 'tool', 'opus')],
+      ['Plan', 'planner', 'sonnet', span('17:15:10', '17:15:58', '', 'sonnet')],
+      ['Explore', '<span class="badnum">stalled · WebFetch 17m</span>', 'haiku', span('17:21:52', '17:22:38', '', 'haiku') + span('17:22:38', '17:39:40', 'stall', 'haiku')],
+    ];
+    const ticks = ['17:15', '17:20', '17:25', '17:30', '17:35', '17:40'];
+    return `${pipeHead('roles', 'session')}
+    <section class="p-card"><div class="p-card-h"><h3>Who delegates to whom</h3><span class="p-hint">this session only</span></div>${org(SR, 270)}
+      <div class="rolelist"><table class="p-table"><tbody>${SR.map((r) => `<tr><td><b style="font-weight:600">${r.key}</b><span class="sub">${r.types}</span></td><td class="r num">${tok(r.tok)}<span class="sub">${usd(r.cost)}</span></td></tr>`).join('')}</tbody></table></div></section>
+    <section class="p-card"><div class="p-card-h"><h3>What ran when</h3><span class="p-hint">one lane per agent; a solid bar is its own turns, a thin bar is waiting on a tool or an agent</span></div>
+      <div class="lanes">${lanes.map(([n, role, m, bars]) => `<div class="lh">${av(n[0].toUpperCase(), m)}<span><b style="font-weight:600">${n}</b><br><small>${role}</small></span></div><div class="lt">${bars}</div>`).join('')}
+        <div class="ax">${ticks.map((t, i) => `<span class="${i % 2 ? '' : 'odd'}" style="left:${pct(t + ':00')}%">${t}</span>`).join('')}</div></div>
+      <div style="padding:0 20px 14px"><div class="p-legend"><span style="--m:var(--opus)">Opus</span><span style="--m:var(--sonnet)">Sonnet</span><span style="--m:var(--haiku)">Haiku</span><span style="--m:var(--bad-dot)">stalled</span></div></div></section>`;
+  }
+  function skills() {
+    const S = [['/review', 'project skill · ran 2× · 1.2M', 30], ['/grill', 'project skill · ran 2× · 816k', 121], ['/pr', 'project skill · ran 1× · 369k', 212]];
+    const A = [['implementer', 'spawned 9× · 2.6M', 30, ''], ['general-purpose', 'built-in · spawned 4× · 396k', 121, ''], ['reviewer', 'named, never spawned', 212, 'ghost']];
+    const E = [[0, 0, 2], [0, 1, 1], [1, 0, 1], [1, 1, 2], [2, 1, 1]], N = [[0, 2], [1, 2]];
+    const path = (sy, ay) => { const x1 = 176, x2 = 440, y1 = sy + 29, y2 = ay + 29; return `M${x1},${y1} C${(x1 + x2) / 2},${y1} ${(x1 + x2) / 2},${y2} ${x2},${y2}`; };
+    let svg = E.map(([s, a, n]) => `<path class="e" d="${path(S[s][2], A[a][2])}" stroke-width="${n * 2}"/>`).join('') + N.map(([s, a]) => `<path class="e named" d="${path(S[s][2], A[a][2])}"/>`).join('');
+    svg += [[0, 2], [1, 1], [2, 1]].map(([a, n]) => `<text class="el" x="408" y="${A[a][2] + 18}">${a === 0 ? '3×' : a === 1 ? '4×' : ''}</text>`).join('');
+    const max = 2;
+    return `${pipeHead('skills', 'week')}
+    <section class="p-card"><div class="p-card-h"><h3>What calls what</h3><span class="p-hint">solid: it called, as thick as the times · dashed: named in its text, never called here</span></div>
+      <div class="skgscroll" style="padding:0 20px"><div class="skg"><span class="colt" style="left:0">Run first</span><span class="colt" style="left:440px">Agents dispatched</span><svg viewBox="0 0 760 300" aria-hidden="true">${svg}</svg>
+        ${S.map(([n, d, yy]) => `<button type="button" class="sknode skill" style="left:0;top:${yy}px"><b>${n}</b><small>${d}</small></button>`).join('')}
+        ${A.map(([n, d, yy, g]) => `<button type="button" class="sknode agent ${g}" style="left:440px;top:${yy}px"><span style="font-weight:600">${n}</span><small>${d}</small></button>`).join('')}</div></div>
+      <ul class="sklist">${S.map(([n, d], si) => `<li><span class="mono" style="font-family:var(--mono);color:var(--accent-ink)">${n}</span><span class="sub">${d}</span><span>${E.filter((e) => e[0] === si).map(([, a, k]) => `${A[a][0]} ${k}×`).join(' · ')}${N.some((e) => e[0] === si) ? ' · named: reviewer' : ''}</span></li>`).join('')}</ul>
+      <div style="padding:0 20px 14px"><div class="p-legend"><span style="--m:var(--accent)">skill</span><span style="--m:var(--line-strong)">agent type</span></div></div>
+      <details class="p-explain"><summary>How to read this graph</summary><p>Named: a skill's or agent's text names another skill or an agent type from the session's own list. Called: a Skill call or an agent spawn in the same turn, after the skill loaded. A spawn goes to the skill whose text names it, else to the latest one; tokens go to the skill that started the chain.</p></details></section>
+    <section class="p-card"><div class="p-card-h"><h3>Skill usage</h3><span class="p-seg" role="group" aria-label="Sort"><button type="button" aria-pressed="true">By runs</button><button type="button" aria-pressed="false">By tokens</button></span></div>
+      <div class="p-card-b" style="font-size:14px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 24px;border-bottom:1px solid var(--line)"><span>Most used: <b style="color:var(--ink)">/review</b>, 2 runs, 1.2M tok</span><span>Least used that ran: <b style="color:var(--ink)">/pr</b>, 1 run, 369k tok</span><span>/review costs 1.6× as much per run as /pr</span></div>
+      <div class="p-tablewrap"><table class="p-table"><thead><tr><th>Skill</th><th>Runs</th><th class="hide-phone">Started by</th><th class="r">Tokens</th><th class="r hide-phone">Per run</th><th class="r">API-eq.</th><th class="r hide-phone">Last used</th><th class="hide-phone">Last 7 days</th></tr></thead><tbody>
+        ${SKILL_USAGE.map(([n, runs, by, t, per, c, last, days]) => `<tr><td><span class="mono" style="font-family:var(--mono);color:var(--accent-ink)">${n}</span><span class="sub">project</span></td><td><div class="runs"><span class="num">${runs}</span><span class="p-track"><i style="width:${(runs / max) * 100}%"></i></span></div></td><td class="hide-phone">${by}</td><td class="r num">${tok(t)}</td><td class="r num hide-phone">${tok(per)}</td><td class="r num">${usd(c)}</td><td class="r hide-phone">${last}</td><td class="hide-phone"><svg class="spark" width="70" height="18" viewBox="0 0 70 18" aria-label="${days.reduce((a, b) => a + b, 0)} runs in the last 7 days">${days.map((v, i) => `<rect x="${i * 10}" y="${v ? 4 : 16}" width="7" height="${v ? 14 : 2}" opacity="${v ? 0.9 : 0.3}"/>`).join('')}</svg></td></tr>`).join('')}
+      </tbody></table></div></section>
+    <section class="p-card"><div class="p-card-h"><h3>Listed but never ran</h3><span class="p-hint">5 skills · 2.5k tokens of listing in every session</span></div>
+      <div class="idle">${IDLE.map(([n, src, t, clash]) => `<span class="p-chip${clash ? ' warn' : ''}"><span class="mono" style="font-family:var(--mono)">${n}</span><span class="how">${src} · ${t} tok${clash ? ' · another skill has this name' : ''}</span></span>`).join('')}</div></section>`;
+  }
+
+  /* ---------- Office ---------- */
+  function bot(x, y, m, opts = {}) {
+    const c = `var(--${m})`, P = (px, py, w, h, f, o = 1) => `<rect x="${x + px * 2}" y="${y + py * 2}" width="${w * 2}" height="${h * 2}" style="fill:${f}" opacity="${o}"/>`;
+    const fade = opts.done ? 0.45 : 1;
+    let s = P(5, 0, 1, 2, 'var(--ink)', fade) + P(2, 2, 7, 5, c, fade) + P(3, 3, 2, 2, 'var(--surface)', fade) + P(6, 3, 2, 2, 'var(--surface)', fade) + P(3, 7, 5, 3, c, 0.75 * fade);
+    s += P(11, 4, 5, 4, 'var(--ink)', fade) + P(12, 5, 3, 2, 'var(--data-soft)', fade); // monitor
+    s += P(0, 10, 18, 2, 'var(--line-strong)') + P(1, 12, 1, 3, 'var(--line-strong)') + P(16, 12, 1, 3, 'var(--line-strong)'); // desk
+    if (opts.bubble) s += `<g><rect x="${x + 20}" y="${y - 16}" width="14" height="12" rx="3" style="fill:${opts.bubble[1]}"/><text x="${x + 27}" y="${y - 7}" text-anchor="middle" style="font:700 9px var(--sans);fill:var(--surface)">${opts.bubble[0]}</text></g>`;
+    if (opts.done) s += `<text x="${x + 27}" y="${y - 5}" style="font:700 10px var(--sans);fill:var(--ok)">✓</text>`;
+    return s;
+  }
+  function scene(bots, lines) {
+    let s = '<rect x="0" y="0" width="240" height="40" style="fill:var(--line)"/><rect x="170" y="10" width="24" height="18" style="fill:var(--data-soft)"/><rect x="198" y="10" width="24" height="18" style="fill:var(--data-soft)"/>';
+    for (let i = 0; i < 12; i++) for (let j = 0; j < 6; j++) if ((i + j) % 2) s += `<rect x="${i * 20}" y="${40 + j * 20}" width="20" height="20" style="fill:var(--bg)" opacity=".6"/>`;
+    s += lines.map(([x1, y1, x2, y2]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" style="stroke:var(--accent)" stroke-width="1.5" stroke-dasharray="3 3"/>`).join('');
+    s += '<rect x="14" y="118" width="8" height="12" style="fill:var(--haiku)" opacity=".7"/><rect x="12" y="130" width="12" height="6" style="fill:var(--line-strong)"/>';
+    return `<svg class="scene" viewBox="0 0 240 150" role="img">${s}${bots.join('')}</svg>`;
+  }
+  function office() {
+    const room = (s, svg, ids) => {
+      const t = s.agents.reduce((n, a) => n + a.tok, 0), cost = s.agents.reduce((n, a) => n + a.cost, 0);
+      return `<section class="p-card room" aria-label="Room ${s.project}"><div class="roomh"><h3>${s.project}</h3><span class="nums"><span><b>${tok(t)}</b> tok</span><span><b>${usd(cost)}</b></span><span>context <span class="p-track"><i style="width:${s.ctx || 0}%"></i></span> <b>${s.ctx == null ? '—' : s.ctx + '%'}</b></span></span></div>
+        ${svg}<ul class="roster">${ids.map((id) => { const a = AGENTS[id]; return `<li data-agent="${id}" tabindex="0" role="button" aria-label="${a.name}: open its history">${av(a.name[0].toUpperCase(), a.m)}<span class="w"><b style="font-weight:600">${a.name}</b><small>${esc(a.what)}</small></span>${pill(a.st)}</li>`; }).join('')}</ul></section>`;
+    };
+    const r1 = scene([bot(60, 58, 'opus'), bot(140, 100, 'haiku', { done: true }), bot(60, 108, 'sonnet', { bubble: ['…', 'var(--data)'] })], [[78, 82, 78, 108], [84, 82, 150, 100]]);
+    const r2 = scene([bot(100, 76, 'sonnet', { bubble: ['?', 'var(--wait-dot)'] })], []);
+    const r3 = scene([bot(60, 58, 'opus'), bot(30, 106, 'sonnet', { done: true }), bot(130, 106, 'haiku', { bubble: ['!', 'var(--bad-dot)'] })], [[70, 82, 40, 106], [86, 82, 140, 106]]);
+    return `<div class="p-head"><h1>Your floor</h1><div class="p-tally"><span style="--c-dot:var(--ok-dot)">3 rooms busy</span><span style="--c-dot:var(--data)">7 bots</span><span style="--c-dot:var(--bad-dot)">1 stalled</span><span style="--c-dot:var(--wait-dot)">1 waiting for you</span></div></div>
+    <div class="rooms">${room(SESSIONS[0], r1, ['a1', 'a2', 'a3'])}${room(SESSIONS[1], r2, ['b1'])}${room(SESSIONS[2], r3, ['c1', 'c2', 'c3'])}</div>
+    <section class="p-card"><details class="p-explain" style="border-top:0"><summary>How to read the office</summary><p>A bot's colour is its model (Opus plum, Sonnet blue, Haiku teal). The screen shows its tool: code for Edit, Write and Bash, a page for Read, Grep and Glob, a globe for the web. A bubble says … thinking, ? waiting for you, ! stalled; a green check means done, and the bot leaves after a minute. A dotted line is a delegation, from the parent's desk to the new bot.</p></details></section>`;
+  }
+
+  /* ---------- Analysis ---------- */
+  function analysis() {
+    const key = state.key;
+    return `<div class="p-head"><h1>Analysis</h1><span class="p-sub">Claude reads a project's week and suggests what to change. It runs only when you press Confirm.</span></div>
+    <div class="grid2"><div class="stack"><section class="p-card"><div class="p-card-h"><h3>New analysis</h3><span class="p-hint">nothing is sent until you confirm</span></div><div class="p-card-b" style="display:grid;gap:16px">
+      <div class="fields"><label class="p-field">Project<select class="p-select"><option>docs-site</option><option>mobile-app</option><option>shop-api</option></select></label>
+        <label class="p-field">Period<select class="p-select"><option>Last 7 days</option><option>Last 30 days</option><option>One session</option></select></label>
+        <label class="p-field">Model<select class="p-select"><option>Opus 5.5 · $4 / $20</option><option>Sonnet 5.5 · $2 / $10</option><option>Haiku 5.5 · $0.10 / $0.50</option></select></label></div>
+      <div class="reads" aria-label="What it reads"><span class="p-chip">10 sessions</span><span class="p-chip">43 agents</span><span class="p-chip">3 skills that ran · 5 that never did</span><span class="p-chip">188 tool calls · 9 failed</span><span class="p-chip">15.2M tokens by model</span><span class="p-chip">thinking: not captured</span><span class="p-chip">prompts and answers: content off</span></div>
+      ${key ? `<div class="est" aria-label="The estimate"><div class="big"><div class="p-stat"><span class="k">Input, counted</span><span class="v">182,400</span></div><div class="p-stat"><span class="k">Output, at most</span><span class="v">16,000</span></div><div class="p-stat"><span class="k">Cost, at most</span><span class="v">$1.05</span></div></div>
+        <span class="alt">Same input on <b>Sonnet 5.5</b>: at most <b>$0.52</b> · <b>Haiku 5.5</b>: at most <b>$0.13</b>. Prices per million tokens, input / output.</span>
+        <div class="p-meter"><span class="k">This month $0.07 of your $20.00 cap · after this run, at most $1.12</span><div class="p-track"><i style="width:5.6%"></i></div></div>
+        <div class="actions"><button type="button" class="p-btn primary">Confirm and run · at most $1.05</button><button type="button" class="p-btn">Cancel</button><span style="font-size:14px;color:var(--muted)">Nothing has been sent to Claude yet.</span></div></div>`
+      : `<div class="actions"><button type="button" class="p-btn" disabled>Estimate</button><span style="font-size:14px;color:var(--muted)">Add an API key to estimate</span></div>
+        <div class="p-notice warn"><span class="i">!</span><p><b>No API key.</b> Add <code>ANTHROPIC_API_KEY</code> to <code>deploy/.env</code> and restart the server. Until then nothing can be sent.</p></div>`}
+      <div style="display:flex;flex-wrap:wrap;gap:4px 18px;align-items:center;font-size:14px;color:var(--muted)"><span>Monthly cap <b class="num" style="color:var(--ink)">$20.00</b></span><a class="p-link" href="#analysis">Change</a><span>Every run is a line in the Ledger</span></div>
+    </div></section></div>
+    <div class="stack"><section class="p-card"><div class="p-card-h"><h3>Reports</h3><span class="p-hint">1 so far</span></div>
+      <ul class="reports"><li aria-current="true" tabindex="0"><span><b style="font-weight:600">docs-site</b> · Oct 15–22 · Opus 5.5</span><span class="num">$0.08</span><span class="d">Oct 22, 09:14 · 14.8k in · 2.1k out</span></li></ul>
+      <div class="report" style="border-top:1px solid var(--line)"><span class="excerpt">Example report, synthetic</span>
+        <div><h4>Where the tokens go</h4><p>The main agent spent 7.1M of the week's 15.2M tokens (47%). 90% of input came from cache, so most of the cost is new input in three long sessions on Wednesday.</p></div>
+        <div><h4>Skills that waste them</h4><p>/review ran twice at 576k tokens a run: it dispatches general-purpose for a summary the reviewer agent already writes. Five skills never ran and cost 2.5k tokens of listing in every session.</p></div>
+        <div><h4>Repeated failures</h4><p>Bash exited with code 1 nine times, each right after an Edit to docs/search.md: the link check runs before the build has finished.</p></div>
+        <div><h4>Changes to try</h4><ul><li>Have /review call the reviewer agent instead of general-purpose.</li><li>Move code, pdf, release and changelog to the projects that use them, or remove them.</li><li>Run the link check after the build in the docs gate.</li></ul></div>
+      </div></section></div></div>`;
+  }
+
+  /* ---------- Decisions per board ---------- */
+  const DECIDE = {
+    live: ['"Open history ›" goes: the whole agent row opens the history.', 'The yellow banner becomes Needs you, listing every agent waiting for you or stalled, oldest first.', 'Agent cards become rows on one grid; subagents hang under their parent; done ones stay, dimmed.', 'Before the first turn ends, Context reads "after the first turn" instead of "—" over an empty bar.', 'The session\'s skills stay as chips under its header, each saying how it started.'],
+    ledger: ['The five KPI cards become one stat group card.', 'The filters move to the right of the title; on a phone they wrap under it.', 'The chart tooltip is HTML and also opens on keyboard focus; the busiest day carries its total; the chart gains "Show as a table".', 'By project, by model and by role share one ranked-list style: model rows in model colours, the rest in the data colour.', 'Efficiency by project keeps its columns; on a phone, Waiting on you and Requests drop to save width (they stay on desktop and in the table).'],
+    roles: ['Token labels sit at the child end of each edge instead of bunching under the orchestrator; edges leave from spread points.', 'Nodes are HTML over the edge drawing, so their text no longer depends on hard-coded SVG offsets (Pipeline.tsx:159–165). Node size stays 190×94, so <code>pipeline-layout.spec.ts</code> stays green.', 'Picking a role opens its panel on the right: what the role means, its agents, and the role fix (Save role is now a primary button).', '"Where a role comes from" moves into a disclosure at the panel\'s foot.', 'On a phone the chart gives way to the ranked role list, as today.'],
+    session: ['The session picker reads "Oct 22, 17:13 · 472k tok".', 'The lanes use the model colours with a legend; a solid bar is the agent\'s own turns, a thin one is waiting on a tool or an agent.', 'A stalled span is striped red and labelled in words.'],
+    skills: ['The graph keeps two columns, run first and agents dispatched; node size stays 176×58, so <code>skills-layout.spec.ts</code> stays green.', 'Edge counts sit at the agent end; a dashed edge is a name the text mentions but never called here.', 'The paragraph under the graph becomes "How to read this graph".', 'Skill usage keeps its columns; on a phone, Started by, Per run, Last used and the spark drop.', '"Listed but never ran" chips show tokens per session; the name clash is the amber chip.'],
+    office: ['Rooms share equal columns and fill the width instead of leaving half the screen empty.', 'Each room gets a roster under its scene: every bot with what it is doing and its state in words; a row opens the history.', 'The legend moves into "How to read the office".', 'Room headers show tokens, cost and context on one line.'],
+    analysis: ['The model option reads "Opus 5.5 · $4 / $20" so it fits the select; the estimate spells the prices out.', 'The estimate shows three numbers, the same input on the other models, and the month\'s cap as a meter before Confirm.', 'Without a key, Estimate is disabled with its reason beside it and a warning notice under it.', 'A stored report opens under the list in four sections.', 'The stray <code>.k</code> rule that coloured the estimate numbers purple goes.'],
+  };
+  const TITLES = { live: 'Live', ledger: 'Ledger', roles: 'Pipeline · roles', session: 'Pipeline · one session', skills: 'Pipeline · skills', office: 'Office', analysis: 'Analysis' };
+
+  /* ---------- Render and wiring ---------- */
+  const RENDER = { live, ledger, roles, session, skills, office, analysis };
+  const NAV = { live: 'live', ledger: 'ledger', roles: 'pipeline', session: 'pipeline', skills: 'pipeline', office: 'office', analysis: 'analysis' };
+  function render() {
+    $('#page').innerHTML = RENDER[state.board]();
+    document.querySelectorAll('.p-nav a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.go === NAV[state.board]));
+    document.querySelectorAll('.p-nav a[aria-current]').forEach((a) => a.setAttribute('aria-current', 'page'));
+    document.querySelectorAll('#rv-page button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === state.board)));
+    $('#rv-akey').hidden = state.board !== 'analysis';
+    $('#decide').innerHTML = `<h2>What the ${TITLES[state.board]} board decides</h2><ol>${DECIDE[state.board].map((d) => `<li>${d}</li>`).join('')}</ol>`;
+    if (state.board === 'ledger') wireChart();
+  }
+  function wireChart() {
+    const box = $('#chartbox'), tip = $('#ctip');
+    const show = (g) => {
+      const i = +g.dataset.i, t = WEEK.opus[i] + WEEK.sonnet[i] + WEEK.haiku[i];
+      tip.innerHTML = `<b>${WEEK.days[i]} · ${t.toFixed(1)}M tok</b><span class="row"><span>Opus</span><span>${WEEK.opus[i].toFixed(1)}M</span></span><span class="row"><span>Sonnet</span><span>${WEEK.sonnet[i].toFixed(1)}M</span></span><span class="row"><span>Haiku</span><span>${WEEK.haiku[i].toFixed(1)}M</span></span><span class="row"><span>API-equivalent</span><span>$${WEEK.cost[i].toFixed(2)}</span></span>`;
+      tip.hidden = false;
+      const r = g.querySelector('path').getBoundingClientRect(), b = box.getBoundingClientRect();
+      const half = tip.offsetWidth / 2;
+      tip.style.left = Math.min(Math.max(r.left - b.left + r.width / 2, half), b.width - half) + 'px';
+      tip.style.top = (r.top - b.top) + 'px';
+    };
+    box.querySelectorAll('.bar').forEach((g) => { g.addEventListener('pointerenter', () => show(g)); g.addEventListener('focus', () => show(g)); g.addEventListener('pointerleave', () => { tip.hidden = true; }); g.addEventListener('blur', () => { tip.hidden = true; }); });
+  }
+  // History drawer
+  const resIcon = (r, v) => (r === 'ok' ? `<span class="res ok">✓ ${v}</span>` : r === 'bad' ? `<span class="res bad">✗ ${v}</span>` : `<span class="res run">running ${v}</span>`);
+  function drawerBody() {
+    const a = state.agent, failed = a.h.filter((x) => x[3] === 'bad');
+    const tabs = [['did', 'What it did', a.h.length], ['failed', 'Failed', failed.length], ...(a.tl ? [['tasks', 'Tasks', `${a.tl.filter((t) => t[0] === 'done').length}/${a.tl.length}`]] : [])];
+    if (!tabs.some((t) => t[0] === state.tab)) state.tab = 'did';
+    $('#d-tabs').innerHTML = tabs.map(([k, l, n]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === state.tab}">${l} <span class="n">${n}</span></button>`).join('');
+    const rows = (list) => list.map(([t, tool, target, r, v]) => `<div class="p-ev"><span class="t">${t}</span><span class="tool">${esc(tool)}</span><span class="target">${esc(target)}</span>${resIcon(r, esc(v))}</div>`).join('');
+    const body = state.tab === 'did' ? rows([...a.h].reverse()) : state.tab === 'failed' ? (failed.length ? rows(failed) : '<div class="p-empty"><b>Nothing failed</b></div>')
+      : `<div style="padding:4px 20px"><ul class="p-tasklist">${a.tl.map(([st, l]) => `<li class="${st === 'done' ? 'done' : st === 'run' ? 'now' : ''}"><span class="mk">${st === 'done' ? '✓' : st === 'run' ? '●' : '○'}</span><span>${esc(l)}</span></li>`).join('')}</ul></div>`;
+    $('#d-body').innerHTML = body + '<div class="p-notice note2"><span class="i">i</span><p><b>Content is off.</b> This shows tools, files and timings. Set <code>content: full</code> in the plugin to also see prompts, answers and thinking.</p></div>';
+  }
+  function openAgent(id, from) {
+    state.agent = AGENTS[id]; state.tab = 'did'; state.opener = from;
+    const a = state.agent;
+    $('#d-head').innerHTML = `<div class="r1">${av(a.name[0].toUpperCase(), a.m)}<h3 id="d-name">${esc(a.name)}</h3>${pill(a.st)}<button type="button" class="p-x" id="d-close" aria-label="Close the history">×</button></div><div class="p-facts"><span>${a.role}</span>${model(a.m)}<span>${a.session.project}</span>${a.facts.map((f) => `<span>${f}</span>`).join('')}<span class="num">${tok(a.tok)} tok</span><span class="num">${usd(a.cost)}</span></div>`;
+    drawerBody();
+    document.querySelectorAll('[data-agent].agent').forEach((r) => r.setAttribute('aria-expanded', String(r.dataset.agent === id)));
+    $('#drawer').hidden = false; $('#scrim').hidden = false; $('#d-close').focus();
+  }
+  function closeAgent() {
+    $('#drawer').hidden = true; $('#scrim').hidden = true;
+    document.querySelectorAll('.agent').forEach((r) => r.setAttribute('aria-expanded', 'false'));
+    if (state.opener && document.contains(state.opener)) state.opener.focus();
+  }
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t.closest('#d-close') || t.closest('#scrim')) return closeAgent();
+    const tab = t.closest('[data-tab]'); if (tab) { state.tab = tab.dataset.tab; return drawerBody(); }
+    const ag = t.closest('[data-agent]'); if (ag) return openAgent(ag.dataset.agent, ag);
+    const go = t.closest('[data-go]'); if (go) { e.preventDefault(); state.board = { pipeline: 'roles' }[go.dataset.go] || go.dataset.go; return render(); }
+    const bd = t.closest('[data-board]'); if (bd) { state.board = bd.dataset.board; return render(); }
+    const role = t.closest('[data-role]'); if (role) { state.role = role.dataset.role; return render(); }
+    const save = t.closest('.fix .p-btn'); if (save) { save.nextElementSibling.hidden = false; }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#drawer').hidden) return closeAgent();
+    const r = e.target.closest && e.target.closest('[data-agent][role="button"]');
+    if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openAgent(r.dataset.agent, r); }
+  });
+  const seg = (id, f) => $(id).addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; b.parentElement.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); f(b.dataset.v); });
+  seg('#rv-page', (v) => { state.board = v; render(); });
+  seg('#rv-theme', (v) => (v === 'system' ? document.documentElement.removeAttribute('data-theme') : document.documentElement.setAttribute('data-theme', v)));
+  seg('#rv-width', (v) => $('#stage').classList.toggle('phone', v === 'phone'));
+  seg('#rv-key', (v) => { state.key = v === 'key'; render(); });
+  const h = location.hash.slice(1); if (RENDER[h]) state.board = h;
+  render();
+})();
+</script>

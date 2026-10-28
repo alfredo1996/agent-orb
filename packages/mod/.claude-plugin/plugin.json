@@ -1,0 +1,59 @@
+{
+  "name": "agent-orb",
+  "version": "0.3.0",
+  "description": "Records what your Claude Code agents do (tools, tokens, models, delegations) and sends it to your own agent-orb server",
+  "author": {
+    "name": "Alfredo Rubin"
+  },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "endpoint": {
+      "type": "string",
+      "title": "Server URL",
+      "description": "Your agent-orb server",
+      "default": "http://127.0.0.1:4040"
+    },
+    "token": {
+      "type": "string",
+      "title": "Token",
+      "description": "ORB_TOKEN from the server's deploy/.env",
+      "sensitive": true,
+      "default": ""
+    },
+    "stallMinutes": {
+      "type": "number",
+      "title": "Stall alert (minutes)",
+      "description": "Flag a tool, or a silent agent mid-turn, after this many minutes",
+      "default": 15
+    },
+    "modelCeiling": {
+      "type": "string",
+      "title": "Model ceiling",
+      "description": "Agents with no model of their own (general-purpose, workflow agents, model: inherit) are flagged above this; off turns that part off",
+      "options": [
+        "haiku",
+        "sonnet",
+        "opus",
+        "off"
+      ],
+      "default": "sonnet"
+    },
+    "content": {
+      "type": "string",
+      "title": "Content",
+      "description": "off: metadata only. full: also prompts, answers, thinking where shared, tool input and output, masked and capped",
+      "options": [
+        "off",
+        "full"
+      ],
+      "default": "off"
+    },
+    "excludeProjects": {
+      "type": "string",
+      "title": "Never send content for",
+      "description": "Comma-separated repo names, owner/repo, or paths: these projects stay metadata-only",
+      "default": ""
+    }
+  }
+}

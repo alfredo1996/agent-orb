@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-orb · Office (mockup)</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #f0f2f5; --border: #e2e5ea; --border-strong: #cdd2da;
+    --text: #13161b; --muted: #59626e; --faint: #8b939e;
+    --accent: #5b5bd6; --accent-soft: #ececfb;
+    --ok: #17804a; --ok-bg: #e5f4eb;
+    --wait: #8f5a00; --wait-bg: #fff2d6; --wait-line: #f0b440;
+    --bad: #c22a2a; --bad-bg: #fdeaea; --bad-row: #fff6f6; --bad-line: #e5484d;
+    --done: #6b7380; --done-bg: #eef0f3;
+    --opus: #7240d6; --opus-bg: #f1ebfd; --sonnet: #1f5fd1; --sonnet-bg: #e8f0fd; --haiku: #0b7f75; --haiku-bg: #e2f5f2;
+    --term-bg: #fbfbfc; --term-text: #1d2128; --term-dim: #7a828d;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .04);
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d0f13; --surface: #15181e; --surface-2: #1b1f26; --border: #262c35; --border-strong: #353d48;
+      --text: #e6e9ed; --muted: #9ba3ad; --faint: #6c747f;
+      --accent: #8b8cf0; --accent-soft: #23243f;
+      --ok: #4ccf86; --ok-bg: #11301f;
+      --wait: #f5bd45; --wait-bg: #36290c; --wait-line: #c9911f;
+      --bad: #ff7a7a; --bad-bg: #3d1717; --bad-row: #22141a; --bad-line: #e5484d;
+      --done: #8a929d; --done-bg: #22272f;
+      --opus: #b598ff; --opus-bg: #2a2142; --sonnet: #84adff; --sonnet-bg: #1b2842; --haiku: #5fd3c6; --haiku-bg: #13312e;
+      --term-bg: #0a0c0f; --term-text: #d9dde2; --term-dim: #737b86;
+      --shadow: none;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d0f13; --surface: #15181e; --surface-2: #1b1f26; --border: #262c35; --border-strong: #353d48;
+    --text: #e6e9ed; --muted: #9ba3ad; --faint: #6c747f;
+    --accent: #8b8cf0; --accent-soft: #23243f;
+    --ok: #4ccf86; --ok-bg: #11301f;
+    --wait: #f5bd45; --wait-bg: #36290c; --wait-line: #c9911f;
+    --bad: #ff7a7a; --bad-bg: #3d1717; --bad-row: #22141a; --bad-line: #e5484d;
+    --done: #8a929d; --done-bg: #22272f;
+    --opus: #b598ff; --opus-bg: #2a2142; --sonnet: #84adff; --sonnet-bg: #1b2842; --haiku: #5fd3c6; --haiku-bg: #13312e;
+    --term-bg: #0a0c0f; --term-text: #d9dde2; --term-dim: #737b86;
+    --shadow: none;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+  .num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .num { font-size: 13px; }
+
+  /* Mockup chrome: not part of the product */
+  .mock-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 8px 16px; background: var(--surface-2); border-bottom: 1px dashed var(--border-strong); font-size: 12px; color: var(--muted); }
+  .mock-bar b { color: var(--text); font-weight: 600; }
+  .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+  .seg button { font: inherit; border: 0; background: var(--surface); color: var(--muted); padding: 3px 10px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border-strong); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+  .stage { padding: 0; }
+  .stage.phone { padding: 24px 16px 48px; display: flex; justify-content: center; }
+  .frame { container-type: inline-size; background: var(--bg); }
+  .stage.phone .frame { width: 390px; border: 1px solid var(--border-strong); border-radius: 28px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.12); min-height: 780px; }
+
+  /* App */
+  .topbar { display: flex; align-items: center; gap: 20px; padding: 0 20px; height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -.01em; }
+  .orb { width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 32% 30%, #c7cbff 0, #7b7cf0 38%, #3c3aa8 78%, #26246e 100%); box-shadow: 0 0 0 3px var(--accent-soft); }
+  nav { display: flex; gap: 2px; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; font-weight: 500; }
+  nav a[aria-current="page"] { color: var(--text); background: var(--surface-2); }
+  .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); }
+
+  main { padding: 20px; display: grid; gap: 20px; max-width: 1360px; margin: 0 auto; }
+  .pagehead { display: flex; align-items: baseline; gap: 12px; }
+  .pagehead h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+  .pagehead .sub { color: var(--muted); font-size: 13px; }
+
+  .session { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+  .shead { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .sid { display: grid; gap: 4px; min-width: 0; }
+  .sid .title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .sid .project { font-weight: 650; font-size: 15px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font: 12px/1 var(--mono); padding: 3px 6px; border-radius: 5px; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+  .meta { color: var(--muted); font-size: 12px; }
+  .flags { display: flex; gap: 6px; }
+  .flag { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .flag.bad { color: var(--bad); background: var(--bad-bg); }
+  .flag.wait { color: var(--wait); background: var(--wait-bg); }
+  .kpis { display: flex; gap: 24px; align-items: center; }
+  .kpi { display: grid; gap: 2px; }
+  .kpi .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .kpi .value { font: 600 18px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+  .kpi .value small { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .ctx { width: 120px; }
+  .bar { height: 6px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; margin-top: 4px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th.r, td.r { text-align: right; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  .tw { overflow-x: auto; }
+  .desc { white-space: normal; color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+  .desc.none { color: var(--faint); font-style: italic; }
+  .agent { display: flex; align-items: flex-start; gap: 6px; }
+  .tree { font-family: var(--mono); color: var(--faint); white-space: pre; font-size: 13px; line-height: 20px; }
+  .type { font-weight: 600; }
+  .role { font-size: 12px; color: var(--muted); }
+  .model { display: inline-block; font: 600 12px/1 var(--sans); padding: 4px 7px; border-radius: 5px; }
+  .model.opus { color: var(--opus); background: var(--opus-bg); }
+  .model.sonnet { color: var(--sonnet); background: var(--sonnet-bg); }
+  .model.haiku { color: var(--haiku); background: var(--haiku-bg); }
+  .tool { font-family: var(--mono); font-size: 13px; }
+  .tool .dur { color: var(--muted); margin-left: 6px; }
+  .dim { color: var(--faint); }
+  .state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px; }
+  .state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .state.working { color: var(--ok); background: var(--ok-bg); }
+  .state.waiting { color: var(--wait); background: var(--wait-bg); }
+  .state.stalled { color: var(--bad); background: var(--bad-bg); }
+  .state.done { color: var(--done); background: var(--done-bg); }
+  .state.error { color: var(--bad); background: transparent; border: 1px solid var(--bad-line); }
+  .state .why { font-weight: 500; opacity: .85; }
+
+  tr.stalled td { background: var(--bad-row); }
+  tr.stalled td:first-child { box-shadow: inset 3px 0 0 var(--bad-line); }
+  tr.stalled .tool { color: var(--bad); font-weight: 600; }
+  tr.stalled .tool .dur { color: var(--bad); }
+  tr.waiting td:first-child { box-shadow: inset 3px 0 0 var(--wait-line); }
+  tr.waiting .tool .dur { color: var(--wait); }
+  tr.done td { opacity: .5; }
+  .ph { display: none; }
+
+  .foot { padding: 10px 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); background: var(--surface-2); }
+
+  /* Terminal section */
+  .section-title { font-size: 13px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 12px 0 0; }
+  .term-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 20px; align-items: start; }
+  .term { background: var(--term-bg); color: var(--term-text); border: 1px solid var(--border); border-radius: 10px; font: 13px/1.55 var(--mono); padding: 14px 16px; overflow-x: auto; }
+  .term .cap { font: 600 11px/1 var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+  .prompt { border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 10px; color: var(--term-dim); }
+  .prompt .caret { display: inline-block; width: 8px; height: 15px; background: var(--term-text); vertical-align: -2px; margin-left: 2px; opacity: .7; }
+  .sl { padding: 6px 10px 0; white-space: pre; }
+  .sl.bad { color: var(--bad); font-weight: 600; }
+  .sl .d { color: var(--term-dim); }
+  .term + .term { margin-top: 12px; }
+  .panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .panel-head b { font-weight: 700; }
+  .pt { border-collapse: collapse; width: auto; }
+  .pt td { border: 0; padding: 1px 14px 1px 0; font-size: 13px; background: none; }
+  .pt tr.bad td { color: var(--bad); }
+  .pt tr.wait td { color: var(--wait); }
+  .pt tr.dim td { color: var(--term-dim); }
+  .hd { color: var(--term-dim); font-size: 12px; margin: 10px 0 4px; letter-spacing: .04em; }
+  .k { color: var(--accent); }
+
+  /* Phone: container query, so both the phone frame and a real narrow window get it */
+  @container (max-width: 700px) {
+    .topbar { padding: 0 16px; gap: 12px; height: auto; flex-wrap: wrap; padding-top: 10px; }
+    nav { order: 3; width: 100%; overflow-x: auto; padding-bottom: 6px; }
+    .conn .addr { display: none; }
+    main { padding: 16px; gap: 16px; }
+    .pagehead { flex-direction: column; gap: 2px; }
+    .shead { padding: 12px; }
+    .kpis { width: 100%; justify-content: space-between; gap: 12px; }
+    .kpi .value { font-size: 16px; }
+    .ctx { width: 90px; }
+    thead { display: none; }
+    table, tbody { display: block; }
+    tr { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "agent state" "model nums" "tool last"; gap: 6px 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    tr:last-child { border-bottom: 0; }
+    td { display: block; padding: 0; border: 0; white-space: normal; }
+    td.c-agent { grid-area: agent; } td.c-state { grid-area: state; justify-self: end; }
+    td.c-model { grid-area: model; }
+    td.c-tok { grid-area: nums; justify-self: end; } td.c-cost { display: none; }
+    td.c-tool { grid-area: tool; } td.c-last { grid-area: last; justify-self: end; font-size: 12px; }
+    .ph { display: inline; color: var(--muted); }
+    tr.stalled { background: var(--bad-row); box-shadow: inset 3px 0 0 var(--bad-line); }
+    tr.stalled td { background: none; } tr.stalled td:first-child, tr.waiting td:first-child { box-shadow: none; }
+    tr.waiting { box-shadow: inset 3px 0 0 var(--wait-line); }
+    tr.done { opacity: .5; } tr.done td { opacity: 1; }
+    .term-grid { grid-template-columns: minmax(0, 1fr); }
+    .d-only { display: none; }
+  }
+  @container (min-width: 701px) { .p-only { display: none; } }
+
+  /* Office (design/office.html): pixel art drawn in code, colours from the theme */
+  :root { --px-ink: #1d2433; --px-floor: #e9e4da; --px-floor2: #dfd8cb; --px-wall: #c9d3e6; --px-wall2: #a9b6cf; --px-window: #bfe3ff;
+          --px-desk: #b98a5a; --px-desk2: #8f6640; --px-screen: #26324a; --px-code: #7ee0b2; --px-bubble: #ffffff; --px-plant: #4caf6a; --px-pot: #b5643c;
+          --px-cooler: #dbe6f3; --px-water: #7cc3f2; --ant: #4ccf86; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --px-ink: #0b0e14; --px-floor: #2a2f3a; --px-floor2: #262a34; --px-wall: #343c4f; --px-wall2: #2a3142;
+          --px-window: #3b5f86; --px-desk: #7a5a3c; --px-desk2: #5c432c; --px-screen: #101622; --px-bubble: #e6e9ed; --px-cooler: #4a5568; } }
+  :root[data-theme="dark"] { --px-ink: #0b0e14; --px-floor: #2a2f3a; --px-floor2: #262a34; --px-wall: #343c4f; --px-wall2: #2a3142;
+          --px-window: #3b5f86; --px-desk: #7a5a3c; --px-desk2: #5c432c; --px-screen: #101622; --px-bubble: #e6e9ed; --px-cooler: #4a5568; }
+  .rooms { display: grid; grid-template-columns: minmax(0, 36fr) minmax(0, 22fr); gap: 20px; align-items: start; }
+  .roomcard { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; min-width: 0; }
+  .roomhead { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .roomhead .project { font-weight: 650; font-size: 15px; }
+  .roomhead .kpi { display: inline-flex; gap: 6px; align-items: baseline; font-size: 12px; color: var(--muted); }
+  .roomhead .kpi b { font: 600 14px var(--mono); color: var(--text); }
+  .roomhead .ctx { width: 90px; height: 6px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; display: inline-block; vertical-align: middle; }
+  .roomhead .ctx i { display: block; height: 100%; background: var(--accent); }
+  .scene { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .scene .nm { font: 7.5px var(--sans); font-weight: 600; fill: var(--text); }
+  .scene .tl { font: 6.5px var(--mono); fill: var(--muted); }
+  .scene .tl.stalled, .scene .tl.error { fill: var(--bad); } .scene .tl.waiting { fill: var(--wait); }
+  .bot.waiting { --ant: var(--wait-line); } .bot.stalled, .bot.error { --ant: var(--bad-line); } .bot.done { --ant: var(--faint); opacity: .55; }
+  .bot.thinking { --ant: var(--accent); }
+  .roster { display: none; list-style: none; margin: 0; padding: 6px 0; }
+  .roster li { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 14px; font-size: 13px; border-top: 1px dashed var(--border); }
+  .roster li:first-child { border-top: 0; }
+  .roster .dot { width: 10px; height: 10px; border-radius: 3px; }
+  .roster .t { color: var(--muted); font: 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .key { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--muted); }
+  .key b { color: var(--text); font-weight: 600; }
+  @media (prefers-reduced-motion: no-preference) {
+    .bot.typing .hands rect:first-child { animation: tap .5s steps(2) infinite; }
+    .bot.typing .hands rect:last-child { animation: tap .5s steps(2) infinite .25s; }
+    .bot.browsing .hands rect { animation: tap 1.2s steps(2) infinite; }
+    .bot.reading .eye { animation: read 2s steps(4) infinite; }
+    .bubble.think text { animation: blink 1.4s steps(3) infinite; }
+    .bot.waiting .ant, .bot.stalled .ant { animation: blink 1s steps(2) infinite; }
+    .scr.code .line { animation: blink 1.6s steps(2) infinite; }
+    .deleg { animation: dash 1s linear infinite; }
+    @keyframes tap { 50% { transform: translateY(-1px); } }
+    @keyframes read { 25% { transform: translateX(1px); } 75% { transform: translateX(-0.5px); } }
+    @keyframes blink { 50% { opacity: .25; } }
+    @keyframes dash { to { stroke-dashoffset: -8; } }
+  }
+  @container (max-width: 900px) { .rooms { grid-template-columns: minmax(0, 1fr); } }
+  @container (max-width: 700px) { .scene .nm, .scene .tl { display: none; } .roster { display: grid; } }
+</style>
+</head>
+<body>
+<div class="mock-bar" role="region" aria-label="Mockup controls">
+  <span><b>Mockup</b> · Office view (PROJECT.md §8.4) · pixel bots drawn in code, coloured by model · sample data</span>
+  <span>Theme <span class="seg" data-group="theme"><button data-v="auto" aria-pressed="true">Auto</button><button data-v="light" aria-pressed="false">Light</button><button data-v="dark" aria-pressed="false">Dark</button></span></span>
+  <span>Width <span class="seg" data-group="width"><button data-v="desktop" aria-pressed="true">Desktop</button><button data-v="phone" aria-pressed="false">Phone</button></span></span>
+</div>
+<div class="stage" id="stage">
+<div class="frame">
+  <header class="topbar">
+    <div class="brand"><span class="orb" aria-hidden="true"></span>agent-orb</div>
+    <nav aria-label="Views"><a href="#">Live</a><a href="#">Ledger</a><a href="#">Pipeline</a><a href="#" aria-current="page">Office</a></nav>
+    <div class="conn"><span class="pulse"></span>Live · 0.4 s<span class="addr"> · 127.0.0.1:4040</span></div>
+  </header>
+  <main>
+    <div class="pagehead"><h1>Your floor</h1><span class="sub">2 rooms busy · 9 bots · 1 stalled · 1 waiting for you</span></div>
+    <div class="rooms">
+      <section class="roomcard" aria-label="Room agent-orb">
+        <div class="roomhead"><span class="project">agent-orb</span>
+          <span class="kpi">tokens <b>412k</b></span><span class="kpi">API-eq. <b>$1.38</b></span>
+          <span class="kpi">context <span class="ctx"><i style="width:61%"></i></span> <b>61%</b></span></div>
+        <svg class="scene" viewBox="0 0 360 220" shape-rendering="crispEdges" role="img" aria-label="The agent-orb room: six bots at desks"><defs><symbol id="bot" viewBox="0 0 12 12" overflow="visible"><rect x="4" y="0" width="1" height="1" fill="var(--px-ink)"/><rect x="5" y="0" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="1" width="1" height="1" fill="var(--ant)" class="ant"/><rect x="5" y="1" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="5" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="6" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="7" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="3" width="1" height="1" fill="currentColor"/><rect x="3" y="3" width="1" height="1" fill="currentColor"/><rect x="4" y="3" width="1" height="1" fill="currentColor"/><rect x="5" y="3" width="1" height="1" fill="currentColor"/><rect x="6" y="3" width="1" height="1" fill="currentColor"/><rect x="7" y="3" width="1" height="1" fill="currentColor"/><rect x="8" y="3" width="1" height="1" fill="currentColor"/><rect x="9" y="3" width="1" height="1" fill="currentColor"/><rect x="10" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="4" width="1" height="1" fill="currentColor"/><rect x="3" y="4" width="1" height="1" fill="#ffffff"/><rect x="4" y="4" width="1" height="1" fill="#ffffff"/><rect x="5" y="4" width="1" height="1" fill="currentColor"/><rect x="6" y="4" width="1" height="1" fill="currentColor"/><rect x="7" y="4" width="1" height="1" fill="#ffffff"/><rect x="8" y="4" width="1" height="1" fill="#ffffff"/><rect x="9" y="4" width="1" height="1" fill="currentColor"/><rect x="10" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="5" width="1" height="1" fill="currentColor"/><rect x="3" y="5" width="1" height="1" fill="#ffffff"/><rect x="4" y="5" width="1" height="1" fill="var(--px-ink)" class="eye"/><rect x="5" y="5" width="1" height="1" fill="currentColor"/><rect x="6" y="5" width="1" height="1" fill="currentColor"/><rect x="7" y="5" width="1" height="1" fill="#ffffff"/><rect x="8" y="5" width="1" height="1" fill="var(--px-ink)" class="eye"/><rect x="9" y="5" width="1" height="1" fill="currentColor"/><rect x="10" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="6" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="6" width="1" height="1" fill="currentColor"/><rect x="3" y="6" width="1" height="1" fill="currentColor"/><rect x="4" y="6" width="1" height="1" fill="currentColor"/><rect x="5" y="6" width="1" height="1" fill="currentColor"/><rect x="6" y="6" width="1" height="1" fill="currentColor"/><rect x="7" y="6" width="1" height="1" fill="currentColor"/><rect x="8" y="6" width="1" height="1" fill="currentColor"/><rect x="9" y="6" width="1" height="1" fill="currentColor"/><rect x="10" y="6" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="7" width="1" height="1" fill="currentColor"/><rect x="3" y="7" width="1" height="1" fill="currentColor"/><rect x="4" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="5" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="6" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="7" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="7" width="1" height="1" fill="currentColor"/><rect x="9" y="7" width="1" height="1" fill="currentColor"/><rect x="10" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="8" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="8" width="1" height="1" fill="currentColor"/><rect x="3" y="8" width="1" height="1" fill="currentColor"/><rect x="4" y="8" width="1" height="1" fill="currentColor"/><rect x="5" y="8" width="1" height="1" fill="currentColor"/><rect x="6" y="8" width="1" height="1" fill="currentColor"/><rect x="7" y="8" width="1" height="1" fill="currentColor"/><rect x="8" y="8" width="1" height="1" fill="currentColor"/><rect x="9" y="8" width="1" height="1" fill="currentColor"/><rect x="10" y="8" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="5" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="6" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="7" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="10" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="10" width="1" height="1" fill="currentColor"/><rect x="3" y="10" width="1" height="1" fill="currentColor"/><rect x="4" y="10" width="1" height="1" fill="currentColor"/><rect x="5" y="10" width="1" height="1" fill="currentColor"/><rect x="6" y="10" width="1" height="1" fill="currentColor"/><rect x="7" y="10" width="1" height="1" fill="currentColor"/><rect x="8" y="10" width="1" height="1" fill="currentColor"/><rect x="9" y="10" width="1" height="1" fill="currentColor"/><rect x="10" y="10" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="11" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="11" width="1" height="1" fill="currentColor"/><rect x="2" y="11" width="1" height="1" fill="currentColor"/><rect x="3" y="11" width="1" height="1" fill="currentColor"/><rect x="4" y="11" width="1" height="1" fill="currentColor"/><rect x="5" y="11" width="1" height="1" fill="currentColor"/><rect x="6" y="11" width="1" height="1" fill="currentColor"/><rect x="7" y="11" width="1" height="1" fill="currentColor"/><rect x="8" y="11" width="1" height="1" fill="currentColor"/><rect x="9" y="11" width="1" height="1" fill="currentColor"/><rect x="10" y="11" width="1" height="1" fill="currentColor"/><rect x="11" y="11" width="1" height="1" fill="var(--px-ink)"/></symbol><pattern id="floor" width="12" height="12" patternUnits="userSpaceOnUse"><rect width="12" height="12" fill="var(--px-floor)"/><rect width="6" height="6" fill="var(--px-floor2)"/><rect x="6" y="6" width="6" height="6" fill="var(--px-floor2)"/></pattern></defs><rect width="360" height="220" fill="url(#floor)"/><rect width="360" height="24" fill="var(--px-wall)"/><rect y="24" width="360" height="3" fill="var(--px-wall2)"/><rect x="312" y="5" width="30" height="14" fill="var(--px-window)"/><rect x="326.5" y="5" width="1.5" height="14" fill="var(--px-wall2)"/><rect x="8" y="198" width="8" height="9" fill="var(--px-pot)"/><rect x="5" y="186" width="14" height="12" fill="var(--px-plant)"/><rect x="9" y="182" width="6" height="5" fill="var(--px-plant)"/><rect x="342" y="184" width="11" height="22" fill="var(--px-cooler)"/><rect x="344" y="178" width="7" height="7" fill="var(--px-water)"/><path class="deleg" d="M170,96 C140,120 128,130 112,146" fill="none" stroke="var(--accent)" stroke-width="1.2" stroke-dasharray="3 3"/><g class="seat typing"><g class="bot typing" style="color: var(--opus)"><use href="#bot" x="161" y="53" width="30" height="30"/><g class="hands"><rect x="165" y="83" width="5" height="2" fill="var(--px-ink)"/><rect x="182" y="83" width="5" height="2" fill="var(--px-ink)"/></g></g><rect x="155" y="82" width="52" height="8" fill="var(--px-desk)"/><rect x="155" y="90" width="52" height="3" fill="var(--px-desk2)"/><rect x="157" y="93" width="3" height="7" fill="var(--px-desk2)"/><rect x="202" y="93" width="3" height="7" fill="var(--px-desk2)"/><rect x="190" y="70" width="15" height="11" fill="var(--px-ink)"/><rect x="191" y="71" width="13" height="8" fill="var(--px-screen)"/><rect x="196" y="81" width="3" height="1" fill="var(--px-ink)"/><rect x="192" y="72" width="8" height="1" fill="var(--px-code)" class="line"/><rect x="192" y="74" width="5" height="1" fill="var(--px-code)" class="line"/><rect x="192" y="76" width="10" height="1" fill="var(--px-code)" class="line"/><text class="nm" x="181.0" y="110" text-anchor="middle">main · orchestrator</text><text class="tl typing" x="181.0" y="118" text-anchor="middle">Agent 4m</text></g><g class="seat stalled"><g class="bot stalled" style="color: var(--haiku)"><use href="#bot" x="32" y="145" width="24" height="24"/></g><rect x="26" y="168" width="46" height="8" fill="var(--px-desk)"/><rect x="26" y="176" width="46" height="3" fill="var(--px-desk2)"/><rect x="28" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="67" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="55" y="156" width="15" height="11" fill="var(--px-ink)"/><rect x="56" y="157" width="13" height="8" fill="var(--px-screen)"/><rect x="61" y="167" width="3" height="1" fill="var(--px-ink)"/><g class="bubble stall"><rect x="52" y="132" width="14" height="11" rx="3" fill="var(--bad-line)"/><rect x="55" y="143" width="3" height="3" fill="var(--bad-line)"/><text x="59" y="140.6" text-anchor="middle" font-size="8.5" font-weight="700" fill="#ffffff" font-family="var(--mono)">!</text></g><text class="nm" x="49.0" y="196" text-anchor="middle">Explore</text><text class="tl stalled" x="49.0" y="204" text-anchor="middle">WebFetch 16m</text></g><g class="seat typing"><g class="bot typing" style="color: var(--sonnet)"><use href="#bot" x="96" y="145" width="24" height="24"/><g class="hands"><rect x="100" y="169" width="5" height="2" fill="var(--px-ink)"/><rect x="111" y="169" width="5" height="2" fill="var(--px-ink)"/></g></g><rect x="90" y="168" width="46" height="8" fill="var(--px-desk)"/><rect x="90" y="176" width="46" height="3" fill="var(--px-desk2)"/><rect x="92" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="131" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="119" y="156" width="15" height="11" fill="var(--px-ink)"/><rect x="120" y="157" width="13" height="8" fill="var(--px-screen)"/><rect x="125" y="167" width="3" height="1" fill="var(--px-ink)"/><rect x="121" y="158" width="8" height="1" fill="var(--px-code)" class="line"/><rect x="121" y="160" width="5" height="1" fill="var(--px-code)" class="line"/><rect x="121" y="162" width="10" height="1" fill="var(--px-code)" class="line"/><text class="nm" x="113.0" y="196" text-anchor="middle">implementer</text><text class="tl typing" x="113.0" y="204" text-anchor="middle">Bash 42s</text></g><g class="seat waiting"><g class="bot waiting" style="color: var(--opus)"><use href="#bot" x="160" y="145" width="24" height="24"/></g><rect x="154" y="168" width="46" height="8" fill="var(--px-desk)"/><rect x="154" y="176" width="46" height="3" fill="var(--px-desk2)"/><rect x="156" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="195" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="183" y="156" width="15" height="11" fill="var(--px-ink)"/><rect x="184" y="157" width="13" height="8" fill="var(--px-screen)"/><rect x="189" y="167" width="3" height="1" fill="var(--px-ink)"/><g class="bubble wait"><rect x="180" y="132" width="14" height="11" rx="3" fill="var(--wait-line)"/><rect x="183" y="143" width="3" height="3" fill="var(--wait-line)"/><text x="187" y="140.6" text-anchor="middle" font-size="8.5" font-weight="700" fill="#ffffff" font-family="var(--mono)">?</text></g><text class="nm" x="177.0" y="196" text-anchor="middle">reviewer</text><text class="tl waiting" x="177.0" y="204" text-anchor="middle">Bash · permission</text></g><g class="seat reading"><g class="bot reading" style="color: var(--haiku)"><use href="#bot" x="224" y="145" width="24" height="24"/></g><rect x="218" y="168" width="46" height="8" fill="var(--px-desk)"/><rect x="218" y="176" width="46" height="3" fill="var(--px-desk2)"/><rect x="220" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="259" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="247" y="156" width="15" height="11" fill="var(--px-ink)"/><rect x="248" y="157" width="13" height="8" fill="var(--px-screen)"/><rect x="253" y="167" width="3" height="1" fill="var(--px-ink)"/><rect x="251" y="158" width="7" height="6" fill="#ffffff"/><rect x="252" y="159.0" width="5" height="0.8" fill="#99aaaa"/><rect x="252" y="160.6" width="5" height="0.8" fill="#99aaaa"/><rect x="252" y="162.2" width="5" height="0.8" fill="#99aaaa"/><text class="nm" x="241.0" y="196" text-anchor="middle">test-runner</text><text class="tl reading" x="241.0" y="204" text-anchor="middle">Read 1s</text></g><g class="seat done"><g class="bot done" style="color: var(--opus)"><use href="#bot" x="288" y="145" width="24" height="24"/></g><rect x="282" y="168" width="46" height="8" fill="var(--px-desk)"/><rect x="282" y="176" width="46" height="3" fill="var(--px-desk2)"/><rect x="284" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="323" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="311" y="156" width="15" height="11" fill="var(--px-ink)"/><rect x="312" y="157" width="13" height="8" fill="var(--px-screen)"/><rect x="317" y="167" width="3" height="1" fill="var(--px-ink)"/><g class="bubble done"><rect x="308" y="132" width="14" height="11" rx="3" fill="var(--ok)"/><rect x="311" y="143" width="3" height="3" fill="var(--ok)"/><text x="315" y="140.6" text-anchor="middle" font-size="8.5" font-weight="700" fill="#ffffff" font-family="var(--mono)">✓</text></g><text class="nm" x="305.0" y="196" text-anchor="middle">Plan</text><text class="tl done" x="305.0" y="204" text-anchor="middle">done</text></g></svg>
+        <ul class="roster"><li><span class="dot" style="background:var(--opus)"></span><span><b>main</b> <span class="t">Agent 4m</span></span><span class="state working">working</span></li><li><span class="dot" style="background:var(--haiku)"></span><span><b>Explore</b> <span class="t">WebFetch 16m</span></span><span class="state stalled">stalled</span></li><li><span class="dot" style="background:var(--sonnet)"></span><span><b>implementer</b> <span class="t">Bash 42s</span></span><span class="state working">working</span></li><li><span class="dot" style="background:var(--opus)"></span><span><b>reviewer</b> <span class="t">Bash · permission</span></span><span class="state waiting">waiting</span></li><li><span class="dot" style="background:var(--haiku)"></span><span><b>test-runner</b> <span class="t">Read 1s</span></span><span class="state working">working</span></li><li><span class="dot" style="background:var(--opus)"></span><span><b>Plan</b> <span class="t"></span></span><span class="state done">done</span></li></ul>
+      </section>
+      <section class="roomcard" aria-label="Room mobile-app">
+        <div class="roomhead"><span class="project">mobile-app</span>
+          <span class="kpi">tokens <b>86.4k</b></span><span class="kpi">API-eq. <b>$0.21</b></span>
+          <span class="kpi">context <span class="ctx"><i style="width:18%"></i></span> <b>18%</b></span></div>
+        <svg class="scene" viewBox="0 0 220 220" shape-rendering="crispEdges" role="img" aria-label="The mobile-app room: three bots at desks"><defs><symbol id="bot2" viewBox="0 0 12 12" overflow="visible"><rect x="4" y="0" width="1" height="1" fill="var(--px-ink)"/><rect x="5" y="0" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="1" width="1" height="1" fill="var(--ant)" class="ant"/><rect x="5" y="1" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="5" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="6" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="7" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="3" width="1" height="1" fill="currentColor"/><rect x="3" y="3" width="1" height="1" fill="currentColor"/><rect x="4" y="3" width="1" height="1" fill="currentColor"/><rect x="5" y="3" width="1" height="1" fill="currentColor"/><rect x="6" y="3" width="1" height="1" fill="currentColor"/><rect x="7" y="3" width="1" height="1" fill="currentColor"/><rect x="8" y="3" width="1" height="1" fill="currentColor"/><rect x="9" y="3" width="1" height="1" fill="currentColor"/><rect x="10" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="4" width="1" height="1" fill="currentColor"/><rect x="3" y="4" width="1" height="1" fill="#ffffff"/><rect x="4" y="4" width="1" height="1" fill="#ffffff"/><rect x="5" y="4" width="1" height="1" fill="currentColor"/><rect x="6" y="4" width="1" height="1" fill="currentColor"/><rect x="7" y="4" width="1" height="1" fill="#ffffff"/><rect x="8" y="4" width="1" height="1" fill="#ffffff"/><rect x="9" y="4" width="1" height="1" fill="currentColor"/><rect x="10" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="5" width="1" height="1" fill="currentColor"/><rect x="3" y="5" width="1" height="1" fill="#ffffff"/><rect x="4" y="5" width="1" height="1" fill="var(--px-ink)" class="eye"/><rect x="5" y="5" width="1" height="1" fill="currentColor"/><rect x="6" y="5" width="1" height="1" fill="currentColor"/><rect x="7" y="5" width="1" height="1" fill="#ffffff"/><rect x="8" y="5" width="1" height="1" fill="var(--px-ink)" class="eye"/><rect x="9" y="5" width="1" height="1" fill="currentColor"/><rect x="10" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="6" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="6" width="1" height="1" fill="currentColor"/><rect x="3" y="6" width="1" height="1" fill="currentColor"/><rect x="4" y="6" width="1" height="1" fill="currentColor"/><rect x="5" y="6" width="1" height="1" fill="currentColor"/><rect x="6" y="6" width="1" height="1" fill="currentColor"/><rect x="7" y="6" width="1" height="1" fill="currentColor"/><rect x="8" y="6" width="1" height="1" fill="currentColor"/><rect x="9" y="6" width="1" height="1" fill="currentColor"/><rect x="10" y="6" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="7" width="1" height="1" fill="currentColor"/><rect x="3" y="7" width="1" height="1" fill="currentColor"/><rect x="4" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="5" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="6" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="7" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="7" width="1" height="1" fill="currentColor"/><rect x="9" y="7" width="1" height="1" fill="currentColor"/><rect x="10" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="8" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="8" width="1" height="1" fill="currentColor"/><rect x="3" y="8" width="1" height="1" fill="currentColor"/><rect x="4" y="8" width="1" height="1" fill="currentColor"/><rect x="5" y="8" width="1" height="1" fill="currentColor"/><rect x="6" y="8" width="1" height="1" fill="currentColor"/><rect x="7" y="8" width="1" height="1" fill="currentColor"/><rect x="8" y="8" width="1" height="1" fill="currentColor"/><rect x="9" y="8" width="1" height="1" fill="currentColor"/><rect x="10" y="8" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="5" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="6" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="7" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="10" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="10" width="1" height="1" fill="currentColor"/><rect x="3" y="10" width="1" height="1" fill="currentColor"/><rect x="4" y="10" width="1" height="1" fill="currentColor"/><rect x="5" y="10" width="1" height="1" fill="currentColor"/><rect x="6" y="10" width="1" height="1" fill="currentColor"/><rect x="7" y="10" width="1" height="1" fill="currentColor"/><rect x="8" y="10" width="1" height="1" fill="currentColor"/><rect x="9" y="10" width="1" height="1" fill="currentColor"/><rect x="10" y="10" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="11" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="11" width="1" height="1" fill="currentColor"/><rect x="2" y="11" width="1" height="1" fill="currentColor"/><rect x="3" y="11" width="1" height="1" fill="currentColor"/><rect x="4" y="11" width="1" height="1" fill="currentColor"/><rect x="5" y="11" width="1" height="1" fill="currentColor"/><rect x="6" y="11" width="1" height="1" fill="currentColor"/><rect x="7" y="11" width="1" height="1" fill="currentColor"/><rect x="8" y="11" width="1" height="1" fill="currentColor"/><rect x="9" y="11" width="1" height="1" fill="currentColor"/><rect x="10" y="11" width="1" height="1" fill="currentColor"/><rect x="11" y="11" width="1" height="1" fill="var(--px-ink)"/></symbol><pattern id="floor2" width="12" height="12" patternUnits="userSpaceOnUse"><rect width="12" height="12" fill="var(--px-floor)"/><rect width="6" height="6" fill="var(--px-floor2)"/><rect x="6" y="6" width="6" height="6" fill="var(--px-floor2)"/></pattern></defs><rect width="220" height="220" fill="url(#floor2)"/><rect width="220" height="24" fill="var(--px-wall)"/><rect y="24" width="220" height="3" fill="var(--px-wall2)"/><rect x="172" y="5" width="30" height="14" fill="var(--px-window)"/><rect x="186.5" y="5" width="1.5" height="14" fill="var(--px-wall2)"/><rect x="8" y="198" width="8" height="9" fill="var(--px-pot)"/><rect x="5" y="186" width="14" height="12" fill="var(--px-plant)"/><rect x="9" y="182" width="6" height="5" fill="var(--px-plant)"/><rect x="202" y="184" width="11" height="22" fill="var(--px-cooler)"/><rect x="204" y="178" width="7" height="7" fill="var(--px-water)"/><g class="seat thinking"><g class="bot thinking" style="color: var(--sonnet)"><use href="#bot2" x="90" y="53" width="30" height="30"/></g><rect x="84" y="82" width="52" height="8" fill="var(--px-desk)"/><rect x="84" y="90" width="52" height="3" fill="var(--px-desk2)"/><rect x="86" y="93" width="3" height="7" fill="var(--px-desk2)"/><rect x="131" y="93" width="3" height="7" fill="var(--px-desk2)"/><rect x="119" y="70" width="15" height="11" fill="var(--px-ink)"/><rect x="120" y="71" width="13" height="8" fill="var(--px-screen)"/><rect x="125" y="81" width="3" height="1" fill="var(--px-ink)"/><g class="bubble think"><rect x="116" y="40" width="14" height="11" rx="3" fill="var(--px-bubble)"/><rect x="119" y="51" width="3" height="3" fill="var(--px-bubble)"/><text x="123" y="48.6" text-anchor="middle" font-size="8.5" font-weight="700" fill="var(--px-ink)" font-family="var(--mono)">…</text></g><text class="nm" x="110.0" y="110" text-anchor="middle">main · orchestrator</text><text class="tl thinking" x="110.0" y="118" text-anchor="middle">thinking</text></g><g class="seat browsing"><g class="bot browsing" style="color: var(--haiku)"><use href="#bot2" x="32" y="145" width="24" height="24"/><g class="hands"><rect x="36" y="169" width="5" height="2" fill="var(--px-ink)"/><rect x="47" y="169" width="5" height="2" fill="var(--px-ink)"/></g></g><rect x="26" y="168" width="46" height="8" fill="var(--px-desk)"/><rect x="26" y="176" width="46" height="3" fill="var(--px-desk2)"/><rect x="28" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="67" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="55" y="156" width="15" height="11" fill="var(--px-ink)"/><rect x="56" y="157" width="13" height="8" fill="var(--px-screen)"/><rect x="61" y="167" width="3" height="1" fill="var(--px-ink)"/><circle cx="62.5" cy="161" r="3" fill="none" stroke="var(--px-code)" stroke-width="0.8"/><line x1="59.5" y1="161" x2="65.5" y2="161" stroke="var(--px-code)" stroke-width="0.7"/><text class="nm" x="49.0" y="196" text-anchor="middle">Explore</text><text class="tl browsing" x="49.0" y="204" text-anchor="middle">WebSearch 3s</text></g><g class="seat error"><g class="bot error" style="color: var(--sonnet)"><use href="#bot2" x="134" y="145" width="24" height="24"/></g><rect x="128" y="168" width="46" height="8" fill="var(--px-desk)"/><rect x="128" y="176" width="46" height="3" fill="var(--px-desk2)"/><rect x="130" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="169" y="179" width="3" height="7" fill="var(--px-desk2)"/><rect x="157" y="156" width="15" height="11" fill="var(--px-ink)"/><rect x="158" y="157" width="13" height="8" fill="var(--px-screen)"/><rect x="163" y="167" width="3" height="1" fill="var(--px-ink)"/><g class="bubble error"><rect x="154" y="132" width="14" height="11" rx="3" fill="var(--bad-line)"/><rect x="157" y="143" width="3" height="3" fill="var(--bad-line)"/><text x="161" y="140.6" text-anchor="middle" font-size="8.5" font-weight="700" fill="#ffffff" font-family="var(--mono)">×</text></g><text class="nm" x="151.0" y="196" text-anchor="middle">general-purpose</text><text class="tl error" x="151.0" y="204" text-anchor="middle">error</text></g></svg>
+        <ul class="roster"><li><span class="dot" style="background:var(--sonnet)"></span><span><b>main</b> <span class="t">thinking</span></span><span class="state working">working</span></li><li><span class="dot" style="background:var(--haiku)"></span><span><b>Explore</b> <span class="t">WebSearch 3s</span></span><span class="state working">working</span></li><li><span class="dot" style="background:var(--sonnet)"></span><span><b>general-purpose</b> <span class="t"></span></span><span class="state error">error</span></li></ul>
+      </section>
+    </div>
+    <div class="key">
+      <span><b>Colour</b> = model: <span style="color:var(--opus)">■</span> Opus <span style="color:var(--sonnet)">■</span> Sonnet <span style="color:var(--haiku)">■</span> Haiku</span>
+      <span><b>Screen</b>: code = typing (Edit, Write, Bash) · page = reading (Read, Grep, Glob) · globe = browsing (Web*)</span>
+      <span><b>Bubble</b>: … thinking · ? waiting for you · ! stalled · ✓ done (leaves soon) · × error</span>
+      <span><b>Dotted line</b>: a delegation, from the parent's desk to the new bot</span>
+    </div>
+  </main>
+</div>
+</div>
+<script>
+  // Mockup controls only.
+  const root = document.documentElement, stage = document.getElementById('stage');
+  document.querySelectorAll('.mock-bar .seg').forEach(seg => seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    if (seg.dataset.group === 'theme') b.dataset.v === 'auto' ? root.removeAttribute('data-theme') : root.setAttribute('data-theme', b.dataset.v);
+    else stage.classList.toggle('phone', b.dataset.v === 'phone');
+  }));
+</script>
+</body>
+</html>

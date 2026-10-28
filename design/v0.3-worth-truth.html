@@ -1,0 +1,780 @@
+<title>agent-orb v0.3 Worth and Truth</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>/* Proposed studio library, scoped to .prop. Tokens are the approved Live v3 language (design/live-v3.html). */
+.prop {
+  --bg: #f5f5f9; --surface: #ffffff; --sunk: #f0f0f6; --line: #e2e3ec; --line-strong: #cfd1de;
+  --ink: #15162a; --muted: #585b73; --faint: #80839b;
+  --accent: #4f4bd0; --accent-soft: #ecebfb; --accent-ink: #3a36b0; --on-accent: #ffffff;
+  --data: #5c6488; --data-soft: #e3e5ee;
+  --ok: #15703f; --ok-bg: #e2f3e8; --ok-dot: #1f9d55;
+  --wait: #7f4f00; --wait-bg: #fff1d1; --wait-dot: #d99300;
+  --bad: #ae1f27; --bad-bg: #fde8e8; --bad-dot: #e0343c;
+  --done: #5f6378; --done-bg: #eceef4; --done-dot: #9a9db0;
+  --opus: #b03a8e; --sonnet: #2566d6; --haiku: #009a85;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --shadow: 0 1px 2px rgba(21, 22, 42, .04), 0 2px 8px rgba(21, 22, 42, .04);
+  --pop: 0 8px 28px rgba(21, 22, 42, .16);
+  background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .prop {
+  --bg: #0e0f17; --surface: #161826; --sunk: #12131f; --line: #262839; --line-strong: #34374d;
+  --ink: #e9eaf4; --muted: #a3a6c0; --faint: #74778f;
+  --accent: #9c9aff; --accent-soft: #24244a; --accent-ink: #c2c1ff; --on-accent: #0e0f17;
+  --data: #8c93b8; --data-soft: #23263a;
+  --ok: #56d48f; --ok-bg: #11301f; --ok-dot: #3fc47c;
+  --wait: #f2bd4d; --wait-bg: #36290b; --wait-dot: #e6a823;
+  --bad: #ff8a8f; --bad-bg: #3b1518; --bad-dot: #f0545b;
+  --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
+  --opus: #cf62bd; --sonnet: #5f92f2; --haiku: #18a690;
+  --shadow: none; --pop: 0 8px 28px rgba(0, 0, 0, .5); } }
+:root[data-theme="dark"] .prop {
+  --bg: #0e0f17; --surface: #161826; --sunk: #12131f; --line: #262839; --line-strong: #34374d;
+  --ink: #e9eaf4; --muted: #a3a6c0; --faint: #74778f;
+  --accent: #9c9aff; --accent-soft: #24244a; --accent-ink: #c2c1ff; --on-accent: #0e0f17;
+  --data: #8c93b8; --data-soft: #23263a;
+  --ok: #56d48f; --ok-bg: #11301f; --ok-dot: #3fc47c;
+  --wait: #f2bd4d; --wait-bg: #36290b; --wait-dot: #e6a823;
+  --bad: #ff8a8f; --bad-bg: #3b1518; --bad-dot: #f0545b;
+  --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
+  --opus: #cf62bd; --sonnet: #5f92f2; --haiku: #18a690;
+  --shadow: none; --pop: 0 8px 28px rgba(0, 0, 0, .5); }
+
+.prop *, .prop *::before, .prop *::after { box-sizing: border-box; }
+.prop .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.prop :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Shell */
+.prop .p-top { display: flex; align-items: center; gap: 24px; height: 56px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.prop .p-brand { display: flex; align-items: center; gap: 10px; font: 700 17px/1 var(--display); letter-spacing: -.01em; }
+.prop .p-orb { width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 32% 30%, #c9cbff 0, #7b7cf0 38%, #3c3aa8 78%, #26246e 100%); box-shadow: 0 0 0 3px var(--accent-soft); }
+.prop .p-nav { display: flex; gap: 2px; align-self: stretch; }
+.prop .p-nav a { display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; min-height: 44px; color: var(--muted); text-decoration: none; font-weight: 500; border-bottom: 2px solid transparent; }
+.prop .p-nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+.prop .p-count { font: 500 12px/1 var(--mono); padding: 3px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
+.prop .p-conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.prop .p-conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok-dot); box-shadow: 0 0 0 3px var(--ok-bg); }
+
+/* Page header and tally */
+.prop .p-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; }
+.prop .p-head h1 { margin: 0; font: 700 30px/1.1 var(--display); letter-spacing: -.02em; }
+.prop .p-head .p-sub { font-size: 14px; color: var(--muted); }
+.prop .p-tally { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--muted); }
+.prop .p-tally span { display: inline-flex; align-items: center; gap: 7px; }
+.prop .p-tally span::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-dot); }
+
+/* Buttons and links */
+.prop .p-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font: 600 14px/1 var(--sans); cursor: pointer; text-decoration: none; }
+.prop .p-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+.prop .p-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.prop .p-btn.primary:hover { filter: brightness(1.08); color: var(--on-accent); }
+.prop .p-btn[disabled] { background: var(--sunk); border-color: var(--line); color: var(--faint); cursor: not-allowed; filter: none; }
+.prop .p-link { color: var(--accent-ink); font-weight: 600; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
+.prop .p-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Segmented toggle */
+.prop .p-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
+.prop .p-seg button { min-height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--muted); font: 500 14px/1 var(--sans); cursor: pointer; }
+.prop .p-seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); border-color: var(--line-strong); font-weight: 600; box-shadow: var(--shadow); }
+
+/* Fields */
+.prop .p-field { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.prop .p-select, .prop .p-input { min-height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-strong); background-color: var(--surface); color: var(--ink); font: 400 14px/1 var(--sans); }
+.prop .p-select { appearance: none; padding-right: 32px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+.prop .p-input.money { font-family: var(--mono); width: 120px; }
+.prop .p-select:focus, .prop .p-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+
+/* Card */
+.prop .p-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+.prop .p-card-h { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.prop .p-card-h h3 { margin: 0; font: 600 15px/1.3 var(--sans); }
+.prop .p-card-h .p-hint { font-size: 13px; color: var(--muted); }
+.prop .p-card-b { padding: 16px 20px; }
+
+/* State pill, model tag, chips */
+.prop .p-state { display: inline-flex; align-items: center; gap: 7px; font: 600 13px/1 var(--sans); white-space: nowrap; padding: 6px 10px; border-radius: 999px; }
+.prop .p-state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-dot); }
+.prop .s-working { --c-dot: var(--ok-dot); color: var(--ok); background: var(--ok-bg); }
+.prop .s-waiting { --c-dot: var(--wait-dot); color: var(--wait); background: var(--wait-bg); }
+.prop .s-stalled, .prop .s-error { --c-dot: var(--bad-dot); color: var(--bad); background: var(--bad-bg); }
+.prop .s-done { --c-dot: var(--done-dot); color: var(--done); background: var(--done-bg); }
+.prop .p-model { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; white-space: nowrap; }
+.prop .p-model::before { content: ""; width: 9px; height: 9px; border-radius: 2px; background: var(--m); }
+.prop .m-opus { --m: var(--opus); } .prop .m-sonnet { --m: var(--sonnet); } .prop .m-haiku { --m: var(--haiku); }
+.prop .p-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line); color: var(--ink); font-size: 13px; white-space: nowrap; }
+.prop .p-chip .mono { font-family: var(--mono); color: var(--accent-ink); }
+.prop .p-chip .how { color: var(--muted); }
+.prop .p-chip.branch { font-family: var(--mono); color: var(--muted); }
+.prop .p-chip.warn { background: var(--wait-bg); border-color: transparent; color: var(--wait); }
+
+/* Tabs */
+.prop .p-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.prop .p-tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: 500 15px/1 var(--sans); cursor: pointer; }
+.prop .p-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.prop .p-tabs .n { font: 500 12px/1 var(--mono); padding: 3px 6px; border-radius: 999px; background: var(--sunk); }
+
+/* Table */
+.prop .p-tablewrap { overflow-x: auto; }
+.prop table.p-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.prop .p-table th { text-align: left; font: 500 12px/1.2 var(--sans); color: var(--muted); padding: 10px 20px; background: var(--sunk); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.prop .p-table td { padding: 12px 20px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.prop .p-table tr:last-child td { border-bottom: 0; }
+.prop .p-table .r { text-align: right; }
+.prop .p-table .num { font-size: 14px; }
+.prop .p-table .sub { display: block; font-size: 13px; color: var(--muted); }
+.prop .p-table tbody tr:hover { background: var(--sunk); }
+
+/* Meter and bars */
+.prop .p-meter { display: grid; gap: 6px; min-width: 120px; }
+.prop .p-meter .k { font-size: 12px; font-weight: 500; color: var(--muted); }
+.prop .p-track { height: 6px; border-radius: 3px; background: var(--data-soft); overflow: hidden; }
+.prop .p-track i { display: block; height: 100%; border-radius: 3px; background: var(--data); }
+.prop .p-track.warn i { background: var(--wait-dot); }
+.prop .p-track.ok i { background: var(--ok-dot); }
+.prop .p-track.m-opus i { background: var(--opus); } .prop .p-track.m-sonnet i { background: var(--sonnet); } .prop .p-track.m-haiku i { background: var(--haiku); }
+
+/* Avatar */
+.prop .p-av { width: 28px; height: 28px; border-radius: 8px; display: inline-grid; place-items: center; font: 600 13px/1 var(--sans); color: #fff; background: var(--m, var(--data)); flex: none; }
+
+/* Stat */
+.prop .p-stat { display: grid; gap: 2px; }
+.prop .p-stat .k { font-size: 12px; font-weight: 500; color: var(--muted); }
+.prop .p-stat .v { font: 500 22px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.prop .p-stat .d { font-size: 13px; color: var(--muted); }
+
+/* Notice */
+.prop .p-notice { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: start; padding: 12px 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); font-size: 14px; }
+.prop .p-notice .i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 700 13px/1 var(--sans); background: var(--line); color: var(--ink); }
+.prop .p-notice p { margin: 0; }
+.prop .p-notice code { font-family: var(--mono); font-size: 13px; }
+.prop .p-notice.warn { background: var(--wait-bg); border-color: transparent; color: var(--wait); }
+.prop .p-notice.warn .i { background: var(--wait-dot); color: #fff; }
+.prop .p-notice.bad { background: var(--bad-bg); border-color: transparent; color: var(--bad); }
+.prop .p-notice.bad .i { background: var(--bad-dot); color: #fff; }
+
+/* Tooltip */
+.prop .p-tip { display: inline-grid; gap: 4px; max-width: 280px; padding: 9px 12px; border-radius: 9px; background: var(--ink); color: var(--bg); font-size: 13px; box-shadow: var(--pop); }
+.prop .p-tip b { font-weight: 600; }
+.prop .p-tip .row { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); }
+
+/* Empty and loading */
+.prop .p-empty { display: grid; gap: 6px; justify-items: start; padding: 20px; }
+.prop .p-empty b { font-weight: 600; }
+.prop .p-empty p { margin: 0; color: var(--muted); font-size: 14px; max-width: 52ch; }
+.prop .p-skel { display: grid; gap: 10px; padding: 16px 20px; }
+.prop .p-skel i { display: block; height: 12px; border-radius: 6px; background: var(--sunk); }
+@media (prefers-reduced-motion: no-preference) {
+  .prop .p-skel i { background: linear-gradient(90deg, var(--sunk) 0, var(--line) 50%, var(--sunk) 100%); background-size: 200% 100%; animation: p-shimmer 1.4s linear infinite; }
+}
+@keyframes p-shimmer { to { background-position: -200% 0; } }
+
+/* Drawer */
+.prop .p-drawer { background: var(--surface); border: 1px solid var(--line); border-radius: 14px 0 0 14px; box-shadow: var(--pop); display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+.prop .p-dh { display: grid; gap: 8px; padding: 16px 20px 12px; border-bottom: 1px solid var(--line); }
+.prop .p-dh .r1 { display: flex; align-items: center; gap: 10px; }
+.prop .p-dh h3 { margin: 0; font: 600 20px/1.2 var(--display); }
+.prop .p-x { margin-left: auto; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 20px; cursor: pointer; }
+.prop .p-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+
+/* Timeline */
+.prop .p-ev { display: grid; grid-template-columns: 64px 72px 1fr auto; gap: 12px; align-items: baseline; padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.prop .p-ev .t { font: 13px var(--mono); color: var(--faint); }
+.prop .p-ev .tool { font: 500 13px var(--mono); }
+.prop .p-ev .target { font: 13px var(--mono); color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.prop .p-ev .res { font: 13px var(--mono); white-space: nowrap; }
+.prop .ok { color: var(--ok); } .prop .bad { color: var(--bad); } .prop .run { color: var(--accent-ink); }
+
+/* Explain: replaces the grey paragraphs at the foot of pages */
+.prop details.p-explain { border-top: 1px solid var(--line); }
+.prop details.p-explain summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; font-size: 14px; font-weight: 500; color: var(--accent-ink); }
+.prop details.p-explain p { margin: 0; padding: 0 20px 16px; font-size: 14px; color: var(--muted); max-width: 72ch; }
+
+/* Legend */
+.prop .p-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.prop .p-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.prop .p-legend span::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--m); }
+
+/* Checkbox: the platform control in the accent colour, on a 44px row */
+.prop .p-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; cursor: pointer; }
+.prop .p-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.prop .p-tasklist { list-style: none; margin: 0; padding: 0; display: grid; }
+.prop .p-tasklist li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.prop .p-tasklist li:last-child { border-bottom: 0; }
+.prop .p-tasklist .mk { font-family: var(--mono); color: var(--faint); }
+.prop .p-tasklist .done .mk { color: var(--ok); } .prop .p-tasklist .now .mk { color: var(--accent-ink); }
+.prop .p-tasklist .done span:last-child { color: var(--muted); }
+</style>
+<style>/* Page layouts for the studio mocks, on top of prop.css (the approved library). Phone = the app's own width <= 720px. */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--rv-bg); color: var(--rv-ink); font: 14px/1.5 "IBM Plex Sans", system-ui, sans-serif; }
+:root { --rv-bg: #e9e9f1; --rv-ink: #15162a; --rv-muted: #585b73; --rv-line: #cfd1de; --rv-surface: #ffffff; --rv-accent: #4f4bd0; --rv-on: #ffffff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --rv-bg: #08090f; --rv-ink: #e9eaf4; --rv-muted: #a3a6c0; --rv-line: #34374d; --rv-surface: #161826; --rv-accent: #9c9aff; --rv-on: #0e0f17; color-scheme: dark; } }
+:root[data-theme="dark"] { --rv-bg: #08090f; --rv-ink: #e9eaf4; --rv-muted: #a3a6c0; --rv-line: #34374d; --rv-surface: #161826; --rv-accent: #9c9aff; --rv-on: #0e0f17; color-scheme: dark; }
+
+/* Review bar: not part of the app */
+.rv { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px dashed var(--rv-line); font-size: 13px; color: var(--rv-muted); }
+.rv b { color: var(--rv-ink); font-weight: 600; }
+.rv-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rv-line); border-radius: 8px; overflow: hidden; }
+.rv-seg button { border: 0; background: var(--rv-surface); color: var(--rv-ink); padding: 6px 11px; min-height: 32px; font: inherit; cursor: pointer; }
+.rv-seg button + button { border-left: 1px solid var(--rv-line); }
+.rv-seg button[aria-pressed="true"] { background: var(--rv-accent); color: var(--rv-on); }
+.stage.phone { padding-block: 24px; }
+.stage.phone .app { width: 390px; margin: 0 auto; border: 1px solid var(--rv-line); border-radius: 22px; overflow: hidden; min-height: 820px; }
+.decide { max-width: 1280px; margin: 0 auto; padding-block: 24px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.decide h2 { margin: 0 0 8px; font: 700 20px/1.2 "Bricolage Grotesque", system-ui, sans-serif; color: var(--rv-ink); }
+.decide ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 100ch; color: var(--rv-ink); font-size: 14px; }
+.decide code { font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+
+/* App shell */
+.app { container: app / inline-size; position: relative; min-height: 100vh; }
+.app .p-top { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.app .p-nav a { cursor: pointer; }
+.app .menu { display: none; }
+.app .page { max-width: 1280px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 20px; }
+.app .page > * { min-width: 0; }
+.app .hrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.app .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.app .foot { font-size: 13px; color: var(--faint); }
+.app .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.app .grid2 { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.app .stack { display: grid; gap: 16px; align-content: start; }
+
+/* Live (the approved v3 rows) */
+.app .needs .need { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px 16px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .needs .need:first-of-type { border-top: 0; }
+.app .need .since { color: var(--muted); font-size: 14px; }
+.app .shead { display: grid; grid-template-columns: 1fr auto; gap: 12px 32px; align-items: end; padding: 18px 20px 14px; }
+.app .who { display: grid; gap: 4px; min-width: 0; }
+.app .who .l1 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.app .who h2 { margin: 0; font: 600 21px/1.2 var(--display); letter-spacing: -.01em; }
+.app .meta { font-size: 13px; color: var(--muted); }
+.app .stats { display: flex; gap: 28px; align-items: end; }
+.app .stats .p-stat .v { font-size: 20px; }
+.app .skills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0 20px 14px; font-size: 13px; color: var(--muted); }
+.app .cols, .app .agent { display: grid; grid-template-columns: minmax(200px, 1.1fr) minmax(220px, 2fr) 116px 76px 64px 150px; gap: 16px; align-items: center; }
+.app .cols { padding: 8px 20px; background: var(--sunk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .r { text-align: right; }
+.app .agent { padding: 12px 20px; min-height: 60px; border-top: 1px solid var(--line); cursor: pointer; position: relative; }
+.app .cols + .agent { border-top: 0; }
+.app .agent:hover { background: var(--sunk); }
+.app .agent[aria-expanded="true"] { background: var(--accent-soft); }
+.app .name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.app .name > span:last-child { display: grid; min-width: 0; line-height: 1.3; }
+.app .name b { font-weight: 600; }
+.app .name small { color: var(--muted); font-size: 13px; }
+.app .d1 .name { padding-left: 30px; }
+.app .d1 .name::before { content: ""; position: absolute; left: 34px; top: 0; height: 50%; width: 16px; border-left: 1.5px solid var(--line-strong); border-bottom: 1.5px solid var(--line-strong); border-bottom-left-radius: 8px; }
+.app .d1.more .name::after { content: ""; position: absolute; left: 34px; top: 50%; bottom: 0; border-left: 1.5px solid var(--line-strong); }
+.app .doing { display: grid; gap: 2px; min-width: 0; }
+.app .doing .what { font-weight: 500; overflow-wrap: anywhere; }
+.app .doing .sub { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.app .doing .sub .num { color: var(--ink); }
+.app .mini { display: inline-flex; align-items: center; gap: 6px; }
+.app .mini .p-track { width: 44px; }
+.app .agent.is-done .name b, .app .agent.is-done .doing .what { color: var(--muted); font-weight: 500; }
+.app .agent.is-stalled { box-shadow: inset 3px 0 0 var(--bad-dot); }
+.app .agent.is-waiting { box-shadow: inset 3px 0 0 var(--wait-dot); }
+.app .agent .p-state { justify-self: end; }
+.app .agent .facts { display: none; }
+
+/* Drawer */
+.app .scrim { position: fixed; inset: 0; background: rgba(10, 11, 20, .28); z-index: 20; }
+.app .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(500px, 100%); border-radius: 0; border-top: 0; border-bottom: 0; border-right: 0; z-index: 21; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.app .drawer .p-dh { padding-top: max(16px, env(safe-area-inset-top, 0px)); }
+.app .drawer .dbody { overflow-y: auto; padding-bottom: 24px; }
+.app .note2 { margin: 12px 20px 0; }
+
+/* Ledger chart */
+.app .chartbox { position: relative; padding: 16px 20px 8px; }
+.app .chartbox svg { display: block; width: 100%; height: auto; overflow: visible; }
+.app .chartbox .grid line { stroke: var(--line); stroke-width: 1; }
+.app .chartbox .axis text { font: 12px var(--mono); fill: var(--muted); }
+.app .chartbox .bar { cursor: pointer; }
+.app .chartbox .bar:focus { outline: none; }
+.app .chartbox .bar:focus-visible rect.hit, .app .chartbox .bar:hover rect.hit { fill: var(--accent); fill-opacity: .06; }
+.app .chartbox .p-tip { position: absolute; pointer-events: none; transform: translate(-50%, calc(-100% - 10px)); z-index: 2; min-width: 200px; }
+.app .tableview summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; color: var(--accent-ink); font-weight: 500; border-top: 1px solid var(--line); }
+.app .tableview[open] summary { border-bottom: 1px solid var(--line); }
+.app .warnnum { color: var(--wait); }
+.app .badnum { color: var(--bad); }
+
+/* Pipeline roles: HTML nodes over an SVG edge layer */
+.app .orgwrap { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.app .orgscroll { overflow-x: auto; }
+.app .org { position: relative; width: 1000px; height: 440px; margin: 8px auto 16px; }
+.app .org svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.app .org .edge { fill: none; stroke: var(--data); stroke-opacity: .35; stroke-linecap: round; }
+.app .org .elabel { font: 500 12px var(--mono); fill: var(--muted); }
+.app .node { position: absolute; width: 190px; height: 94px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); box-shadow: var(--shadow); display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-content: start; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.app .node:hover { border-color: var(--accent); }
+.app .node[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.app .node .p-av { grid-row: span 2; background: var(--data); }
+.app .node b { font-weight: 600; font-size: 15px; line-height: 1.2; }
+.app .node .ty { font-size: 13px; color: var(--muted); line-height: 1.2; }
+.app .node .nu { grid-column: 1 / -1; font: 13px var(--mono); color: var(--ink); margin-top: 6px; }
+.app .node .nu span { color: var(--muted); }
+.app .rolelist { display: none; }
+.app .panel .p-card-b { display: grid; gap: 14px; }
+.app .panel .rinfo { color: var(--muted); font-size: 14px; }
+.app .alist { list-style: none; margin: 0; padding: 0; display: grid; }
+.app .alist li { display: grid; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.app .alist li:last-child { border-bottom: 0; }
+.app .alist .d { font-size: 13px; color: var(--muted); }
+.app .fix { display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); }
+.app .fix .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.app .ok-msg { color: var(--ok); font-size: 14px; }
+
+/* Lanes */
+.app .lanes { display: grid; grid-template-columns: 170px minmax(0, 1fr); padding: 12px 20px 16px; gap: 0 16px; }
+.app .lanes .lh { font-size: 14px; display: flex; align-items: center; gap: 8px; min-height: 44px; border-bottom: 1px solid var(--line); }
+.app .lanes .lh small { color: var(--muted); font-size: 13px; }
+.app .lanes .lt { position: relative; min-height: 44px; border-bottom: 1px solid var(--line); }
+.app .lanes .seg-bar { position: absolute; top: 14px; height: 16px; border-radius: 4px; background: var(--m); }
+.app .lanes .seg-bar.stall { background: repeating-linear-gradient(45deg, var(--bad-dot) 0 6px, var(--bad-bg) 6px 12px); }
+.app .lanes .seg-bar.tool { top: 18px; height: 8px; opacity: .55; }
+.app .lanes .ax { grid-column: 2; position: relative; height: 24px; }
+.app .lanes .ax span { position: absolute; top: 6px; transform: translateX(-50%); font: 12px var(--mono); color: var(--muted); }
+.app .lanes .slabel { position: absolute; top: 12px; font: 600 12px var(--sans); color: var(--bad); white-space: nowrap; }
+
+/* Skills graph */
+.app .skg { position: relative; width: 760px; height: 300px; margin: 8px 0 12px; }
+.app .skg svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.app .skg .e { fill: none; stroke: var(--accent); stroke-opacity: .45; stroke-linecap: round; }
+.app .skg .e.named { stroke: var(--muted); stroke-opacity: .7; stroke-dasharray: 5 5; stroke-width: 1.5; }
+.app .skg .el { font: 500 12px var(--mono); fill: var(--muted); }
+.app .skg .colt { position: absolute; top: 0; font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .sknode { position: absolute; width: 176px; height: 58px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); display: grid; align-content: center; gap: 2px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.app .sknode.skill b { font-family: var(--mono); color: var(--accent-ink); font-weight: 500; }
+.app .sknode.agent { border-radius: 29px; padding-left: 16px; }
+.app .sknode.ghost { border-style: dashed; background: transparent; color: var(--muted); }
+.app .sknode small { font-size: 12px; color: var(--muted); }
+.app .sknode:hover { border-color: var(--accent); }
+.app .runs { display: flex; align-items: center; gap: 10px; }
+.app .runs .p-track { flex: 1; min-width: 60px; }
+.app .spark { display: block; }
+.app .spark rect { fill: var(--data); }
+.app .idle { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 20px; }
+
+/* Office */
+.app .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.app .room .scene { display: block; width: 100%; height: auto; background: var(--sunk); border-bottom: 1px solid var(--line); image-rendering: pixelated; }
+.app .roster { list-style: none; margin: 0; padding: 0; }
+.app .roster li { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; min-height: 52px; padding: 8px 20px; border-top: 1px solid var(--line); cursor: pointer; }
+.app .roster li:first-child { border-top: 0; }
+.app .roster li:hover { background: var(--sunk); }
+.app .roster .w { display: grid; line-height: 1.3; min-width: 0; }
+.app .roster .w small { font-size: 13px; color: var(--muted); }
+.app .roomh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.app .roomh h3 { margin: 0; font: 600 18px/1.2 var(--display); }
+.app .roomh .nums { display: flex; gap: 14px; align-items: center; font-size: 13px; color: var(--muted); }
+.app .roomh .nums b { font: 500 14px var(--mono); color: var(--ink); }
+.app .roomh .p-track { width: 64px; display: inline-block; vertical-align: middle; }
+
+/* Analysis */
+.app .fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
+.app .fields .p-select { width: 100%; }
+.app .reads { display: flex; flex-wrap: wrap; gap: 8px; }
+.app .est { display: grid; gap: 14px; padding: 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--sunk); }
+.app .est .big { display: flex; flex-wrap: wrap; gap: 16px 36px; }
+.app .est .alt { font-size: 14px; color: var(--muted); }
+.app .est .alt b { color: var(--ink); font-weight: 600; }
+.app .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.app .reports { list-style: none; margin: 0; padding: 0; }
+.app .reports li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 12px 20px; border-top: 1px solid var(--line); cursor: pointer; }
+.app .reports li:first-child { border-top: 0; }
+.app .reports li[aria-current="true"] { background: var(--accent-soft); }
+.app .reports .d { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.app .report { display: grid; gap: 18px; padding: 18px 20px 22px; }
+.app .report h4 { margin: 0 0 6px; font: 600 16px/1.3 var(--display); }
+.app .report p, .app .report li { font-size: 14px; line-height: 1.55; }
+.app .report p { margin: 0; color: var(--ink); max-width: 72ch; }
+.app .report ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 72ch; }
+.app .excerpt { font-size: 12px; font-weight: 600; color: var(--muted); }
+
+@container app (max-width: 720px) {
+  .app .p-nav { display: none; }
+  .app .menu { display: inline-flex; margin-left: auto; min-height: 44px; }
+  .app .p-conn .url { display: none; }
+  .app .p-conn { margin-left: 0; }
+  .app .p-head h1 { font-size: 26px; }
+  .app .p-seg button { min-height: 40px; }
+  .app .p-select, .app .p-input { min-height: 44px; font-size: 16px; }
+  .app .p-btn { min-height: 44px; }
+  .app .grid3, .app .grid2, .app .orgwrap { grid-template-columns: 1fr; }
+  .app .needs .need { grid-template-columns: 1fr auto; padding: 12px 16px; }
+  .app .needs .need .p-state { grid-column: 1 / -1; justify-self: start; }
+  .app .needs .need .since { grid-column: 1; }
+  .app .needs .need .p-btn { grid-column: 2; grid-row: 2 / span 2; }
+  .app .shead { grid-template-columns: 1fr; padding: 16px; }
+  .app .stats { gap: 20px; flex-wrap: wrap; }
+  .app .skills { padding: 0 16px 12px; }
+  .app .cols { display: none; }
+  .app .agent { grid-template-columns: 1fr auto; grid-template-areas: "name state" "doing doing" "facts facts"; gap: 6px 10px; padding: 14px 16px; }
+  .app .agent .name { grid-area: name; } .app .agent .p-state { grid-area: state; } .app .agent .doing { grid-area: doing; }
+  .app .agent .m, .app .agent .tok, .app .agent .cost { display: none; }
+  .app .agent .facts { grid-area: facts; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+  .app .d1 { padding-left: 34px; }
+  .app .d1 .name { padding-left: 0; }
+  .app .d1 .name::before, .app .d1.more .name::after { left: 20px; }
+  .app .drawer { top: auto; height: 88%; width: 100%; border-radius: 18px 18px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+  .app .p-ev { grid-template-columns: 56px 1fr auto; padding: 10px 16px; }
+  .app .p-ev .target { grid-column: 2 / -1; grid-row: 2; }
+  .app .p-card-h, .app .p-card-b { padding-left: 16px; padding-right: 16px; }
+  .app .p-table td, .app .p-table th { padding-left: 16px; padding-right: 16px; }
+  .app .hide-phone { display: none; }
+  .app .chartbox { padding: 12px 12px 4px; }
+  .app .orgscroll { display: none; }
+  .app .rolelist { display: block; }
+  .app .lanes { grid-template-columns: 96px minmax(0, 1fr); padding: 8px 16px 12px; gap: 0 10px; }
+  .app .skgscroll { overflow-x: auto; }
+  .app .rooms { grid-template-columns: 1fr; }
+  .app .fields { grid-template-columns: 1fr; }
+  .app .roster li { padding: 8px 16px; }
+}
+.stage.phone .drawer { left: 50%; right: auto; transform: translateX(-50%); width: 390px; top: auto; height: 720px; border-radius: 18px 18px 0 0; }
+.stage.phone .scrim { left: 50%; transform: translateX(-50%); width: 390px; }
+
+/* Fixes from the first look */
+.app .orgwrap { grid-template-columns: 1fr; }
+.app .panel .p-card-b { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 24px; align-items: start; }
+.app .panel .pcol { display: grid; gap: 12px; }
+.app td.rk { width: 100%; }
+.app td.rk .p-track { margin-top: 8px; }
+.app .sknode { overflow: hidden; }
+.app .sknode small, .app .sknode b, .app .sknode span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app .sklist { display: none; list-style: none; margin: 0; padding: 0 16px; }
+.app .sklist li { display: grid; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.app .sklist .sub { font-size: 13px; color: var(--muted); }
+.app .daybars { display: none; padding: 12px 16px 4px; gap: 8px; }
+.app .dayrow { display: grid; grid-template-columns: 56px 1fr 48px; gap: 10px; align-items: center; font-size: 13px; }
+.app .dayrow .dl { color: var(--muted); }
+.app .dayrow .stk { display: flex; gap: 2px; height: 12px; }
+.app .dayrow .stk i { display: block; height: 100%; border-radius: 2px; }
+.app .dayrow .num { text-align: right; }
+@container app (max-width: 720px) {
+  .app .panel .p-card-b { grid-template-columns: 1fr; }
+  .app .skgscroll { display: none; }
+  .app .sklist { display: block; }
+  .app .chartbox { display: none; }
+  .app .daybars { display: grid; }
+  .app .lanes .ax span.odd { display: none; }
+}
+</style>
+<style>/* v0.3 additions, on top of the approved library and page layouts. */
+.app .formula { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); overflow-x: auto; white-space: pre; font: 13px/1.7 var(--mono); }
+.app .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 5px; background: var(--wait-bg); color: var(--wait); font: 500 12px/1.7 var(--mono); vertical-align: 1px; }
+.app .real { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 5px; background: var(--ok-bg); color: var(--ok); font: 500 12px/1.7 var(--mono); vertical-align: 1px; }
+.app .settings { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: end; }
+.app .settings label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.app .settings .p-input { width: 120px; }
+.app .sizes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); }
+.app .sizes b { color: var(--ink); font-weight: 600; font-family: var(--mono); }
+.app .prs { display: grid; }
+.app .pr { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .pr .n { font: 500 14px var(--mono); color: var(--accent-ink); }
+.app .pr .t { min-width: 0; display: grid; gap: 2px; }
+.app .pr .t b { font-weight: 500; font-size: 14px; }
+.app .pr .t small { color: var(--muted); font-size: 13px; }
+.app .pr .p-seg button { min-width: 44px; }
+.app .stats6 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 18px 28px; }
+.app .marks { display: grid; }
+.app .mark { display: grid; grid-template-columns: 64px 110px minmax(0, 1fr); gap: 4px 14px; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 14px; align-items: baseline; }
+.app .mark .t { font: 13px var(--mono); color: var(--faint); }
+.app .mark .k { font-weight: 600; font-size: 13px; }
+.app .mark .k.bad { color: var(--bad); } .app .mark .k.wait { color: var(--wait); } .app .mark .k.ok { color: var(--ok); }
+.app .mark .w { color: var(--muted); min-width: 0; }
+.prop .s-claim { --c-dot: var(--bad-dot); color: var(--bad); background: var(--bad-bg); }
+.app .agent.is-claim { box-shadow: inset 3px 0 0 var(--bad-dot); }
+.app .kinds { width: 100%; border-collapse: collapse; font-size: 14px; }
+.app .kinds td, .app .kinds th { padding: 9px 20px; border-top: 1px solid var(--line); text-align: left; }
+.app .kinds thead th { border-top: 0; font-size: 12px; font-weight: 500; color: var(--muted); background: var(--sunk); }
+.app .kinds td.r, .app .kinds th.r { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+.app .kinds .sub td { color: var(--muted); padding-left: 40px; }
+.app .bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--data); vertical-align: middle; }
+.app .repeat { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .repeat b { font-weight: 600; font-size: 14px; }
+.app .repeat p { margin: 0; color: var(--muted); font-size: 14px; }
+.app .repeat .num { font: 500 14px var(--mono); text-align: right; }
+.app .repeat .try { grid-column: 1 / -1; font-size: 13px; color: var(--ok); }
+.app .search { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.app .search .p-input { flex: 1 1 260px; min-width: 0; }
+.app .hits { display: grid; }
+.app .hit { display: grid; gap: 4px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .hit .meta { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 13px; color: var(--muted); align-items: center; }
+.app .hit p { margin: 0; font-size: 14px; }
+.app .hit mark { background: var(--wait-bg); color: inherit; padding: 0 2px; border-radius: 3px; }
+.app .diff { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); overflow-x: auto; font: 13px/1.6 var(--mono); white-space: pre; }
+.app .diff .a { color: var(--ok); } .app .diff .d { color: var(--bad); }
+.app .finding { display: grid; gap: 4px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .finding b { font-weight: 600; }
+.app .finding p { margin: 0; color: var(--muted); font-size: 14px; }
+.app .bots { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; padding: 18px 20px; }
+.app .bot { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; align-items: start; }
+.app .bot .face { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; color: #fff; font: 700 16px var(--mono); }
+.app .bubble { position: relative; padding: 10px 12px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); font-size: 14px; }
+.app .bubble small { display: block; margin-top: 4px; color: var(--faint); font: 12px var(--mono); }
+.app .facts-l { margin: 0; padding: 0 0 0 18px; display: grid; gap: 8px; font-size: 14px; }
+.app .facts-l b { font-weight: 600; }
+.app .slices { display: grid; gap: 12px; }
+.app .slice { display: grid; grid-template-columns: 34px 1fr; gap: 4px 12px; }
+.app .slice .n { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--sunk); border: 1px solid var(--line); font: 600 14px/1 var(--mono); }
+.app .slice b { font-weight: 600; }
+.app .slice p { margin: 2px 0 0; font-size: 14px; color: var(--muted); }
+@container app (max-width: 720px) {
+  .app .pr { grid-template-columns: 1fr; }
+  .app .mark { grid-template-columns: 56px 1fr; }
+  .app .mark .w { grid-column: 1 / -1; }
+  .app .kinds td, .app .kinds th { padding: 9px 14px; }
+  .app .kinds .sub td { padding-left: 26px; }
+}
+</style>
+<div class="rv" role="region" aria-label="Mock controls">
+  <span><b>Mock controls</b>, not part of the app</span>
+  <span>Board <span class="rv-seg" id="rv-page"><button type="button" data-v="worth" aria-pressed="true">Worth</button><button type="button" data-v="truth" aria-pressed="false">Unbacked claims</button><button type="button" data-v="patterns" aria-pressed="false">Failure patterns</button><button type="button" data-v="search" aria-pressed="false">Search</button><button type="button" data-v="analysis" aria-pressed="false">Analysis v2</button><button type="button" data-v="office" aria-pressed="false">Thought bubbles</button><button type="button" data-v="plan" aria-pressed="false">Plan and decisions</button></span></span>
+  <span>Theme <span class="rv-seg" id="rv-theme"><button type="button" data-v="system" aria-pressed="true">System</button><button type="button" data-v="light" aria-pressed="false">Light</button><button type="button" data-v="dark" aria-pressed="false">Dark</button></span></span>
+  <span>Width <span class="rv-seg" id="rv-width"><button type="button" data-v="desktop" aria-pressed="true">Desktop</button><button type="button" data-v="phone" aria-pressed="false">Phone</button></span></span>
+  <span>Green tags are real figures from one project's Claude Code logs (counts only). Amber tags are examples: your estimates, or made-up text.</span>
+</div>
+<div class="stage" id="stage"><div class="app prop" id="app">
+  <header class="p-top"><span class="p-brand"><span class="p-orb" aria-hidden="true"></span>agent-orb</span>
+    <nav class="p-nav" aria-label="Studio"><a href="#live" data-go="truth">Live <span class="p-count" aria-label="1 session running">1</span></a><a href="#ledger" data-go="worth">Ledger</a><a href="#pipeline">Pipeline</a><a href="#office" data-go="office">Office</a><a href="#analysis" data-go="patterns">Analysis</a></nav>
+    <span class="p-conn"><i></i>Live <span class="url">· 127.0.0.1:4040</span></span>
+    <button type="button" class="p-btn menu" aria-label="Open the menu">Menu</button></header>
+  <main class="page" id="page"></main>
+</div></div>
+<section class="decide" id="decide" aria-live="polite"></section>
+<script>(() => {
+  const $ = (s) => document.querySelector(s);
+  const real = '<span class="real">real</span>', ex = '<span class="tag">example</span>', yours = '<span class="tag">yours</span>';
+  const usd = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
+
+  /* ---------- Worth (Ledger · Worth): October, mobile-app ---------- */
+  const SIZES = [['S', 0.5], ['M', 2], ['L', 6], ['XL', 16]];
+  // Example sizing of 64 of October's 109 merged PRs: S 30, M 22, L 10, XL 2.
+  const SIZED = { S: 30, M: 22, L: 10, XL: 2 };
+  const byHand = SIZES.reduce((t, [k, h]) => t + SIZED[k] * h, 0); // 151 h
+  const attention = 28.1, rate = 90, planUsd = 200, api = 2055;
+  const PRS = [
+    [141, '25 Oct', '+1,146 −56', 'feat(sync): offline edits sync when the phone is back online, with a screen for conflicts', '2 sessions · 7 agents', 'L'],
+    [140, '25 Oct', '+1,747 −96', 'feat(push): reminders arrive as notifications and open the screen they are about', '1 session · 5 agents', 'L'],
+    [139, '24 Oct', '+2,747 −170', 'feat(maps): a saved place shows its photos, notes and visits', '1 session · 6 agents', null],
+    [138, '24 Oct', '+1,776 −29', 'feat(auth): sign in with a passkey that works on every device', '1 session · 6 agents', null],
+    [136, '23 Oct', '+704 −0', 'feat(search): the search page shows recent places before you type', '1 session · 4 agents', 'M'],
+    [125, '22 Oct', '+145 −6', 'fix(api): the API refuses uploads into a deleted album', '1 session · 3 agents', 'S'],
+  ];
+  function head(view, sub) {
+    return `<div class="hrow"><div class="p-head"><h1>Ledger</h1><span class="p-sub">${sub}</span></div>
+      <div class="filters"><span class="p-seg" role="group" aria-label="Ledger view"><button type="button" aria-pressed="false">Totals</button><button type="button" aria-pressed="false">Trends</button><button type="button" aria-pressed="${view === 'worth'}">Worth</button></span>
+      <select class="p-select" aria-label="Project"><option>mobile-app</option></select>
+      <span class="p-seg" role="group" aria-label="Period"><button type="button" aria-pressed="true">Month</button><button type="button" aria-pressed="false">Week</button></span></div></div>`;
+  }
+  function worth() {
+    const net = byHand - attention, value = net * rate;
+    return `${head('worth', 'mobile-app · October so far · your estimates beside what the logs measured')}
+    <section class="p-card"><div class="p-card-h"><h3>Your numbers</h3><span class="p-hint">only you know these; they stay on this machine</span></div><div class="p-card-b" style="display:grid;gap:14px">
+      <div class="settings"><label for="rate">Your hourly rate<input id="rate" class="p-input" value="$${rate}"></label><label for="planp">Your plan, a month<input id="planp" class="p-input" value="$${planUsd}"></label><button type="button" class="p-btn">Save</button></div>
+      <div class="sizes">One tap per merged PR: ${SIZES.map(([k, h]) => `<span><b>${k}</b> ${h} h</span>`).join('·')} <button type="button" class="p-btn" style="margin-left:6px">Edit Sizes</button></div>
+    </div></section>
+    <section class="p-card"><div class="p-card-h"><h3>October so far</h3><span class="p-hint">a losing month shows negative</span></div><div class="p-card-b" style="display:grid;gap:14px">
+      <div class="stats6">
+        <div class="p-stat"><span class="k">Hours by hand ${yours}</span><span class="v">${byHand} h</span><span class="d">64 of 109 merged PRs sized</span></div>
+        <div class="p-stat"><span class="k">Your attention ${real}</span><span class="v">${attention} h</span><span class="d">473 prompts on 21 days, plus permission waits</span></div>
+        <div class="p-stat"><span class="k">Net hours</span><span class="v">${Math.round(net)} h</span><span class="d">by hand minus attention</span></div>
+        <div class="p-stat"><span class="k">Value</span><span class="v">${usd(value)}</span><span class="d">at your ${usd(rate)} an hour</span></div>
+        <div class="p-stat"><span class="k">You paid</span><span class="v">${usd(planUsd)}</span><span class="d">your plan · ${usd(api)} API-equivalent ${real}</span></div>
+        <div class="p-stat"><span class="k">Return</span><span class="v">${usd(value - planUsd)}</span><span class="d">value minus what you paid</span></div>
+      </div>
+      <pre class="formula">value  = (hours by hand − hours of your attention) × your rate
+return = value − what you paid</pre>
+    </div></section>
+    <section class="p-card"><div class="p-card-h"><h3>Merged PRs to size</h3><span class="p-hint">45 of 109 not sized yet · newest first</span></div><div class="prs">
+      ${PRS.map(([n, d, lines, t, who, s]) => `<div class="pr"><span class="n">#${n}</span><span class="t"><b>${t}</b><small>merged ${d} · ${lines} · ${who}</small></span><span class="p-seg" role="group" aria-label="Size of #${n}">${SIZES.map(([k]) => `<button type="button" aria-pressed="${k === s}">${k}</button>`).join('')}<button type="button" aria-pressed="false">Skip</button></span></div>`).join('')}
+    </div>
+    <details class="p-explain"><summary>How Worth is counted</summary><p>Hours by hand are yours: a size per merged PR, which you can change at any time. Your attention comes from the gaps between your prompts (under 10 minutes counts as working, plus 2 minutes per prompt) and your permission waits, so it's a floor: reading a diff afterwards leaves no trace. A PR finds its sessions through the PR links Claude Code records (156 of mobile-app's 171 merged PRs have one). Work that never became a PR can be sized as a session. Nothing asks you for a size when a session ends. Self-estimates run optimistic: in METR's 2025 trial, developers were 19% slower with AI and believed they were 20% faster.</p></details></section>
+    <p class="foot">Real: attention, spend, PR titles and sizes. Example: your rate, your plan, the sizes chosen, how many PRs are sized, and the sessions and agents per PR.</p>`;
+  }
+
+  /* ---------- Unbacked claims (Live) ---------- */
+  function truth() {
+    const rows = [
+      ['main', 'orchestrator', 'opus', 'working', 'Waiting on reviewer', 'Agent 1m 20s'],
+      ['implementer', 'developer', 'sonnet', 'done', 'Fixed the quarter totals in plan.ts', 'done in 6m 02s'],
+      ['reviewer', 'reviewer', 'opus', 'claim', 'Said "all 48 tests pass"', 'no test ran after its last code edit, at 14:02'],
+    ];
+    const pill = { working: '<span class="p-state s-working">working</span>', done: '<span class="p-state s-done">done</span>', claim: '<span class="p-state s-claim">unbacked claim</span>' };
+    return `<div class="p-head"><h1>1 session running</h1><div class="p-tally"><span style="--c-dot:var(--ok-dot)">1 at work</span><span style="--c-dot:var(--bad-dot)">1 unbacked claim</span><span style="--c-dot:var(--done-dot)">1 done</span></div></div>
+    <section class="p-card needs" aria-labelledby="needs-h"><div class="p-card-h"><h3 id="needs-h">Needs you</h3><span class="p-hint">1 agent</span></div>
+      <div class="need">${pill.claim}<span><b>reviewer</b> in <b>mobile-app</b> said all 48 tests pass; no test ran after its last code edit, at 14:02 ${ex}</span><span class="since num">40s</span><button type="button" class="p-btn">Open</button></div>
+    </section>
+    <section class="p-card" aria-label="mobile-app">
+      <div class="shead"><div class="who"><div class="l1"><h2>mobile-app</h2><span class="p-chip branch">fix/upload-retries</span></div><span class="meta">mbp · started 13:41 · running 22m</span></div></div>
+      <div class="cols" aria-hidden="true"><span>Agent</span><span>Doing now</span><span>Model</span><span class="r">Tokens</span><span class="r">Cost</span><span class="r">State</span></div>
+      ${rows.map(([n, role, m, st, what, sub], i) => `<div class="agent d${i ? 1 : 0} is-${st}" role="button" tabindex="0"><span class="name"><span class="p-av" style="--m:var(--${m})" aria-hidden="true">${n[0].toUpperCase()}</span><span><b>${n}</b><small>${role}</small></span></span><span class="doing"><span class="what">${what}</span><span class="sub"><span>${sub}</span></span></span><span class="m"><span class="p-model m-${m}">${m[0].toUpperCase() + m.slice(1)} 5.5</span></span><span class="tok r num">${['1.2M', '640k', '310k'][i]}</span><span class="cost r num">${['$1.31', '$0.38', '$0.52'][i]}</span><span class="facts"></span>${pill[st]}</div>`).join('')}
+    </section>
+    <section class="p-card"><div class="p-card-h"><h3>reviewer · what it did</h3><span class="p-hint">the history drawer, with the checks marked ${ex}</span></div><div class="marks">
+      <div class="mark"><span class="t">13:58</span><span class="k ok">test run · ok</span><span class="w">pnpm test, 1,412 passed</span></div>
+      <div class="mark"><span class="t">14:00</span><span class="k bad">path not found</span><span class="w">Read src/lib/backend/firestore-admin.ts: no such file</span></div>
+      <div class="mark"><span class="t">14:01</span><span class="k bad">edit missed</span><span class="w">Edit src/lib/plan.ts: the text to replace wasn't in the file</span></div>
+      <div class="mark"><span class="t">14:02</span><span class="k">Edit</span><span class="w">src/lib/plan.ts</span></div>
+      <div class="mark"><span class="t">14:02</span><span class="k">Write</span><span class="w">notes/review.md: a note, not code, so it doesn't count</span></div>
+      <div class="mark"><span class="t">14:03</span><span class="k bad">unbacked claim</span><span class="w">"all 48 tests pass": the last test run (13:58) came before the code edit at 14:02</span></div>
+    </div>
+    <details class="p-explain"><summary>How claims are checked</summary><p>With Content on full, an agent's final answer and every subagent's report are read for test, build and edit claims. Each one is checked against that agent's own calls: a test run after its last edit to code or tests, whether it passed, a write to the file it names. Edits to notes, PR bodies and memory files don't count; in mobile-app's history both flags were exactly that. Without content, the error and command classes still mark missing paths, missed edits and tests edited right after a failure. Drift from the task needs a reader, so it goes to Analysis v2.</p></details></section>
+    <p class="foot">mobile-app, 10 weeks ${real}: 106 final answers or reports claimed tests pass. 0 were unbacked once edits to notes and PR bodies are left out (2 flagged before, both edits to a note or a PR body). 62 paths that didn't exist, 22 missed edits, 19 tests edited right after a failing run.</p>`;
+  }
+
+  /* ---------- Failure patterns (Analysis · Patterns) ---------- */
+  function ahead(view, sub) {
+    return `<div class="hrow"><div class="p-head"><h1>Analysis</h1><span class="p-sub">${sub}</span></div>
+      <div class="filters"><span class="p-seg" role="group" aria-label="Analysis view"><button type="button" data-board="patterns" aria-pressed="${view === 'patterns'}">Patterns</button><button type="button" data-board="search" aria-pressed="${view === 'search'}">Search</button><button type="button" data-board="analysis" aria-pressed="${view === 'analysis'}">Reports</button></span>
+      <select class="p-select" aria-label="Project"><option>mobile-app</option></select></div></div>`;
+  }
+  const KINDS = [
+    ['A command failed', 925, [['other commands', 637], ['tests', 90], ['gh', 61], ['git', 53], ['docker', 38], ['builds', 35], ['lint', 9], ['installs', 2]]],
+    ['A path that doesn\'t exist', 62], ['A timeout', 53], ['Refused (permission or the auto-mode classifier)', 35], ['An edit whose text wasn\'t in the file', 22], ['Written before it was read', 7], ['Invalid input', 4], ['A command that doesn\'t exist', 4],
+  ];
+  function patterns() {
+    const max = 925;
+    const row = (k, n, sub) => `<tr class="${sub ? 'sub' : ''}"><td>${k}</td><td class="r">${n.toLocaleString('en-US')}</td><td style="width:40%"><span class="bar" style="width:${Math.max(2, (n / max) * 100)}%"></span></td></tr>`;
+    return `${ahead('patterns', 'mobile-app · 10 weeks · from the plugin and the imported logs')}
+    <section class="p-card"><div class="p-card-b"><div class="stats6">
+      <div class="p-stat"><span class="k">Failed calls ${real}</span><span class="v">1,136</span><span class="d">of 46,473 (2.4%)</span></div>
+      <div class="p-stat"><span class="k">Paths that didn't exist</span><span class="v">62</span><span class="d">invented or stale</span></div>
+      <div class="p-stat"><span class="k">Missed edits</span><span class="v">22</span><span class="d">the text wasn't in the file</span></div>
+      <div class="p-stat"><span class="k">Tests edited after a failure</span><span class="v">19</span><span class="d">worth a look, often fine</span></div>
+      <div class="p-stat"><span class="k">Unbacked claims</span><span class="v">0</span><span class="d">of 106 test claims</span></div>
+    </div></div></section>
+    <section class="p-card"><div class="p-card-h"><h3>The same failure, again and again</h3><span class="p-hint">grouped across sessions; each points to a rule worth changing ${real}</span></div>
+      <div class="repeat"><div><b>Polling with sleep, blocked</b><p>Agents waited with <code>sleep</code> then <code>cat</code> or <code>tail</code>; Claude Code blocks it.</p></div><span class="num">155 · 4 sessions</span><span class="try">Try: a line in the agents' brief to run long jobs in the background and wait for the notification.</span></div>
+      <div class="repeat"><div><b>Edits stopped by the repo's own hook</b><p>A PreToolUse hook refused Write and Edit calls.</p></div><span class="num">63 · 5 sessions</span><span class="try">Try: tell agents which files and branches the hook protects, before they start.</span></div>
+      <div class="repeat"><div><b>Outside the worktree</b><p>An agent isolated in a worktree reached for a path outside it.</p></div><span class="num">50 · 1 session</span><span class="try">Try: say in the brief that the worktree is the only place it can write.</span></div>
+      <div class="repeat"><div><b>gh edit on a Projects (classic) repo</b><p><code>gh issue edit</code> and <code>gh pr edit</code> fail with a GraphQL deprecation error.</p></div><span class="num">13 · 3 sessions</span><span class="try">Your rules already say: use <code>gh api -X PATCH</code>. Some briefs don't carry it.</span></div>
+    </section>
+    <section class="p-card"><div class="p-card-h"><h3>Failed calls by kind</h3><span class="p-hint">the error and command classes from the plugin (#43) ${real}</span></div><div class="p-tablewrap"><table class="kinds">
+      <thead><tr><th>Kind</th><th class="r">Calls</th><th></th></tr></thead><tbody>
+      ${KINDS.map(([k, n, subs]) => row(k, n) + (subs ? subs.map(([s, m]) => row(s, m, true)).join('') : '')).join('')}
+    </tbody></table></div>
+    <details class="p-explain"><summary>How patterns are found</summary><p>Each failed call gets a short class from the plugin (a path not found, an edit that missed, a command that failed, and the kind of command), so no output text has to leave the machine. Repeats are failures of the same shape across sessions, with paths and numbers set aside. With Content on full, the group can also show the failing text.</p></details></section>`;
+  }
+
+  /* ---------- Search (Analysis · Search) ---------- */
+  function search() {
+    const hits = [
+      ['answer', 'implementer', '20 Oct · session 7d21', 'The emulator suite now reads its hosts from one setting, and it refuses to <mark>wipe</mark> an emulator that isn\'t a throwaway.'],
+      ['thinking', 'main', '19 Oct · session b738', 'If the guard only checks the Firestore host, the Auth emulator can still be <mark>wiped</mark>; check both.'],
+      ['tool output', 'test-runner', '19 Oct · session b738', 'emulator-guard.test.ts › refuses to <mark>wipe</mark> a non-empty emulator ✓'],
+      ['prompt', 'you', '19 Oct · session b738', 'never <mark>wipe</mark> the shared emulator, it serves another project'],
+    ];
+    return `${ahead('search', 'mobile-app · captured text, from sessions with Content on full')}
+    <section class="p-card"><div class="p-card-b" style="display:grid;gap:12px">
+      <div class="search"><input class="p-input" id="q" aria-label="Search" value="wipe emulator"><button type="button" class="p-btn primary">Search</button></div>
+      <div class="sizes"><span class="p-seg" role="group" aria-label="Kind"><button type="button" aria-pressed="true">All</button><button type="button" aria-pressed="false">Prompts</button><button type="button" aria-pressed="false">Answers</button><button type="button" aria-pressed="false">Thinking</button><button type="button" aria-pressed="false">Tool output</button></span></div>
+    </div></section>
+    <section class="p-card"><div class="p-card-h"><h3>4 results</h3><span class="p-hint">newest first · each opens its session ${ex}</span></div><div class="hits">
+      ${hits.map(([kind, who, when, text]) => `<div class="hit"><div class="meta"><span class="p-chip">${kind}</span><span>${who}</span><span>${when}</span></div><p>${text}</p></div>`).join('')}
+    </div>
+    <details class="p-explain"><summary>What search covers</summary><p>Only text captured with Content on full: prompts, answers, thinking where Claude Code sends it, and tool input and output, masked and capped as stored. In mobile-app, 9 sessions were captured with content on. It runs on SQLite's full-text index on your machine.</p></details></section>`;
+  }
+
+  /* ---------- Analysis v2 (Analysis · Reports) ---------- */
+  function analysis() {
+    return `${ahead('analysis', 'mobile-app · run by hand, with an estimate first and a monthly cap')}
+    <div class="grid2"><section class="p-card"><div class="p-card-h"><h3>New analysis</h3><span class="p-hint">nothing is sent until you confirm</span></div><div class="p-card-b" style="display:grid;gap:14px">
+      <div class="settings"><label for="a1">This period<input id="a1" class="p-input" value="20–24 Oct" style="width:140px"></label><label for="a2">Against<input id="a2" class="p-input" value="13–19 Oct" style="width:140px"></label></div>
+      <div class="sizes"><label class="p-check"><input type="checkbox" checked> Failures and their patterns</label><label class="p-check"><input type="checkbox" checked> Drift from the task (needs Content on full)</label></div>
+      <div class="p-stat"><span class="k">Estimate ${ex}</span><span class="v">$0.84</span><span class="d">212k tokens in, measured · Opus 5.5 · $18.40 left of this month's $20 cap</span></div>
+      <div><button type="button" class="p-btn primary">Confirm and Send</button></div>
+    </div></section>
+    <section class="p-card"><div class="p-card-h"><h3>Report · 20–24 Oct against 13–19 Oct</h3><span class="p-hint">${ex}</span></div>
+      <div class="finding"><b>Spend fell 26% a day, mostly from generic agents</b><p>$104 a day before, $77 after; generic agents from $71 to $4.80. The main session is now most of the cost. ${real}</p></div>
+      <div class="finding"><b>Drift: 3 of 41 turns did less than asked</b><p>Two skipped the README line the prompt asked for; one left a failing test marked as skipped.</p></div>
+      <div class="finding"><b>The same failure 155 times: polling with sleep</b><p>Agents were told to wait for CI by hand. One line in the code skill's brief would stop it.</p></div>
+      <div class="p-card-b" style="display:grid;gap:10px"><span class="p-hint">Proposed edit: you apply it, then the change shows up on Trends</span>
+<pre class="diff">.claude/skills/code/SKILL.md
+  ## Waiting on long jobs
+<span class="d">- Poll until the suite finishes.</span>
+<span class="a">+ Run long jobs in the background and wait for the notification:</span>
+<span class="a">+ never sleep in a loop (Claude Code blocks it).</span></pre>
+        <div><button type="button" class="p-btn">Copy the Diff</button></div></div>
+    </section></div>`;
+  }
+
+  /* ---------- Thought bubbles (Office) ---------- */
+  function office() {
+    const bots = [['M', 'main', 'var(--opus)', 'Which PR should land first: the totals fix or the quarter labels?', 'thinking · 14:01'], ['I', 'implementer', 'var(--sonnet)', 'The test fails because the quarter starts in January, not on the contract date.', 'thinking · 14:01'], ['T', 'test-runner', 'var(--haiku)', 'Running the suite: 1,412 tests.', 'Bash · 14:02']];
+    return `<div class="p-head"><h1>Office</h1><span class="p-sub">mobile-app · one room · thought bubbles</span></div>
+    <section class="p-card"><div class="p-card-h"><h3>mobile-app</h3><span class="p-hint">a bubble shows each bot's latest thought, cut to one line ${ex}</span></div><div class="bots">
+      ${bots.map(([l, n, c, t, s]) => `<div class="bot"><span class="face" style="background:${c}" aria-hidden="true">${l}</span><div><b style="font-weight:600">${n}</b><div class="bubble">${t}<small>${s}</small></div></div></div>`).join('')}
+    </div>
+    <details class="p-explain"><summary>When bubbles show</summary><p>Only in interactive sessions with thinking summaries on: Claude Code sends no thinking text to headless runs. Without it, a bubble shows the tool at work, as the Office does today.</p></details></section>`;
+  }
+
+  /* ---------- Plan and decisions ---------- */
+  function plan() {
+    return `<div class="p-head"><h1>v0.3</h1><span class="p-sub">The plan of 22 Oct, amended on 25 Oct with Worth and unbacked claims, checked against one project's real logs</span></div>
+    <div class="grid2"><section class="p-card"><div class="p-card-h"><h3>What the data says</h3><span class="p-hint">mobile-app, 17 Aug to 24 Oct ${real}</span></div><div class="p-card-b"><ol class="facts-l">
+      <li><b>One estimate per session doesn't fit.</b> 15 sessions, 8 of them across several feature branches. October alone merged 109 PRs.</li>
+      <li><b>A PR finds its sessions.</b> Claude Code's own PR links name 156 of the 171 merged PRs; branch names alone match only 64.</li>
+      <li><b>No real unbacked test claim yet.</b> 106 answers claimed tests pass. Both flags were edits to a note or a PR body, so the check must count only code and tests.</li>
+      <li><b>The cheap checks find more.</b> 62 paths that didn't exist, 22 missed edits, 19 tests edited right after a failing run.</li>
+      <li><b>Repeats point to rules.</b> 155 blocked sleeps, 63 edits stopped by a hook, 13 gh edits on Projects (classic).</li>
+      <li><b>Your attention is measurable as a floor.</b> 473 prompts on 21 days in October: about 28 hours.</li>
+    </ol></div></section>
+    <section class="p-card"><div class="p-card-h"><h3>Slices</h3><span class="p-hint">the issues in GitHub, in this order</span></div><div class="p-card-b slices">
+      <div class="slice"><span class="n">1</span><div><b>Error and command classes</b> (#43)<p>The plugin's classes; failure patterns read them. Works with Content off.</p></div></div>
+      <div class="slice"><span class="n">2</span><div><b>Worth</b> (#42)<p>Your rate and plan, one-tap sizes per merged PR, the Worth view in the Ledger.</p></div></div>
+      <div class="slice"><span class="n">3</span><div><b>Failure patterns</b> (#45)<p>Kinds, repeats and the counts, in Analysis.</p></div></div>
+      <div class="slice"><span class="n">4</span><div><b>Unbacked claims</b> (#44)<p>Claims against calls, code and tests only, in Needs you and the history.</p></div></div>
+      <div class="slice"><span class="n">5</span><div><b>Search</b> (#46), <b>Analysis v2</b> (#47), <b>thought bubbles</b> (#48)<p>The model-driven half, after the first four. This is where the split would cut.</p></div></div>
+    </div></section></div>`;
+  }
+
+  const DECIDE = {
+    worth: ['<b>One estimate per merged PR, as one tap on a size</b> (S, M, L, XL; their hours yours to set), with a session as the fallback for work that never became a PR. <i>Recommended: 109 PRs a month is too many to type hours for, and 15 sessions are too coarse.</i>',
+      '<b>Your attention is a floor</b>: prompt windows under 10 minutes plus 2 minutes a prompt, plus permission waits. <i>Recommended.</i>',
+      '<b>The return is computed on your plan price</b>, with the API-equivalent shown beside it. <i>Recommended: it\'s what you actually pay.</i>',
+      '<b>Worth is a third Ledger view</b>, Totals | Trends | Worth. <i>Recommended.</i>',
+      '<b>Revenue from your time log in another app waits</b> for a later version. <i>Recommended.</i>'],
+    truth: ['<b>Only edits to code and tests break a claim</b>; notes, PR bodies and memory files don\'t. <i>Recommended: mobile-app\'s two flags were exactly those.</i>',
+      '<b>Its word is "unbacked claim", in red</b> like a stall, its reason in the row; it goes in Needs you and the history. <i>Recommended.</i>',
+      '<b>Without Content on full, a session says "not checked"</b>, never "clean". <i>Recommended.</i>',
+      '<b>#44\'s done check changes</b>: a planted unbacked claim is caught, and mobile-app\'s history shows no false flags. <i>Recommended: the history has no real one to find.</i>'],
+    patterns: ['<b>Analysis becomes the home of Explain</b>: Patterns | Search | Reports. <i>Recommended: the nav stays at five.</i>',
+      '<b>Repeats come with a suggested fix</b>, a sentence you can act on, not a diff. <i>Recommended.</i>',
+      '<b>Tests edited after a failure are "worth a look"</b>, not a flag. <i>Recommended: fixing a wrong test is often right.</i>'],
+    search: ['<b>Search covers only captured text</b> and says how many sessions had Content on. <i>Recommended.</i>',
+      '<b>Results open their session\'s history</b> at that moment. <i>Recommended.</i>'],
+    analysis: ['<b>Analysis v2 compares two periods</b> and adds failures and drift, with the same estimate, confirm and cap as today. <i>Recommended.</i>',
+      '<b>A proposed edit is a diff you copy and apply yourself.</b> agent-orb writes nothing to your repos. <i>Recommended.</i>'],
+    office: ['<b>Bubbles show the latest thought, cut to one line</b>, and fall back to the tool at work when there is no thinking text. <i>Recommended.</i>'],
+    plan: ['<b>Split v0.3</b>: v0.3 "Worth and truth" (#43, #42, #45, #44) and v0.4 "Explain" (#46, #47, #48), with Share moving to v0.5. <i>Recommended: the first four need no model and answer your two questions.</i>',
+      '<b>Slice order 1 to 5</b> as listed. <i>Recommended.</i>'],
+  };
+  const TITLES = { worth: 'Worth', truth: 'unbacked claims', patterns: 'failure patterns', search: 'search', analysis: 'Analysis v2', office: 'thought bubbles', plan: 'plan' };
+  const RENDER = { worth, truth, patterns, search, analysis, office, plan };
+  const NAV = { worth: 'worth', truth: 'truth', patterns: 'patterns', search: 'patterns', analysis: 'patterns', office: 'office' };
+  const state = { board: 'worth' };
+  function render() {
+    $('#page').innerHTML = RENDER[state.board]();
+    document.querySelectorAll('.p-nav a').forEach((a) => a.toggleAttribute('aria-current', a.dataset.go === NAV[state.board]));
+    document.querySelectorAll('.p-nav a[aria-current]').forEach((a) => a.setAttribute('aria-current', 'page'));
+    document.querySelectorAll('#rv-page button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === state.board)));
+    $('#decide').innerHTML = `<h2>What the ${TITLES[state.board]} board decides</h2><ol>${DECIDE[state.board].map((d) => `<li>${d}</li>`).join('')}</ol>`;
+  }
+  document.addEventListener('click', (e) => {
+    const go = e.target.closest('[data-go]'); if (go) { e.preventDefault(); state.board = go.dataset.go; return render(); }
+    const bd = e.target.closest('[data-board]'); if (bd) { state.board = bd.dataset.board; return render(); }
+  });
+  const seg = (id, f) => $(id).addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; b.parentElement.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); f(b.dataset.v); });
+  seg('#rv-page', (v) => { state.board = v; render(); });
+  seg('#rv-theme', (v) => (v === 'system' ? document.documentElement.removeAttribute('data-theme') : document.documentElement.setAttribute('data-theme', v)));
+  seg('#rv-width', (v) => $('#stage').classList.toggle('phone', v === 'phone'));
+  const h = location.hash.slice(1); if (RENDER[h]) state.board = h;
+  render();
+})();
+</script>

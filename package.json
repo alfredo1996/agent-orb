@@ -1,0 +1,20 @@
+{
+  "name": "agent-orb",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.1",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p . && tsc -p packages/studio",
+    "soak": "node --expose-gc packages/server/scripts/soak.ts",
+    "import-check": "node packages/server/scripts/import-check.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}

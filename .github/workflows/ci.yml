@@ -1,0 +1,47 @@
+# The gate for every PR into dev and main (PROJECT.md §14).
+# Not here yet: the mod's engine tests (`claude plugin test packages/mod`) and `claude plugin validate`,
+# which need the Claude Code binary; run them locally until a pinned build can be installed here.
+# The mod's typecheck is here: it reads the pinned vendor/claude-code.d.ts, so it needs no binary (refresh note: packages/mod/tsconfig.json).
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Typecheck, tests, studio build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # the version comes from package.json's packageManager
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm exec tsc -p packages/mod
+      - run: pnpm test # no container: the server's tests run on temp SQLite files
+      - name: Memory soak (the server's RSS stays under its limit on a session the size of the biggest)
+        run: pnpm soak
+      - name: Studio build
+        run: pnpm --filter @agent-orb/studio build
+
+  image:
+    name: Server image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f packages/server/Dockerfile .

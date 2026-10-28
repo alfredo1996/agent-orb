@@ -1,0 +1,8 @@
+{
+  "main": "The session's main agent: the one you talk to.",
+  "Explore": "Read-only search agent: sweeps many files and returns the conclusion.",
+  "Plan": "Architect agent: designs an implementation plan and edits no files.",
+  "general-purpose": "General agent for researching questions, searching code and multi-step tasks.",
+  "claude-code-guide": "Answers questions about Claude Code, the Agent SDK and the Claude API.",
+  "statusline-setup": "Configures the Claude Code status line."
+}

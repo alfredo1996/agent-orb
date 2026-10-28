@@ -1,0 +1,7 @@
+{
+  "main": "orchestrator",
+  "Explore": "researcher",
+  "Plan": "planner",
+  "claude-code-guide": "consultant",
+  "general-purpose": "generalist"
+}

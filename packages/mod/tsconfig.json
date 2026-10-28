@@ -1,0 +1,19 @@
+{
+  "//": "Self-contained: the engine API comes from the pinned vendor/claude-code.d.ts (its first line names the Claude Code version), not from .claude-plugin/types/, which the engine writes only once it loads the mod and git ignores. Refresh when the mod targets a newer Claude Code: load the mod in a session (claude --plugin-dir packages/mod), copy .claude-plugin/types/claude-code/index.d.ts over vendor/claude-code.d.ts, run tsc -p packages/mod.",
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "types": [],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment"
+  },
+  "include": ["../../vendor/claude-code.d.ts", "hooks", "types", "tests"]
+}

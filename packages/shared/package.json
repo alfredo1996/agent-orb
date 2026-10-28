@@ -1,0 +1,15 @@
+{
+  "name": "@agent-orb/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./classes": "./src/classes.ts",
+    "./pricing.json": "./src/pricing.json",
+    "./roles.json": "./src/roles.json"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

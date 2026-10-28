@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-orb · Pipeline (mockup)</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #f0f2f5; --border: #e2e5ea; --border-strong: #cdd2da;
+    --text: #13161b; --muted: #59626e; --faint: #8b939e;
+    --accent: #5b5bd6; --accent-soft: #ececfb;
+    --ok: #17804a; --ok-bg: #e5f4eb;
+    --wait: #8f5a00; --wait-bg: #fff2d6; --wait-line: #f0b440;
+    --bad: #c22a2a; --bad-bg: #fdeaea; --bad-row: #fff6f6; --bad-line: #e5484d;
+    --done: #6b7380; --done-bg: #eef0f3;
+    --opus: #7240d6; --opus-bg: #f1ebfd; --sonnet: #1f5fd1; --sonnet-bg: #e8f0fd; --haiku: #0b7f75; --haiku-bg: #e2f5f2;
+    --term-bg: #fbfbfc; --term-text: #1d2128; --term-dim: #7a828d;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .04);
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d0f13; --surface: #15181e; --surface-2: #1b1f26; --border: #262c35; --border-strong: #353d48;
+      --text: #e6e9ed; --muted: #9ba3ad; --faint: #6c747f;
+      --accent: #8b8cf0; --accent-soft: #23243f;
+      --ok: #4ccf86; --ok-bg: #11301f;
+      --wait: #f5bd45; --wait-bg: #36290c; --wait-line: #c9911f;
+      --bad: #ff7a7a; --bad-bg: #3d1717; --bad-row: #22141a; --bad-line: #e5484d;
+      --done: #8a929d; --done-bg: #22272f;
+      --opus: #b598ff; --opus-bg: #2a2142; --sonnet: #84adff; --sonnet-bg: #1b2842; --haiku: #5fd3c6; --haiku-bg: #13312e;
+      --term-bg: #0a0c0f; --term-text: #d9dde2; --term-dim: #737b86;
+      --shadow: none;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d0f13; --surface: #15181e; --surface-2: #1b1f26; --border: #262c35; --border-strong: #353d48;
+    --text: #e6e9ed; --muted: #9ba3ad; --faint: #6c747f;
+    --accent: #8b8cf0; --accent-soft: #23243f;
+    --ok: #4ccf86; --ok-bg: #11301f;
+    --wait: #f5bd45; --wait-bg: #36290c; --wait-line: #c9911f;
+    --bad: #ff7a7a; --bad-bg: #3d1717; --bad-row: #22141a; --bad-line: #e5484d;
+    --done: #8a929d; --done-bg: #22272f;
+    --opus: #b598ff; --opus-bg: #2a2142; --sonnet: #84adff; --sonnet-bg: #1b2842; --haiku: #5fd3c6; --haiku-bg: #13312e;
+    --term-bg: #0a0c0f; --term-text: #d9dde2; --term-dim: #737b86;
+    --shadow: none;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+  .num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .num { font-size: 13px; }
+
+  /* Mockup chrome: not part of the product */
+  .mock-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 8px 16px; background: var(--surface-2); border-bottom: 1px dashed var(--border-strong); font-size: 12px; color: var(--muted); }
+  .mock-bar b { color: var(--text); font-weight: 600; }
+  .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+  .seg button { font: inherit; border: 0; background: var(--surface); color: var(--muted); padding: 3px 10px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border-strong); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+  .stage { padding: 0; }
+  .stage.phone { padding: 24px 16px 48px; display: flex; justify-content: center; }
+  .frame { container-type: inline-size; background: var(--bg); }
+  .stage.phone .frame { width: 390px; border: 1px solid var(--border-strong); border-radius: 28px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.12); min-height: 780px; }
+
+  /* App */
+  .topbar { display: flex; align-items: center; gap: 20px; padding: 0 20px; height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -.01em; }
+  .orb { width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 32% 30%, #c7cbff 0, #7b7cf0 38%, #3c3aa8 78%, #26246e 100%); box-shadow: 0 0 0 3px var(--accent-soft); }
+  nav { display: flex; gap: 2px; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; font-weight: 500; }
+  nav a[aria-current="page"] { color: var(--text); background: var(--surface-2); }
+  .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); }
+
+  main { padding: 20px; display: grid; gap: 20px; max-width: 1360px; margin: 0 auto; }
+  .pagehead { display: flex; align-items: baseline; gap: 12px; }
+  .pagehead h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+  .pagehead .sub { color: var(--muted); font-size: 13px; }
+
+  .session { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; }
+  .shead { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .sid { display: grid; gap: 4px; min-width: 0; }
+  .sid .title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .sid .project { font-weight: 650; font-size: 15px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font: 12px/1 var(--mono); padding: 3px 6px; border-radius: 5px; background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+  .meta { color: var(--muted); font-size: 12px; }
+  .flags { display: flex; gap: 6px; }
+  .flag { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .flag.bad { color: var(--bad); background: var(--bad-bg); }
+  .flag.wait { color: var(--wait); background: var(--wait-bg); }
+  .kpis { display: flex; gap: 24px; align-items: center; }
+  .kpi { display: grid; gap: 2px; }
+  .kpi .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .kpi .value { font: 600 18px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+  .kpi .value small { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .ctx { width: 120px; }
+  .bar { height: 6px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; margin-top: 4px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th.r, td.r { text-align: right; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  .tw { overflow-x: auto; }
+  .desc { white-space: normal; color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+  .desc.none { color: var(--faint); font-style: italic; }
+  .agent { display: flex; align-items: flex-start; gap: 6px; }
+  .tree { font-family: var(--mono); color: var(--faint); white-space: pre; font-size: 13px; line-height: 20px; }
+  .type { font-weight: 600; }
+  .role { font-size: 12px; color: var(--muted); }
+  .model { display: inline-block; font: 600 12px/1 var(--sans); padding: 4px 7px; border-radius: 5px; }
+  .model.opus { color: var(--opus); background: var(--opus-bg); }
+  .model.sonnet { color: var(--sonnet); background: var(--sonnet-bg); }
+  .model.haiku { color: var(--haiku); background: var(--haiku-bg); }
+  .tool { font-family: var(--mono); font-size: 13px; }
+  .tool .dur { color: var(--muted); margin-left: 6px; }
+  .dim { color: var(--faint); }
+  .state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px; }
+  .state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .state.working { color: var(--ok); background: var(--ok-bg); }
+  .state.waiting { color: var(--wait); background: var(--wait-bg); }
+  .state.stalled { color: var(--bad); background: var(--bad-bg); }
+  .state.done { color: var(--done); background: var(--done-bg); }
+  .state.error { color: var(--bad); background: transparent; border: 1px solid var(--bad-line); }
+  .state .why { font-weight: 500; opacity: .85; }
+
+  tr.stalled td { background: var(--bad-row); }
+  tr.stalled td:first-child { box-shadow: inset 3px 0 0 var(--bad-line); }
+  tr.stalled .tool { color: var(--bad); font-weight: 600; }
+  tr.stalled .tool .dur { color: var(--bad); }
+  tr.waiting td:first-child { box-shadow: inset 3px 0 0 var(--wait-line); }
+  tr.waiting .tool .dur { color: var(--wait); }
+  tr.done td { opacity: .5; }
+  .ph { display: none; }
+
+  .foot { padding: 10px 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); background: var(--surface-2); }
+
+  /* Terminal section */
+  .section-title { font-size: 13px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 12px 0 0; }
+  .term-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 20px; align-items: start; }
+  .term { background: var(--term-bg); color: var(--term-text); border: 1px solid var(--border); border-radius: 10px; font: 13px/1.55 var(--mono); padding: 14px 16px; overflow-x: auto; }
+  .term .cap { font: 600 11px/1 var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+  .prompt { border: 1px solid var(--border-strong); border-radius: 8px; padding: 6px 10px; color: var(--term-dim); }
+  .prompt .caret { display: inline-block; width: 8px; height: 15px; background: var(--term-text); vertical-align: -2px; margin-left: 2px; opacity: .7; }
+  .sl { padding: 6px 10px 0; white-space: pre; }
+  .sl.bad { color: var(--bad); font-weight: 600; }
+  .sl .d { color: var(--term-dim); }
+  .term + .term { margin-top: 12px; }
+  .panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .panel-head b { font-weight: 700; }
+  .pt { border-collapse: collapse; width: auto; }
+  .pt td { border: 0; padding: 1px 14px 1px 0; font-size: 13px; background: none; }
+  .pt tr.bad td { color: var(--bad); }
+  .pt tr.wait td { color: var(--wait); }
+  .pt tr.dim td { color: var(--term-dim); }
+  .hd { color: var(--term-dim); font-size: 12px; margin: 10px 0 4px; letter-spacing: .04em; }
+  .k { color: var(--accent); }
+
+  /* Phone: container query, so both the phone frame and a real narrow window get it */
+  @container (max-width: 700px) {
+    .topbar { padding: 0 16px; gap: 12px; height: auto; flex-wrap: wrap; padding-top: 10px; }
+    nav { order: 3; width: 100%; overflow-x: auto; padding-bottom: 6px; }
+    .conn .addr { display: none; }
+    main { padding: 16px; gap: 16px; }
+    .pagehead { flex-direction: column; gap: 2px; }
+    .shead { padding: 12px; }
+    .kpis { width: 100%; justify-content: space-between; gap: 12px; }
+    .kpi .value { font-size: 16px; }
+    .ctx { width: 90px; }
+    thead { display: none; }
+    table, tbody { display: block; }
+    tr { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "agent state" "model nums" "tool last"; gap: 6px 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    tr:last-child { border-bottom: 0; }
+    td { display: block; padding: 0; border: 0; white-space: normal; }
+    td.c-agent { grid-area: agent; } td.c-state { grid-area: state; justify-self: end; }
+    td.c-model { grid-area: model; }
+    td.c-tok { grid-area: nums; justify-self: end; } td.c-cost { display: none; }
+    td.c-tool { grid-area: tool; } td.c-last { grid-area: last; justify-self: end; font-size: 12px; }
+    .ph { display: inline; color: var(--muted); }
+    tr.stalled { background: var(--bad-row); box-shadow: inset 3px 0 0 var(--bad-line); }
+    tr.stalled td { background: none; } tr.stalled td:first-child, tr.waiting td:first-child { box-shadow: none; }
+    tr.waiting { box-shadow: inset 3px 0 0 var(--wait-line); }
+    tr.done { opacity: .5; } tr.done td { opacity: 1; }
+    .term-grid { grid-template-columns: minmax(0, 1fr); }
+    .d-only { display: none; }
+  }
+  @container (min-width: 701px) { .p-only { display: none; } }
+
+  /* Pipeline (design/pipeline.html) */
+  .pagehead { flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+  .filters { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .filters select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 8px; }
+  .filters .seg button { padding: 5px 10px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); min-width: 0; }
+  .card h2 { font-size: 13px; margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .card h2 .hint { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+  .org { display: block; width: 100%; height: auto; padding: 12px 8px 4px; }
+  .org .edge { fill: none; stroke: var(--accent); opacity: .35; }
+  .org .elabel { font: 11px var(--mono); fill: var(--faint); }
+  .org .node rect { fill: var(--surface-2); stroke: var(--border-strong); }
+  .org .node.sel rect { stroke: var(--accent); stroke-width: 2; fill: var(--accent-soft); }
+  .org .node.unassigned rect { stroke-dasharray: 5 4; }
+  .org .av { fill: var(--accent-soft); stroke: var(--accent); }
+  .org .avt { font: 600 13px var(--sans); fill: var(--accent); }
+  .org .role { font: 650 14px var(--sans); fill: var(--text); }
+  .org .types { font: 11.5px var(--sans); fill: var(--muted); }
+  .org .nums { font: 11px var(--mono); fill: var(--muted); }
+  .org .node.unassigned .role { fill: var(--wait); }
+  .rolelist { display: grid; gap: 0; }
+  .rolelist .r { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 4px 10px; padding: 12px 14px; border-top: 1px solid var(--border); }
+  .rolelist .r:first-child { border-top: 0; }
+  .rolelist .av { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent); display: grid; place-items: center; font-weight: 650; font-size: 13px; }
+  .rolelist .nm { font-weight: 650; } .rolelist .ty { color: var(--muted); font-size: 12px; } .rolelist .nu { grid-column: 2; font: 12px var(--mono); color: var(--muted); }
+  .rolelist .bar2 { grid-column: 2; height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; } .rolelist .bar2 > i { display: block; height: 100%; background: var(--accent); }
+  .rolelist .r.unassigned .nm { color: var(--wait); }
+  .panel .ph2 { padding: 14px 16px; border-bottom: 1px solid var(--border); display: grid; gap: 4px; }
+  .panel .ph2 b { font-size: 15px; }
+  .panel .ph2 span { color: var(--muted); font-size: 12.5px; }
+  .fix { padding: 14px 16px; display: grid; gap: 10px; border-bottom: 1px solid var(--border); background: var(--wait-bg); }
+  .fix label { font-size: 13px; color: var(--text); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .fix select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; padding: 4px 8px; }
+  .fix .chk { color: var(--muted); }
+  .fix button { justify-self: start; font: 600 13px var(--sans); color: #fff; background: var(--accent); border: 0; border-radius: 6px; padding: 6px 12px; }
+  .alist { list-style: none; margin: 0; padding: 4px 0; }
+  .alist li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 9px 16px; border-top: 1px dashed var(--border); font-size: 13px; }
+  .alist li:first-child { border-top: 0; }
+  .alist .d { color: var(--muted); font-size: 12px; grid-column: 1 / -1; }
+  .src { font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 7px; }
+  .lanes { display: block; width: 100%; height: auto; padding: 8px 8px 4px; }
+  .lanes .tick { stroke: var(--border); } .lanes .tl { font: 11px var(--mono); fill: var(--faint); }
+  .lanes .lane { font: 12px var(--sans); fill: var(--text); } .lanes .laneline { stroke: var(--border); stroke-dasharray: 2 4; }
+  .lanes .turn.opus { fill: var(--opus); } .lanes .turn.sonnet { fill: var(--sonnet); } .lanes .turn.haiku { fill: var(--haiku); }
+  .lanes .turn { opacity: .8; }
+  .lanes .stallseg { fill: var(--bad); opacity: .85; } .lanes .stalltxt { font: 600 11px var(--sans); fill: #fff; }
+  .lanes .tool { stroke: var(--surface); stroke-width: 1.5; opacity: .9; }
+  .lanes .spawn { stroke: var(--muted); stroke-dasharray: 3 3; fill: none; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 0 16px 12px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .twl { overflow-x: auto; }
+  .twl .lanes { min-width: 720px; }
+  @container (max-width: 1100px) { .two { grid-template-columns: minmax(0, 1fr); } }
+  @container (min-width: 701px) { .rolelist { display: none; } }
+  @container (max-width: 700px) { .org { display: none; } }
+  @container (max-width: 700px) { .filters { margin-left: 0; width: 100%; } }
+</style>
+</head>
+<body>
+
+<div class="mock-bar" role="region" aria-label="Mockup controls">
+  <span><b>Mockup</b> · Pipeline view (PROJECT.md §8.3) · sample week shaped on one real project's workflow</span>
+  <span>Theme <span class="seg" data-group="theme"><button data-v="auto" aria-pressed="true">Auto</button><button data-v="light" aria-pressed="false">Light</button><button data-v="dark" aria-pressed="false">Dark</button></span></span>
+  <span>Width <span class="seg" data-group="width"><button data-v="desktop" aria-pressed="true">Desktop</button><button data-v="phone" aria-pressed="false">Phone</button></span></span>
+</div>
+
+<div class="stage" id="stage">
+<div class="frame">
+  <header class="topbar">
+    <div class="brand"><span class="orb" aria-hidden="true"></span>agent-orb</div>
+    <nav aria-label="Views"><a href="#">Live</a><a href="#">Ledger</a><a href="#" aria-current="page">Pipeline</a><a href="#">Office</a></nav>
+    <div class="conn"><span class="pulse"></span>Live<span class="addr"> · 127.0.0.1:4040</span></div>
+  </header>
+
+  <main>
+    <div class="pagehead">
+      <h1>Pipeline</h1>
+      <span class="sub">agent-orb · last 7 days · 23 sessions · 85 agents</span>
+      <div class="filters">
+        <select aria-label="Project"><option>agent-orb</option><option>mobile-app</option></select>
+        <span class="seg"><button aria-pressed="false">Session</button><button aria-pressed="false">Day</button><button aria-pressed="true">Week</button></span>
+      </div>
+    </div>
+
+    <div class="two">
+      <section class="card" aria-label="Org chart by role">
+        <h2>Who delegates to whom <span class="hint">nodes are roles; edges as thick as the tokens delegated; click a role</span></h2>
+        <svg class="org d-only" viewBox="0 0 1000 460" role="img" aria-label="Pipeline of agent-orb by role over 7 days">
+<path class="edge" d="M500,124 C500,162.0 150,162.0 150,200" stroke-width="2.9"/>
+<text class="elabel" x="317" y="158" text-anchor="end">0.6M</text>
+<path class="edge" d="M500,124 C500,162.0 380,162.0 380,200" stroke-width="5.4"/>
+<text class="elabel" x="432" y="158" text-anchor="end">2.3M</text>
+<path class="edge" d="M500,124 C500,162.0 610,162.0 610,200" stroke-width="16.0"/>
+<text class="elabel" x="563" y="158" text-anchor="start">9.4M</text>
+<path class="edge" d="M500,124 C500,162.0 850,162.0 850,200" stroke-width="3.6"/>
+<text class="elabel" x="683" y="158" text-anchor="start">1.1M</text>
+<path class="edge" d="M560,134 C735,175 735,300 680,350" stroke-width="9.7"/>
+<text class="elabel" x="731" y="318" text-anchor="middle">5.2M</text>
+<path class="edge" d="M440,134 C265,175 265,300 200,350" stroke-width="2.4" stroke-dasharray="5 5"/>
+<text class="elabel" x="267" y="318" text-anchor="middle">0.3M</text>
+<g class="node orchestrator" transform="translate(405.0,40)"><rect width="190" height="94" rx="10"/><circle class="av" cx="26" cy="26" r="14"/><text class="avt" x="26" y="31" text-anchor="middle">O</text><text class="role" x="48" y="24">orchestrator</text><text class="types" x="48" y="41">main</text><text class="nums" x="14" y="64">23 agents · 12.6M tok</text><text class="nums" x="14" y="80">$24.80 · avg 38m</text></g>
+<g class="node planner" transform="translate(55.0,200)"><rect width="190" height="94" rx="10"/><circle class="av" cx="26" cy="26" r="14"/><text class="avt" x="26" y="31" text-anchor="middle">P</text><text class="role" x="48" y="24">planner</text><text class="types" x="48" y="41">Plan</text><text class="nums" x="14" y="64">4 agents · 0.6M tok</text><text class="nums" x="14" y="80">$1.10 · avg 3m</text></g>
+<g class="node researcher" transform="translate(285.0,200)"><rect width="190" height="94" rx="10"/><circle class="av" cx="26" cy="26" r="14"/><text class="avt" x="26" y="31" text-anchor="middle">R</text><text class="role" x="48" y="24">researcher</text><text class="types" x="48" y="41">Explore</text><text class="nums" x="14" y="64">21 agents · 2.3M tok</text><text class="nums" x="14" y="80">$0.60 · avg 1m</text></g>
+<g class="node developer" transform="translate(515.0,200)"><rect width="190" height="94" rx="10"/><circle class="av" cx="26" cy="26" r="14"/><text class="avt" x="26" y="31" text-anchor="middle">D</text><text class="role" x="48" y="24">developer</text><text class="types" x="48" y="41">implementer, general…</text><text class="nums" x="14" y="64">17 agents · 9.4M tok</text><text class="nums" x="14" y="80">$8.10 · avg 7m</text></g>
+<g class="node tester" transform="translate(755.0,200)"><rect width="190" height="94" rx="10"/><circle class="av" cx="26" cy="26" r="14"/><text class="avt" x="26" y="31" text-anchor="middle">T</text><text class="role" x="48" y="24">tester</text><text class="types" x="48" y="41">test-runner</text><text class="nums" x="14" y="64">9 agents · 1.1M tok</text><text class="nums" x="14" y="80">$0.40 · avg 2m</text></g>
+<g class="node reviewer" transform="translate(515.0,350)"><rect width="190" height="94" rx="10"/><circle class="av" cx="26" cy="26" r="14"/><text class="avt" x="26" y="31" text-anchor="middle">R</text><text class="role" x="48" y="24">reviewer</text><text class="types" x="48" y="41">adversarial-reviewer</text><text class="nums" x="14" y="64">9 agents · 5.2M tok</text><text class="nums" x="14" y="80">$9.30 · avg 4m</text></g>
+<g class="node unassigned sel" transform="translate(55.0,350)"><rect width="190" height="94" rx="10"/><circle class="av" cx="26" cy="26" r="14"/><text class="avt" x="26" y="31" text-anchor="middle">N</text><text class="role" x="48" y="24">no role</text><text class="types" x="48" y="41">code-simplifier</text><text class="nums" x="14" y="64">2 agents · 0.3M tok</text><text class="nums" x="14" y="80">$0.20 · avg 2m</text></g>
+</svg>
+        <div class="rolelist p-only">
+          <div class="r"><span class="av">O</span><div><span class="nm">orchestrator</span> <span class="ty">main</span></div><span class="nu">23 agents · 12.6M tok · $24.80</span></div>
+          <div class="r"><span class="av">D</span><div><span class="nm">developer</span> <span class="ty">implementer, general-purpose</span></div><span class="nu">17 agents · 9.4M delegated · $8.10</span><span class="bar2"><i style="width:100%"></i></span></div>
+          <div class="r"><span class="av">R</span><div><span class="nm">reviewer</span> <span class="ty">adversarial-reviewer</span></div><span class="nu">9 agents · 5.2M delegated · $9.30</span><span class="bar2"><i style="width:55%"></i></span></div>
+          <div class="r"><span class="av">R</span><div><span class="nm">researcher</span> <span class="ty">Explore</span></div><span class="nu">21 agents · 2.3M delegated · $0.60</span><span class="bar2"><i style="width:24%"></i></span></div>
+          <div class="r"><span class="av">T</span><div><span class="nm">tester</span> <span class="ty">test-runner</span></div><span class="nu">9 agents · 1.1M delegated · $0.40</span><span class="bar2"><i style="width:12%"></i></span></div>
+          <div class="r"><span class="av">P</span><div><span class="nm">planner</span> <span class="ty">Plan</span></div><span class="nu">4 agents · 0.6M delegated · $1.10</span><span class="bar2"><i style="width:6%"></i></span></div>
+          <div class="r unassigned"><span class="av">?</span><div><span class="nm">no role</span> <span class="ty">code-simplifier</span></div><span class="nu">2 agents · 0.3M delegated · $0.20</span><span class="bar2"><i style="width:3%"></i></span></div>
+        </div>
+      </section>
+
+      <aside class="card panel" aria-label="Agents behind a role">
+        <div class="ph2"><b>No role · code-simplifier</b><span>2 agents in 2 sessions · 0.3M tok · $0.20 · nothing declares or maps its role yet</span></div>
+        <div class="fix">
+          <label>Role <select aria-label="Role"><option>reviewer</option><option>developer</option><option>tester</option><option>researcher</option><option>planner</option><option>writer</option><option>ops</option><option>skeptic</option></select></label>
+          <label class="chk"><input type="checkbox" checked> for every code-simplifier agent in agent-orb, now and later</label>
+          <button type="button">Save role</button>
+        </div>
+        <ul class="alist">
+          <li><span><b>code-simplifier</b> · Sonnet 5.5</span><span class="src">no role</span><span class="d">“Review the Ledger diff for needless complexity” · session 7f3a9c · 182k tok · 2m</span></li>
+          <li><span><b>code-simplifier</b> · Sonnet 5.5</span><span class="src">no role</span><span class="d">“Simplify the outbox settle path” · session a91c02 · 121k tok · 1m</span></li>
+        </ul>
+        <div class="ph2" style="border-top:1px solid var(--border)"><span>Where a role comes from: <b style="font-size:12.5px">declared</b> (orb-role in the agent file) › <b style="font-size:12.5px">map</b> (roles.json) › <b style="font-size:12.5px">manual</b> (set here, wins over both).</span></div>
+      </aside>
+    </div>
+
+    <section class="card" aria-label="One session over time">
+      <h2>Session 7f3a9c, 14:02–14:40 <span class="hint">one lane per agent; bars are turns, ticks are tool calls, dotted lines are spawns</span></h2>
+      <div class="twl"><svg class="lanes" viewBox="0 0 1000 278" role="img" aria-label="Swimlane timeline of session 7f3a9c, one lane per agent">
+<line class="tick" x1="193.9" x2="193.9" y1="22" y2="272"/><text class="tl" x="193.9" y="14" text-anchor="middle">14:04</text>
+<line class="tick" x1="281.7" x2="281.7" y1="22" y2="272"/><text class="tl" x="281.7" y="14" text-anchor="middle">14:08</text>
+<line class="tick" x1="369.5" x2="369.5" y1="22" y2="272"/><text class="tl" x="369.5" y="14" text-anchor="middle">14:12</text>
+<line class="tick" x1="457.3" x2="457.3" y1="22" y2="272"/><text class="tl" x="457.3" y="14" text-anchor="middle">14:16</text>
+<line class="tick" x1="545.1" x2="545.1" y1="22" y2="272"/><text class="tl" x="545.1" y="14" text-anchor="middle">14:20</text>
+<line class="tick" x1="632.8" x2="632.8" y1="22" y2="272"/><text class="tl" x="632.8" y="14" text-anchor="middle">14:24</text>
+<line class="tick" x1="720.6" x2="720.6" y1="22" y2="272"/><text class="tl" x="720.6" y="14" text-anchor="middle">14:28</text>
+<line class="tick" x1="808.4" x2="808.4" y1="22" y2="272"/><text class="tl" x="808.4" y="14" text-anchor="middle">14:32</text>
+<line class="tick" x1="896.2" x2="896.2" y1="22" y2="272"/><text class="tl" x="896.2" y="14" text-anchor="middle">14:36</text>
+<line class="tick" x1="984.0" x2="984.0" y1="22" y2="272"/><text class="tl" x="984.0" y="14" text-anchor="middle">14:40</text>
+<text class="lane" x="10" y="48">main</text>
+<line class="laneline" x1="150" x2="984" y1="43" y2="43"/>
+<rect class="turn opus" x="150.0" y="34" width="65.8" height="18" rx="4"/>
+<rect class="turn opus" x="369.5" y="34" width="54.9" height="18" rx="4"/>
+<rect class="turn opus" x="567.0" y="34" width="43.9" height="18" rx="4"/>
+<rect class="turn opus" x="830.4" y="34" width="11.0" height="18" rx="4"/>
+<rect class="turn opus" x="929.1" y="34" width="54.9" height="18" rx="4"/>
+<line class="tool" x1="161.0" x2="161.0" y1="36" y2="50"/>
+<line class="tool" x1="176.3" x2="176.3" y1="36" y2="50"/>
+<line class="tool" x1="202.7" x2="202.7" y1="36" y2="50"/>
+<line class="tool" x1="378.3" x2="378.3" y1="36" y2="50"/>
+<line class="tool" x1="393.6" x2="393.6" y1="36" y2="50"/>
+<line class="tool" x1="578.0" x2="578.0" y1="36" y2="50"/>
+<line class="tool" x1="593.3" x2="593.3" y1="36" y2="50"/>
+<line class="tool" x1="834.8" x2="834.8" y1="36" y2="50"/>
+<line class="tool" x1="942.3" x2="942.3" y1="36" y2="50"/>
+<line class="tool" x1="962.1" x2="962.1" y1="36" y2="50"/>
+<text class="lane" x="10" y="82">└ Plan</text>
+<line class="laneline" x1="150" x2="984" y1="77" y2="77"/>
+<path class="spawn" d="M215.8,43 L215.8,68"/>
+<rect class="turn opus" x="215.8" y="68" width="87.8" height="18" rx="4"/>
+<line class="tool" x1="229.0" x2="229.0" y1="70" y2="84"/>
+<line class="tool" x1="248.8" x2="248.8" y1="70" y2="84"/>
+<line class="tool" x1="275.1" x2="275.1" y1="70" y2="84"/>
+<line class="tool" x1="290.5" x2="290.5" y1="70" y2="84"/>
+<text class="lane" x="10" y="116">└ implementer</text>
+<line class="laneline" x1="150" x2="984" y1="111" y2="111"/>
+<path class="spawn" d="M303.6,43 L303.6,102"/>
+<rect class="turn sonnet" x="303.6" y="102" width="263.4" height="18" rx="4"/>
+<line class="tool" x1="314.6" x2="314.6" y1="104" y2="118"/>
+<line class="tool" x1="330.0" x2="330.0" y1="104" y2="118"/>
+<line class="tool" x1="347.5" x2="347.5" y1="104" y2="118"/>
+<line class="tool" x1="382.6" x2="382.6" y1="104" y2="118"/>
+<line class="tool" x1="413.4" x2="413.4" y1="104" y2="118"/>
+<line class="tool" x1="441.9" x2="441.9" y1="104" y2="118"/>
+<line class="tool" x1="477.0" x2="477.0" y1="104" y2="118"/>
+<line class="tool" x1="505.5" x2="505.5" y1="104" y2="118"/>
+<line class="tool" x1="536.3" x2="536.3" y1="104" y2="118"/>
+<line class="tool" x1="553.8" x2="553.8" y1="104" y2="118"/>
+<text class="lane" x="10" y="150">└ Explore</text>
+<line class="laneline" x1="150" x2="984" y1="145" y2="145"/>
+<path class="spawn" d="M424.3,43 L424.3,136"/>
+<rect class="turn haiku" x="424.3" y="136" width="340.2" height="18" rx="4"/>
+<rect class="stallseg" x="439.7" y="136" width="324.8" height="18" rx="4"/><text class="stalltxt" x="602.1" y="149" text-anchor="middle">WebFetch stalled 15m</text>
+<line class="tool" x1="430.9" x2="430.9" y1="138" y2="152"/>
+<line class="tool" x1="439.7" x2="439.7" y1="138" y2="152"/>
+<text class="lane" x="10" y="184">└ implementer</text>
+<line class="laneline" x1="150" x2="984" y1="179" y2="179"/>
+<path class="spawn" d="M610.9,43 L610.9,170"/>
+<rect class="turn sonnet" x="610.9" y="170" width="219.5" height="18" rx="4"/>
+<line class="tool" x1="621.9" x2="621.9" y1="172" y2="186"/>
+<line class="tool" x1="646.0" x2="646.0" y1="172" y2="186"/>
+<line class="tool" x1="676.7" x2="676.7" y1="172" y2="186"/>
+<line class="tool" x1="718.4" x2="718.4" y1="172" y2="186"/>
+<line class="tool" x1="751.4" x2="751.4" y1="172" y2="186"/>
+<line class="tool" x1="790.9" x2="790.9" y1="172" y2="186"/>
+<line class="tool" x1="817.2" x2="817.2" y1="172" y2="186"/>
+<text class="lane" x="10" y="218">└ adversarial-reviewer</text>
+<line class="laneline" x1="150" x2="984" y1="213" y2="213"/>
+<path class="spawn" d="M841.3,43 L841.3,204"/>
+<rect class="turn opus" x="841.3" y="204" width="76.8" height="18" rx="4"/>
+<line class="tool" x1="850.1" x2="850.1" y1="206" y2="220"/>
+<line class="tool" x1="865.5" x2="865.5" y1="206" y2="220"/>
+<line class="tool" x1="885.2" x2="885.2" y1="206" y2="220"/>
+<line class="tool" x1="905.0" x2="905.0" y1="206" y2="220"/>
+<text class="lane" x="10" y="252">└ test-runner</text>
+<line class="laneline" x1="150" x2="984" y1="247" y2="247"/>
+<path class="spawn" d="M918.2,43 L918.2,238"/>
+<rect class="turn haiku" x="918.2" y="238" width="13.2" height="18" rx="4"/>
+<line class="tool" x1="920.4" x2="920.4" y1="240" y2="254"/>
+<line class="tool" x1="924.7" x2="924.7" y1="240" y2="254"/>
+</svg></div>
+      <div class="legend"><span><i style="background:var(--opus)"></i>Opus</span><span><i style="background:var(--sonnet)"></i>Sonnet</span><span><i style="background:var(--haiku)"></i>Haiku</span><span><i style="background:var(--bad)"></i>stalled</span></div>
+    </section>
+  </main>
+</div>
+</div>
+
+<script>
+  // Mockup controls only.
+  const root = document.documentElement, stage = document.getElementById('stage');
+  document.querySelectorAll('.mock-bar .seg').forEach(seg => seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    if (seg.dataset.group === 'theme') b.dataset.v === 'auto' ? root.removeAttribute('data-theme') : root.setAttribute('data-theme', b.dataset.v);
+    else stage.classList.toggle('phone', b.dataset.v === 'phone');
+  }));
+</script>
+</body>
+</html>

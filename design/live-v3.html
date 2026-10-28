@@ -1,0 +1,390 @@
+<title>agent-orb Live Redesign</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: one column of session panels; each panel is a tree of agent rows on a shared column grid, so values line up
+     across agents. One card level only. Needs-you sits above everything. Phone: rows stack, history is a full sheet. */
+  :root {
+    --bg: #f5f5f9; --surface: #ffffff; --sunk: #f0f0f6; --line: #e2e3ec; --line-strong: #cfd1de;
+    --ink: #15162a; --muted: #585b73; --faint: #80839b;
+    --accent: #4f4bd0; --accent-soft: #ecebfb; --accent-ink: #3a36b0;
+    --ok: #15703f; --ok-bg: #e2f3e8; --ok-dot: #1f9d55;
+    --wait: #7f4f00; --wait-bg: #fff1d1; --wait-dot: #d99300;
+    --bad: #ae1f27; --bad-bg: #fde8e8; --bad-dot: #e0343c;
+    --done: #5f6378; --done-bg: #eceef4; --done-dot: #9a9db0;
+    --opus: #b03a8e; --sonnet: #2566d6; --haiku: #009a85;
+    --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --shadow: 0 1px 2px rgba(21, 22, 42, .04), 0 2px 8px rgba(21, 22, 42, .04);
+    --drawer-shadow: -12px 0 32px rgba(21, 22, 42, .12);
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #0e0f17; --surface: #161826; --sunk: #12131f; --line: #262839; --line-strong: #34374d;
+    --ink: #e9eaf4; --muted: #a3a6c0; --faint: #74778f;
+    --accent: #9c9aff; --accent-soft: #24244a; --accent-ink: #c2c1ff;
+    --ok: #56d48f; --ok-bg: #11301f; --ok-dot: #3fc47c;
+    --wait: #f2bd4d; --wait-bg: #36290b; --wait-dot: #e6a823;
+    --bad: #ff8a8f; --bad-bg: #3b1518; --bad-dot: #f0545b;
+    --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
+    --opus: #cf62bd; --sonnet: #5f92f2; --haiku: #18a690;
+    --shadow: none; --drawer-shadow: -12px 0 32px rgba(0, 0, 0, .45);
+    color-scheme: dark; } }
+  :root[data-theme="dark"] {
+    --bg: #0e0f17; --surface: #161826; --sunk: #12131f; --line: #262839; --line-strong: #34374d;
+    --ink: #e9eaf4; --muted: #a3a6c0; --faint: #74778f;
+    --accent: #9c9aff; --accent-soft: #24244a; --accent-ink: #c2c1ff;
+    --ok: #56d48f; --ok-bg: #11301f; --ok-dot: #3fc47c;
+    --wait: #f2bd4d; --wait-bg: #36290b; --wait-dot: #e6a823;
+    --bad: #ff8a8f; --bad-bg: #3b1518; --bad-dot: #f0545b;
+    --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
+    --opus: #cf62bd; --sonnet: #5f92f2; --haiku: #18a690;
+    --shadow: none; --drawer-shadow: -12px 0 32px rgba(0, 0, 0, .45);
+    color-scheme: dark; }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Mock controls: not part of the app */
+  .review { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); background: var(--sunk); border-bottom: 1px dashed var(--line-strong); font-size: 13px; color: var(--muted); }
+  .review b { color: var(--ink); font-weight: 600; }
+  .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: var(--surface); padding: 6px 12px; min-height: 32px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line-strong); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+
+  .stage { padding-block: 0; }
+  .stage.phone { padding-block: 24px; }
+  .stage.phone .app { width: 390px; margin: 0 auto; border: 1px solid var(--line-strong); border-radius: 22px; overflow: hidden; min-height: 820px; }
+
+  /* App */
+  .app { container: app / inline-size; background: var(--bg); position: relative; min-height: 100vh; }
+  .top { display: flex; align-items: center; gap: 24px; height: 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); background: var(--surface); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; font: 700 17px/1 var(--display); letter-spacing: -.01em; white-space: nowrap; }
+  .orb { width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 32% 30%, #c9cbff 0, #7b7cf0 38%, #3c3aa8 78%, #26246e 100%); box-shadow: 0 0 0 3px var(--accent-soft); flex: none; }
+  .nav { display: flex; gap: 2px; align-self: stretch; }
+  .nav a { display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; color: var(--muted); text-decoration: none; font-weight: 500; border-bottom: 2px solid transparent; min-height: 44px; }
+  .nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .nav .count { font: 500 12px/1 var(--mono); padding: 3px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
+  .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .conn .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok-dot); box-shadow: 0 0 0 3px var(--ok-bg); }
+  .top .menu { display: none; }
+
+  .page { max-width: 1280px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 24px; }
+  .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; }
+  .head h1 { margin: 0; font: 700 30px/1.1 var(--display); letter-spacing: -.02em; }
+  .tally { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--muted); }
+  .tally span { display: inline-flex; align-items: center; gap: 7px; }
+
+  .state { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; white-space: nowrap; padding: 4px 10px; border-radius: 999px; }
+  .state::before, .tally span::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-dot); flex: none; }
+  .s-working { --c-dot: var(--ok-dot); color: var(--ok); background: var(--ok-bg); }
+  .s-waiting { --c-dot: var(--wait-dot); color: var(--wait); background: var(--wait-bg); }
+  .s-stalled { --c-dot: var(--bad-dot); color: var(--bad); background: var(--bad-bg); }
+  .s-done { --c-dot: var(--done-dot); color: var(--done); background: var(--done-bg); }
+  .tally .s-working, .tally .s-waiting, .tally .s-stalled, .tally .s-done { background: none; color: var(--muted); padding: 0; font-weight: 400; }
+
+  /* Needs you: the one loud place on the page */
+  .needs { border-radius: 14px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; }
+  .needs h2 { margin: 0; padding: 14px 20px 10px; font: 600 13px/1 var(--sans); color: var(--muted); }
+  .need { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px 16px; padding: 12px 20px; border-top: 1px solid var(--line); }
+  .need p { margin: 0; min-width: 0; }
+  .need p b { font-weight: 600; }
+  .need .since { color: var(--muted); font-size: 14px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface); font-weight: 600; font-size: 14px; cursor: pointer; text-decoration: none; color: var(--ink); }
+  .btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+
+  /* Session panel */
+  .session { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+  .shead { display: grid; grid-template-columns: 1fr auto; gap: 12px 32px; align-items: end; padding: 18px 20px 14px; }
+  .who { display: grid; gap: 4px; min-width: 0; }
+  .who .line1 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .who h2 { margin: 0; font: 600 21px/1.2 var(--display); letter-spacing: -.01em; }
+  .branch { font: 400 13px/1 var(--mono); color: var(--muted); padding: 4px 8px; border-radius: 6px; background: var(--sunk); border: 1px solid var(--line); }
+  .meta { font-size: 13px; color: var(--muted); }
+  .stats { display: flex; gap: 28px; align-items: end; }
+  .stat { display: grid; gap: 2px; }
+  .stat .k { font-size: 12px; font-weight: 500; color: var(--muted); }
+  .stat .v { font: 500 20px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+  .ctx { width: 132px; display: grid; gap: 6px; }
+  .ctx .bar { height: 6px; border-radius: 3px; background: var(--sunk); border: 1px solid var(--line); overflow: hidden; }
+  .ctx .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .skills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0 20px 14px; font-size: 13px; color: var(--muted); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line); color: var(--ink); font-size: 13px; }
+  .chip .mono { font-family: var(--mono); color: var(--accent-ink); }
+  .chip .how { color: var(--muted); }
+
+  /* Agent rows: one grid for every row of every session, so columns line up */
+  .cols, .agent { display: grid; grid-template-columns: minmax(220px, 1.1fr) minmax(240px, 2fr) 116px 76px 64px 150px; gap: 16px; align-items: center; }
+  .cols { padding: 8px 20px; background: var(--sunk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
+  .cols .r, .agent .r { text-align: right; }
+  .agent { padding: 12px 20px; min-height: 60px; border-top: 1px solid var(--line); cursor: pointer; position: relative; }
+  .cols + .agent { border-top: 0; }
+  .agent:hover { background: var(--sunk); }
+  .agent[aria-expanded="true"] { background: var(--accent-soft); }
+  .name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .av { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 600 13px/1 var(--sans); color: var(--surface); flex: none; }
+  .name b { font-weight: 600; }
+  .name .role { color: var(--muted); font-size: 13px; }
+  .name > span { display: grid; min-width: 0; line-height: 1.3; }
+  .depth1 .name { padding-left: 30px; }
+  .depth1 .name::before { content: ""; position: absolute; left: 34px; top: 0; height: 50%; width: 16px; border-left: 1.5px solid var(--line-strong); border-bottom: 1.5px solid var(--line-strong); border-bottom-left-radius: 8px; }
+  .depth1.more .name::after { content: ""; position: absolute; left: 34px; top: 50%; bottom: 0; border-left: 1.5px solid var(--line-strong); }
+  .doing { display: grid; gap: 2px; min-width: 0; }
+  .doing .what { font-weight: 500; overflow-wrap: anywhere; }
+  .doing .sub { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .doing .sub .num { color: var(--ink); }
+  .tasks { display: inline-flex; align-items: center; gap: 6px; }
+  .tasks i { width: 44px; height: 5px; border-radius: 3px; background: var(--sunk); border: 1px solid var(--line); overflow: hidden; display: inline-block; }
+  .tasks i b { display: block; height: 100%; background: var(--ok-dot); }
+  .model { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; white-space: nowrap; }
+  .model::before { content: ""; width: 9px; height: 9px; border-radius: 2px; background: var(--m); }
+  .m-opus { --m: var(--opus); } .m-sonnet { --m: var(--sonnet); } .m-haiku { --m: var(--haiku); }
+  .agent.is-done .name b, .agent.is-done .doing .what { color: var(--muted); font-weight: 500; }
+  .agent.is-stalled { box-shadow: inset 3px 0 0 var(--bad-dot); }
+  .agent.is-waiting { box-shadow: inset 3px 0 0 var(--wait-dot); }
+  .agent .state { justify-self: end; }
+  .foot { font-size: 13px; color: var(--faint); max-width: 80ch; }
+
+  /* History drawer */
+  .scrim { position: fixed; inset: 0; background: rgba(10, 11, 20, .28); z-index: 20; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(500px, 100%); background: var(--surface); border-left: 1px solid var(--line); box-shadow: var(--drawer-shadow); z-index: 21; display: grid; grid-template-rows: auto auto 1fr; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .dhead { display: grid; gap: 8px; padding: 18px 20px 14px; padding-top: max(18px, env(safe-area-inset-top, 0px)); border-bottom: 1px solid var(--line); }
+  .dhead .row1 { display: flex; align-items: center; gap: 10px; }
+  .dhead h2 { margin: 0; font: 600 20px/1.2 var(--display); }
+  .x { margin-left: auto; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-size: 20px; line-height: 1; color: var(--muted); }
+  .dhead .facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+  .dhead .facts .num { color: var(--ink); }
+  .tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--line); }
+  .tabs button { border: 0; background: none; padding: 0 10px; min-height: 44px; cursor: pointer; color: var(--muted); font-weight: 500; border-bottom: 2px solid transparent; display: inline-flex; align-items: center; gap: 7px; }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .tabs .n { font: 500 12px/1 var(--mono); padding: 3px 6px; border-radius: 999px; background: var(--sunk); }
+  .dbody { overflow-y: auto; padding: 8px 0 24px; }
+  .ev { display: grid; grid-template-columns: 64px 64px 1fr auto; gap: 12px; align-items: baseline; padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .ev .t { font: 13px var(--mono); color: var(--faint); }
+  .ev .tool { font: 500 13px var(--mono); }
+  .ev .target { font: 13px var(--mono); color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+  .ev .res { font: 13px var(--mono); white-space: nowrap; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .run { color: var(--accent-ink); }
+  .note { margin: 12px 20px 0; padding: 10px 12px; border-radius: 10px; background: var(--sunk); font-size: 13px; color: var(--muted); }
+  .note code { font-family: var(--mono); color: var(--ink); }
+  .task { display: grid; grid-template-columns: 22px 1fr; gap: 8px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+  .task .mk { font-family: var(--mono); }
+
+  /* Phone, by the app's own width */
+  @container app (max-width: 720px) {
+    .top { gap: 12px; }
+    .nav { display: none; }
+    .top .menu { display: inline-flex; margin-left: auto; min-height: 44px; }
+    .conn span.url { display: none; }
+    .conn { margin-left: 0; }
+    .head h1 { font-size: 26px; }
+    .need { grid-template-columns: 1fr auto; padding: 12px 16px; }
+    .need .state { grid-column: 1 / -1; justify-self: start; }
+    .need .since { grid-column: 1; }
+    .need .btn { grid-column: 2; grid-row: 2 / span 2; min-height: 44px; }
+    .shead { grid-template-columns: 1fr; padding: 16px; }
+    .stats { gap: 20px; flex-wrap: wrap; }
+    .ctx { width: 110px; }
+    .skills { padding: 0 16px 12px; }
+    .cols { display: none; }
+    .agent { grid-template-columns: 1fr auto; grid-template-areas: "name state" "doing doing" "facts facts"; gap: 6px 10px; padding: 14px 16px; }
+    .agent .name { grid-area: name; } .agent .state { grid-area: state; }
+    .agent .doing { grid-area: doing; }
+    .agent .model, .agent .tok, .agent .cost { display: none; }
+    .agent .facts { grid-area: facts; display: flex !important; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+    .depth1 { padding-left: 34px; }
+    .depth1 .name { padding-left: 0; }
+    .depth1 .name::before { left: 20px; }
+    .depth1.more .name::after { left: 20px; }
+    .drawer { top: auto; height: 88%; width: 100%; border-left: 0; border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; }
+    .ev { grid-template-columns: 56px 1fr auto; padding: 10px 16px; }
+    .ev .target { grid-column: 2 / -1; grid-row: 2; }
+  }
+  .agent .facts { display: none; }
+  .stage.phone .drawer { left: 50%; right: auto; transform: translateX(-50%); width: 390px; top: auto; height: 720px; border-radius: 18px 18px 0 0; }
+  .stage.phone .scrim { left: 50%; transform: translateX(-50%); width: 390px; }
+  @media (prefers-reduced-motion: no-preference) { .agent, .btn { transition: background .12s, border-color .12s; } }
+</style>
+
+<div class="review" role="region" aria-label="Mock controls">
+  <span><b>Mock controls</b>, not part of the app</span>
+  <span>Theme <span class="seg" id="theme"><button type="button" data-v="system" aria-pressed="true">System</button><button type="button" data-v="light" aria-pressed="false">Light</button><button type="button" data-v="dark" aria-pressed="false">Dark</button></span></span>
+  <span>Width <span class="seg" id="width"><button type="button" data-v="desktop" aria-pressed="true">Desktop</button><button type="button" data-v="phone" aria-pressed="false">Phone</button></span></span>
+  <span>Click any agent row, or Open, for its history. Synthetic data.</span>
+</div>
+
+<div class="stage" id="stage">
+  <div class="app">
+    <header class="top">
+      <span class="brand"><span class="orb" aria-hidden="true"></span>agent-orb</span>
+      <nav class="nav" aria-label="Studio">
+        <a href="#live" aria-current="page">Live <span class="count" aria-label="3 sessions running">3</span></a>
+        <a href="#live">Ledger</a><a href="#live">Pipeline</a><a href="#live">Office</a><a href="#live">Analysis</a>
+      </nav>
+      <span class="conn"><span class="dot" aria-hidden="true"></span>Live <span class="url">· 127.0.0.1:4040</span></span>
+      <button type="button" class="btn menu" aria-label="Open the menu">Menu</button>
+    </header>
+    <main class="page">
+      <div class="head">
+        <h1>3 sessions running</h1>
+        <div class="tally" id="tally"></div>
+      </div>
+      <section class="needs" aria-labelledby="needs-h"><h2 id="needs-h">Needs you</h2><div id="needs"></div></section>
+      <div id="sessions" style="display:grid;gap:20px"></div>
+      <p class="foot">Cost is API-equivalent: what these tokens would cost at list prices, not what a plan bills. Click an agent for everything it did, what failed and its tasks.</p>
+    </main>
+    <div class="scrim" id="scrim" hidden></div>
+    <aside class="drawer" id="drawer" hidden aria-labelledby="d-name" role="dialog">
+      <div class="dhead">
+        <div class="row1"><span class="av" id="d-av"></span><h2 id="d-name"></h2><span id="d-state"></span><button type="button" class="x" id="d-close" aria-label="Close the history">×</button></div>
+        <div class="facts" id="d-facts"></div>
+      </div>
+      <div class="tabs" role="tablist" id="d-tabs"></div>
+      <div class="dbody" id="d-body"></div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(() => {
+  const MODELS = { opus: ['Opus 5.5', 'var(--opus)'], sonnet: ['Sonnet 5.5', 'var(--sonnet)'], haiku: ['Haiku 5.5', 'var(--haiku)'] };
+  const STATE = { working: 'working', waiting: 'waiting for you', stalled: 'stalled', done: 'done' };
+  // Synthetic sessions. Session tokens and cost are the sums of their agents.
+  const SESSIONS = [
+    { project: 'shop-api', branch: 'main', meta: 'dev-laptop · started 17:33 · running 6m 12s', ctx: 41,
+      skills: [['/code', 'you typed it'], ['/review', 'the model called it']],
+      agents: [
+        { id: 'a1', name: 'main', role: 'orchestrator', model: 'opus', state: 'working', what: 'Waiting on implementer', sub: [['Agent', '2m 10s']], tasks: [2, 4], tok: 214, cost: 0.21, depth: 0,
+          facts: ['started 17:33', '6m 12s', '11 tool calls', '0 failed'],
+          history: [['17:33:41', 'Skill', '/code', 'ok', '0.1s'], ['17:33:48', 'Read', 'issues/142.md', 'ok', '0.2s'], ['17:34:02', 'Agent', 'Explore: find where orders are validated', 'ok', '31s'], ['17:34:40', 'TaskCreate', '4 tasks', 'ok', '0.1s'], ['17:35:02', 'Agent', 'implementer: implement #142', 'run', '2m 10s']],
+          taskList: [['done', 'Read the issue and the failing test'], ['done', 'Write the failing test'], ['run', 'Fix the cause in the shared handler'], ['todo', 'Run the gate']] },
+        { id: 'a2', name: 'Explore', role: 'researcher', model: 'haiku', state: 'done', what: 'Found where orders are validated', sub: [['done in', '31s'], ['task', 'Find where orders are validated']], tok: 62, cost: 0.01, depth: 1, more: true,
+          facts: ['17:34:02 to 17:34:33', '7 tool calls', '0 failed'],
+          history: [['17:34:04', 'Grep', 'validateOrder', 'ok', '0.3s'], ['17:34:07', 'Read', 'src/orders/validate.ts', 'ok', '0.1s'], ['17:34:11', 'Read', 'src/orders/refund.ts', 'ok', '0.1s'], ['17:34:15', 'Glob', 'src/orders/**/*.test.ts', 'ok', '0.1s']] },
+        { id: 'a3', name: 'implementer', role: 'developer', model: 'sonnet', state: 'working', what: 'Editing src/orders/refund.ts', sub: [['Edit', '50s']], tok: 213, cost: 0.14, depth: 1,
+          facts: ['started 17:35:02', '9 tool calls', '1 failed'],
+          history: [['17:35:06', 'Read', 'src/orders/refund.ts', 'ok', '0.2s'], ['17:35:09', 'Read', 'src/orders/refund.test.ts', 'ok', '0.1s'], ['17:35:24', 'Edit', 'src/orders/refund.test.ts', 'ok', '0.3s'], ['17:35:45', 'Bash', 'the test run', 'bad', 'exit 1 · 12.4s'], ['17:36:31', 'Edit', 'src/orders/refund.ts', 'ok', '0.4s'], ['17:36:53', 'Bash', 'the test run', 'ok', '9.8s'], ['17:38:22', 'Edit', 'src/orders/refund.ts', 'run', '50s']],
+          taskList: [['done', 'Write the failing test'], ['run', 'Fix the cause in the shared handler']] },
+      ] },
+    { project: 'mobile-app', branch: 'feat/offline-sync', meta: 'dev-laptop · started 17:36 · running 3m 05s', ctx: 22,
+      skills: [['/grill', 'the model called it']],
+      agents: [
+        { id: 'b1', name: 'main', role: 'orchestrator', model: 'sonnet', state: 'waiting', what: 'Wants to run Bash', sub: [['waiting', '1m 52s']], tok: 196, cost: 0.08, depth: 0,
+          facts: ['started 17:36', '3m 05s', '2 tool calls', '0 failed'],
+          history: [['17:36:20', 'Skill', '/grill', 'ok', '0.1s'], ['17:36:44', 'Read', 'src/sync/queue.ts', 'ok', '0.2s'], ['17:37:13', 'Bash', 'waiting for your OK', 'run', '1m 52s']] },
+      ] },
+    { project: 'docs-site', branch: 'main', meta: 'dev-laptop · started 17:13 · running 26m 40s', ctx: 58,
+      skills: [],
+      agents: [
+        { id: 'c1', name: 'main', role: 'orchestrator', model: 'opus', state: 'working', what: 'Waiting on Explore', sub: [['Agent', '17m 40s']], tok: 301, cost: 0.33, depth: 0,
+          facts: ['started 17:13', '26m 40s', '8 tool calls', '0 failed'],
+          history: [['17:14:02', 'Read', 'docs/getting-started.md', 'ok', '0.2s'], ['17:15:10', 'Agent', 'Plan: plan the search page', 'ok', '48s'], ['17:21:52', 'Agent', 'Explore: check the external links', 'run', '17m 40s']] },
+        { id: 'c2', name: 'Plan', role: 'planner', model: 'sonnet', state: 'done', what: 'Planned the search page', sub: [['done in', '48s'], ['task', 'Plan the search page']], tok: 109, cost: 0.07, depth: 1, more: true,
+          facts: ['17:15:10 to 17:15:58', '5 tool calls', '0 failed'],
+          history: [['17:15:13', 'Glob', 'docs/**/*.md', 'ok', '0.1s'], ['17:15:20', 'Read', 'docs/search.md', 'ok', '0.1s']] },
+        { id: 'c3', name: 'Explore', role: 'researcher', model: 'haiku', state: 'stalled', what: 'Stuck on WebFetch for 17 minutes', sub: [['WebFetch', '17m 02s'], ['task', 'Check the external links']], tok: 62, cost: 0.01, depth: 1,
+          facts: ['started 17:21:52', '6 tool calls', '0 failed'],
+          history: [['17:21:55', 'Grep', 'https://', 'ok', '0.4s'], ['17:22:03', 'WebFetch', 'example.org/guide', 'ok', '1.9s'], ['17:22:38', 'WebFetch', 'legacy-wiki.example.net', 'run', '17m 02s']] },
+      ] },
+  ];
+  const all = SESSIONS.flatMap((s) => s.agents.map((a) => ({ ...a, session: s })));
+  const fmtTok = (k) => (k >= 1000 ? `${(k / 1000).toFixed(2)}M` : `${k}k`);
+  const fmtUsd = (v) => `$${v.toFixed(2)}`;
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const pill = (st) => `<span class="state s-${st}">${STATE[st]}</span>`;
+  const model = (m) => `<span class="model m-${m}">${MODELS[m][0]}</span>`;
+  const av = (a) => `<span class="av" style="background:${MODELS[a.model][1]}" aria-hidden="true">${a.name[0].toUpperCase()}</span>`;
+
+  const counts = { working: 0, waiting: 0, stalled: 0, done: 0 };
+  all.forEach((a) => counts[a.state]++);
+  document.getElementById('tally').innerHTML = `<span class="s-working">${counts.working} at work</span><span class="s-waiting">${counts.waiting} waiting for you</span><span class="s-stalled">${counts.stalled} stalled</span><span class="s-done">${counts.done} done</span>`;
+
+  document.getElementById('needs').innerHTML = all.filter((a) => a.state === 'waiting' || a.state === 'stalled').map((a) => `
+    <div class="need">${pill(a.state)}<p><b>${esc(a.name)}</b> in <b>${esc(a.session.project)}</b> ${a.state === 'waiting' ? 'wants to run <span class="num">Bash</span>' : 'is stuck on <span class="num">WebFetch</span>'}</p>
+    <span class="since num">${a.sub[0][1]}</span><button type="button" class="btn" data-open="${a.id}">Open</button></div>`).join('');
+
+  document.getElementById('sessions').innerHTML = SESSIONS.map((s) => {
+    const tok = s.agents.reduce((n, a) => n + a.tok, 0), cost = s.agents.reduce((n, a) => n + a.cost, 0);
+    return `<section class="session" aria-label="${esc(s.project)}">
+      <div class="shead">
+        <div class="who"><div class="line1"><h2>${esc(s.project)}</h2><span class="branch">${esc(s.branch)}</span></div><span class="meta">${esc(s.meta)}</span></div>
+        <div class="stats">
+          <span class="stat"><span class="k">Tokens</span><span class="v">${fmtTok(tok)}</span></span>
+          <span class="stat"><span class="k">API-equivalent</span><span class="v">${fmtUsd(cost)}</span></span>
+          <span class="stat ctx"><span class="k">Context ${s.ctx}%</span><span class="bar"><i style="width:${s.ctx}%"></i></span></span>
+        </div>
+      </div>
+      ${s.skills.length ? `<div class="skills">Skills ${s.skills.map(([n, how]) => `<span class="chip"><span class="mono">${esc(n)}</span><span class="how">${esc(how)}</span></span>`).join('')}</div>` : ''}
+      <div class="cols" aria-hidden="true"><span>Agent</span><span>Doing now</span><span>Model</span><span class="r">Tokens</span><span class="r">Cost</span><span class="r">State</span></div>
+      ${s.agents.map((a) => `
+        <div class="agent depth${a.depth}${a.more ? ' more' : ''} is-${a.state}" role="button" tabindex="0" data-open="${a.id}" aria-expanded="false" aria-label="${esc(a.name)}, ${STATE[a.state]}: open its history">
+          <span class="name">${av(a)}<span><b>${esc(a.name)}</b><span class="role">${esc(a.role)}</span></span></span>
+          <span class="doing"><span class="what">${esc(a.what)}</span><span class="sub">${a.sub.map(([k, v]) => `<span>${esc(k)} <span class="num">${esc(v)}</span></span>`).join('')}${a.tasks ? `<span class="tasks">tasks <span class="num">${a.tasks[0]} of ${a.tasks[1]}</span><i><b style="width:${(a.tasks[0] / a.tasks[1]) * 100}%"></b></i></span>` : ''}</span></span>
+          ${model(a.model)}
+          <span class="tok r num">${fmtTok(a.tok)}</span><span class="cost r num">${fmtUsd(a.cost)}</span>
+          <span class="facts">${model(a.model)}<span class="num">${fmtTok(a.tok)} tok</span><span class="num">${fmtUsd(a.cost)}</span></span>
+          ${pill(a.state)}
+        </div>`).join('')}
+    </section>`;
+  }).join('');
+
+  // History drawer
+  const drawer = document.getElementById('drawer'), scrim = document.getElementById('scrim');
+  let current = null, tab = 'did', opener = null;
+  const resIcon = (r, v) => (r === 'ok' ? `<span class="res ok">✓ ${v}</span>` : r === 'bad' ? `<span class="res bad">✗ ${v}</span>` : `<span class="res run">running ${v}</span>`);
+  function render() {
+    const a = current, failed = a.history.filter((h) => h[3] === 'bad');
+    const tabs = [['did', 'What it did', a.history.length], ['failed', 'Failed', failed.length], ...(a.taskList ? [['tasks', 'Tasks', `${a.taskList.filter((t) => t[0] === 'done').length}/${a.taskList.length}`]] : [])];
+    if (!tabs.some((t) => t[0] === tab)) tab = 'did';
+    document.getElementById('d-tabs').innerHTML = tabs.map(([k, label, n]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${k === tab}">${label} <span class="n">${n}</span></button>`).join('');
+    const rows = (list) => list.map(([t, tool, target, r, v]) => `<div class="ev"><span class="t">${t}</span><span class="tool">${esc(tool)}</span><span class="target">${esc(target)}</span>${resIcon(r, esc(v))}</div>`).join('');
+    const body = tab === 'did' ? rows([...a.history].reverse())
+      : tab === 'failed' ? (failed.length ? rows(failed) : '<p class="note">Nothing failed.</p>')
+      : a.taskList.map(([st, label]) => `<div class="task"><span class="mk ${st === 'done' ? 'ok' : st === 'run' ? 'run' : ''}">${st === 'done' ? '✓' : st === 'run' ? '●' : '○'}</span><span>${esc(label)}</span></div>`).join('');
+    document.getElementById('d-body').innerHTML = body + '<p class="note">Content is off, so this shows tools, files and timings. Set <code>content: full</code> in the plugin to also see prompts, answers and thinking.</p>';
+  }
+  function open(id, from) {
+    current = all.find((a) => a.id === id); tab = 'did'; opener = from || null;
+    document.getElementById('d-av').outerHTML = `<span class="av" id="d-av" style="background:${MODELS[current.model][1]}">${current.name[0].toUpperCase()}</span>`;
+    document.getElementById('d-name').textContent = current.name;
+    document.getElementById('d-state').innerHTML = pill(current.state);
+    document.getElementById('d-facts').innerHTML = [`<span>${esc(current.role)}</span>`, model(current.model), `<span>${esc(current.session.project)}</span>`, ...current.facts.map((f) => `<span>${esc(f)}</span>`), `<span class="num">${fmtTok(current.tok)} tok</span>`, `<span class="num">${fmtUsd(current.cost)}</span>`].join('');
+    render();
+    document.querySelectorAll('.agent').forEach((r) => r.setAttribute('aria-expanded', String(r.dataset.open === id)));
+    drawer.hidden = false; scrim.hidden = false;
+    document.getElementById('d-close').focus();
+  }
+  function close() {
+    drawer.hidden = true; scrim.hidden = true;
+    document.querySelectorAll('.agent').forEach((r) => r.setAttribute('aria-expanded', 'false'));
+    if (opener) opener.focus();
+  }
+  document.addEventListener('click', (e) => {
+    const o = e.target.closest('[data-open]'); if (o) return open(o.dataset.open, o);
+    const t = e.target.closest('[data-tab]'); if (t) { tab = t.dataset.tab; render(); }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !drawer.hidden) close();
+    const o = e.target.closest && e.target.closest('.agent[data-open]');
+    if (o && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open(o.dataset.open, o); }
+  });
+  document.getElementById('d-close').addEventListener('click', close);
+  scrim.addEventListener('click', close);
+
+  // Mock controls
+  const seg = (id, apply) => document.getElementById(id).addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    b.parentElement.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    apply(b.dataset.v);
+  });
+  seg('theme', (v) => { if (v === 'system') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', v); });
+  seg('width', (v) => document.getElementById('stage').classList.toggle('phone', v === 'phone'));
+})();
+</script>

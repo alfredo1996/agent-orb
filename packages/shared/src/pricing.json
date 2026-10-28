@@ -1,0 +1,24 @@
+{
+  "_source": "https://platform.claude.com/docs/en/about-claude/pricing (Anthropic first-party API list prices), fetched 2026-10-19",
+  "_units": "USD per million tokens",
+  "_note": "cache_creation is the 5-minute cache write price; the event usage does not split 5m from 1h writes (1h writes cost 2x input). above_100k applies when input + cache_read + cache_creation of one request exceeds 100,000 tokens.",
+  "models": {
+    "claude-fable-5-1":   { "input": 10,   "output": 50,   "cache_read": 0.25, "cache_creation": 12.5 },
+    "claude-mythos-5-1":  { "input": 10,   "output": 50,   "cache_read": 0.25, "cache_creation": 12.5 },
+    "claude-fable-5":     { "input": 10,   "output": 50,   "cache_read": 1,    "cache_creation": 12.5 },
+    "claude-mythos-5":    { "input": 10,   "output": 50,   "cache_read": 1,    "cache_creation": 12.5 },
+    "claude-opus-5-5":    { "input": 4,    "output": 20,   "cache_read": 0.2,  "cache_creation": 5 },
+    "claude-opus-5":      { "input": 5,    "output": 25,   "cache_read": 0.5,  "cache_creation": 6.25 },
+    "claude-opus-4-8":    { "input": 5,    "output": 25,   "cache_read": 0.5,  "cache_creation": 6.25 },
+    "claude-opus-4-7":    { "input": 5,    "output": 25,   "cache_read": 0.5,  "cache_creation": 6.25 },
+    "claude-opus-4-6":    { "input": 5,    "output": 25,   "cache_read": 0.5,  "cache_creation": 6.25 },
+    "claude-opus-4-5":    { "input": 5,    "output": 25,   "cache_read": 0.5,  "cache_creation": 6.25 },
+    "claude-sonnet-5-5":  { "input": 2,    "output": 10,   "cache_read": 0.1,  "cache_creation": 2.5 },
+    "claude-sonnet-5":    { "input": 2,    "output": 10,   "cache_read": 0.2,  "cache_creation": 2.5 },
+    "claude-sonnet-4-6":  { "input": 3,    "output": 15,   "cache_read": 0.3,  "cache_creation": 3.75 },
+    "claude-sonnet-4-5":  { "input": 3,    "output": 15,   "cache_read": 0.3,  "cache_creation": 3.75 },
+    "claude-haiku-5-5":   { "input": 0.1,  "output": 0.5,  "cache_read": 0.01, "cache_creation": 0.125,
+                            "above_100k": { "input": 0.5, "output": 2.5, "cache_read": 0.05, "cache_creation": 0.625 } },
+    "claude-haiku-4-5":   { "input": 1,    "output": 5,    "cache_read": 0.1,  "cache_creation": 1.25 }
+  }
+}

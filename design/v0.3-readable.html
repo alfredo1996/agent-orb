@@ -1,0 +1,1463 @@
+<title>agent-orb v0.3 The studio, readable</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>/* Proposed studio library, scoped to .prop. Tokens are the approved Live v3 language (design/live-v3.html). */
+.prop {
+  --bg: #f5f5f9; --surface: #ffffff; --sunk: #f0f0f6; --line: #e2e3ec; --line-strong: #cfd1de;
+  --ink: #15162a; --muted: #585b73; --faint: #80839b;
+  --accent: #4f4bd0; --accent-soft: #ecebfb; --accent-ink: #3a36b0; --on-accent: #ffffff;
+  --data: #5c6488; --data-soft: #e3e5ee;
+  --ok: #15703f; --ok-bg: #e2f3e8; --ok-dot: #1f9d55;
+  --wait: #7f4f00; --wait-bg: #fff1d1; --wait-dot: #d99300;
+  --bad: #ae1f27; --bad-bg: #fde8e8; --bad-dot: #e0343c;
+  --done: #5f6378; --done-bg: #eceef4; --done-dot: #9a9db0;
+  --opus: #b03a8e; --sonnet: #2566d6; --haiku: #009a85;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --shadow: 0 1px 2px rgba(21, 22, 42, .04), 0 2px 8px rgba(21, 22, 42, .04);
+  --pop: 0 8px 28px rgba(21, 22, 42, .16);
+  background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .prop {
+  --bg: #0e0f17; --surface: #161826; --sunk: #12131f; --line: #262839; --line-strong: #34374d;
+  --ink: #e9eaf4; --muted: #a3a6c0; --faint: #74778f;
+  --accent: #9c9aff; --accent-soft: #24244a; --accent-ink: #c2c1ff; --on-accent: #0e0f17;
+  --data: #8c93b8; --data-soft: #23263a;
+  --ok: #56d48f; --ok-bg: #11301f; --ok-dot: #3fc47c;
+  --wait: #f2bd4d; --wait-bg: #36290b; --wait-dot: #e6a823;
+  --bad: #ff8a8f; --bad-bg: #3b1518; --bad-dot: #f0545b;
+  --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
+  --opus: #cf62bd; --sonnet: #5f92f2; --haiku: #18a690;
+  --shadow: none; --pop: 0 8px 28px rgba(0, 0, 0, .5); } }
+:root[data-theme="dark"] .prop {
+  --bg: #0e0f17; --surface: #161826; --sunk: #12131f; --line: #262839; --line-strong: #34374d;
+  --ink: #e9eaf4; --muted: #a3a6c0; --faint: #74778f;
+  --accent: #9c9aff; --accent-soft: #24244a; --accent-ink: #c2c1ff; --on-accent: #0e0f17;
+  --data: #8c93b8; --data-soft: #23263a;
+  --ok: #56d48f; --ok-bg: #11301f; --ok-dot: #3fc47c;
+  --wait: #f2bd4d; --wait-bg: #36290b; --wait-dot: #e6a823;
+  --bad: #ff8a8f; --bad-bg: #3b1518; --bad-dot: #f0545b;
+  --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
+  --opus: #cf62bd; --sonnet: #5f92f2; --haiku: #18a690;
+  --shadow: none; --pop: 0 8px 28px rgba(0, 0, 0, .5); }
+
+.prop *, .prop *::before, .prop *::after { box-sizing: border-box; }
+.prop .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.prop :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Shell */
+.prop .p-top { display: flex; align-items: center; gap: 24px; height: 56px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.prop .p-brand { display: flex; align-items: center; gap: 10px; font: 700 17px/1 var(--display); letter-spacing: -.01em; }
+.prop .p-orb { width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 32% 30%, #c9cbff 0, #7b7cf0 38%, #3c3aa8 78%, #26246e 100%); box-shadow: 0 0 0 3px var(--accent-soft); }
+.prop .p-nav { display: flex; gap: 2px; align-self: stretch; }
+.prop .p-nav a { display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; min-height: 44px; color: var(--muted); text-decoration: none; font-weight: 500; border-bottom: 2px solid transparent; }
+.prop .p-nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+.prop .p-count { font: 500 12px/1 var(--mono); padding: 3px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
+.prop .p-conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.prop .p-conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok-dot); box-shadow: 0 0 0 3px var(--ok-bg); }
+
+/* Page header and tally */
+.prop .p-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; }
+.prop .p-head h1 { margin: 0; font: 700 30px/1.1 var(--display); letter-spacing: -.02em; }
+.prop .p-head .p-sub { font-size: 14px; color: var(--muted); }
+.prop .p-tally { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--muted); }
+.prop .p-tally span { display: inline-flex; align-items: center; gap: 7px; }
+.prop .p-tally span::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-dot); }
+
+/* Buttons and links */
+.prop .p-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font: 600 14px/1 var(--sans); cursor: pointer; text-decoration: none; }
+.prop .p-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+.prop .p-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.prop .p-btn.primary:hover { filter: brightness(1.08); color: var(--on-accent); }
+.prop .p-btn[disabled] { background: var(--sunk); border-color: var(--line); color: var(--faint); cursor: not-allowed; filter: none; }
+.prop .p-link { color: var(--accent-ink); font-weight: 600; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
+.prop .p-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Segmented toggle */
+.prop .p-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
+.prop .p-seg button { min-height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--muted); font: 500 14px/1 var(--sans); cursor: pointer; }
+.prop .p-seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); border-color: var(--line-strong); font-weight: 600; box-shadow: var(--shadow); }
+
+/* Fields */
+.prop .p-field { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.prop .p-select, .prop .p-input { min-height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-strong); background-color: var(--surface); color: var(--ink); font: 400 14px/1 var(--sans); }
+.prop .p-select { appearance: none; padding-right: 32px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+.prop .p-input.money { font-family: var(--mono); width: 120px; }
+.prop .p-select:focus, .prop .p-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+
+/* Card */
+.prop .p-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+.prop .p-card-h { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.prop .p-card-h h3 { margin: 0; font: 600 15px/1.3 var(--sans); }
+.prop .p-card-h .p-hint { font-size: 13px; color: var(--muted); }
+.prop .p-card-b { padding: 16px 20px; }
+
+/* State pill, model tag, chips */
+.prop .p-state { display: inline-flex; align-items: center; gap: 7px; font: 600 13px/1 var(--sans); white-space: nowrap; padding: 6px 10px; border-radius: 999px; }
+.prop .p-state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-dot); }
+.prop .s-working { --c-dot: var(--ok-dot); color: var(--ok); background: var(--ok-bg); }
+.prop .s-waiting { --c-dot: var(--wait-dot); color: var(--wait); background: var(--wait-bg); }
+.prop .s-stalled, .prop .s-error { --c-dot: var(--bad-dot); color: var(--bad); background: var(--bad-bg); }
+.prop .s-done { --c-dot: var(--done-dot); color: var(--done); background: var(--done-bg); }
+.prop .p-model { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; white-space: nowrap; }
+.prop .p-model::before { content: ""; width: 9px; height: 9px; border-radius: 2px; background: var(--m); }
+.prop .m-opus { --m: var(--opus); } .prop .m-sonnet { --m: var(--sonnet); } .prop .m-haiku { --m: var(--haiku); }
+.prop .p-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line); color: var(--ink); font-size: 13px; white-space: nowrap; }
+.prop .p-chip .mono { font-family: var(--mono); color: var(--accent-ink); }
+.prop .p-chip .how { color: var(--muted); }
+.prop .p-chip.branch { font-family: var(--mono); color: var(--muted); }
+.prop .p-chip.warn { background: var(--wait-bg); border-color: transparent; color: var(--wait); }
+
+/* Tabs */
+.prop .p-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.prop .p-tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: 500 15px/1 var(--sans); cursor: pointer; }
+.prop .p-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.prop .p-tabs .n { font: 500 12px/1 var(--mono); padding: 3px 6px; border-radius: 999px; background: var(--sunk); }
+
+/* Table */
+.prop .p-tablewrap { overflow-x: auto; }
+.prop table.p-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.prop .p-table th { text-align: left; font: 500 12px/1.2 var(--sans); color: var(--muted); padding: 10px 20px; background: var(--sunk); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.prop .p-table td { padding: 12px 20px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.prop .p-table tr:last-child td { border-bottom: 0; }
+.prop .p-table .r { text-align: right; }
+.prop .p-table .num { font-size: 14px; }
+.prop .p-table .sub { display: block; font-size: 13px; color: var(--muted); }
+.prop .p-table tbody tr:hover { background: var(--sunk); }
+
+/* Meter and bars */
+.prop .p-meter { display: grid; gap: 6px; min-width: 120px; }
+.prop .p-meter .k { font-size: 12px; font-weight: 500; color: var(--muted); }
+.prop .p-track { height: 6px; border-radius: 3px; background: var(--data-soft); overflow: hidden; }
+.prop .p-track i { display: block; height: 100%; border-radius: 3px; background: var(--data); }
+.prop .p-track.warn i { background: var(--wait-dot); }
+.prop .p-track.ok i { background: var(--ok-dot); }
+.prop .p-track.m-opus i { background: var(--opus); } .prop .p-track.m-sonnet i { background: var(--sonnet); } .prop .p-track.m-haiku i { background: var(--haiku); }
+
+/* Avatar */
+.prop .p-av { width: 28px; height: 28px; border-radius: 8px; display: inline-grid; place-items: center; font: 600 13px/1 var(--sans); color: #fff; background: var(--m, var(--data)); flex: none; }
+
+/* Stat */
+.prop .p-stat { display: grid; gap: 2px; }
+.prop .p-stat .k { font-size: 12px; font-weight: 500; color: var(--muted); }
+.prop .p-stat .v { font: 500 22px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.prop .p-stat .d { font-size: 13px; color: var(--muted); }
+
+/* Notice */
+.prop .p-notice { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: start; padding: 12px 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); font-size: 14px; }
+.prop .p-notice .i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 700 13px/1 var(--sans); background: var(--line); color: var(--ink); }
+.prop .p-notice p { margin: 0; }
+.prop .p-notice code { font-family: var(--mono); font-size: 13px; }
+.prop .p-notice.warn { background: var(--wait-bg); border-color: transparent; color: var(--wait); }
+.prop .p-notice.warn .i { background: var(--wait-dot); color: #fff; }
+.prop .p-notice.bad { background: var(--bad-bg); border-color: transparent; color: var(--bad); }
+.prop .p-notice.bad .i { background: var(--bad-dot); color: #fff; }
+
+/* Tooltip */
+.prop .p-tip { display: inline-grid; gap: 4px; max-width: 280px; padding: 9px 12px; border-radius: 9px; background: var(--ink); color: var(--bg); font-size: 13px; box-shadow: var(--pop); }
+.prop .p-tip b { font-weight: 600; }
+.prop .p-tip .row { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); }
+
+/* Empty and loading */
+.prop .p-empty { display: grid; gap: 6px; justify-items: start; padding: 20px; }
+.prop .p-empty b { font-weight: 600; }
+.prop .p-empty p { margin: 0; color: var(--muted); font-size: 14px; max-width: 52ch; }
+.prop .p-skel { display: grid; gap: 10px; padding: 16px 20px; }
+.prop .p-skel i { display: block; height: 12px; border-radius: 6px; background: var(--sunk); }
+@media (prefers-reduced-motion: no-preference) {
+  .prop .p-skel i { background: linear-gradient(90deg, var(--sunk) 0, var(--line) 50%, var(--sunk) 100%); background-size: 200% 100%; animation: p-shimmer 1.4s linear infinite; }
+}
+@keyframes p-shimmer { to { background-position: -200% 0; } }
+
+/* Drawer */
+.prop .p-drawer { background: var(--surface); border: 1px solid var(--line); border-radius: 14px 0 0 14px; box-shadow: var(--pop); display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+.prop .p-dh { display: grid; gap: 8px; padding: 16px 20px 12px; border-bottom: 1px solid var(--line); }
+.prop .p-dh .r1 { display: flex; align-items: center; gap: 10px; }
+.prop .p-dh h3 { margin: 0; font: 600 20px/1.2 var(--display); }
+.prop .p-x { margin-left: auto; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 20px; cursor: pointer; }
+.prop .p-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+
+/* Timeline */
+.prop .p-ev { display: grid; grid-template-columns: 64px 72px 1fr auto; gap: 12px; align-items: baseline; padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.prop .p-ev .t { font: 13px var(--mono); color: var(--faint); }
+.prop .p-ev .tool { font: 500 13px var(--mono); }
+.prop .p-ev .target { font: 13px var(--mono); color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.prop .p-ev .res { font: 13px var(--mono); white-space: nowrap; }
+.prop .ok { color: var(--ok); } .prop .bad { color: var(--bad); } .prop .run { color: var(--accent-ink); }
+
+/* Explain: replaces the grey paragraphs at the foot of pages */
+.prop details.p-explain { border-top: 1px solid var(--line); }
+.prop details.p-explain summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; font-size: 14px; font-weight: 500; color: var(--accent-ink); }
+.prop details.p-explain p { margin: 0; padding: 0 20px 16px; font-size: 14px; color: var(--muted); max-width: 72ch; }
+
+/* Legend */
+.prop .p-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.prop .p-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.prop .p-legend span::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--m); }
+
+/* Checkbox: the platform control in the accent colour, on a 44px row */
+.prop .p-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; cursor: pointer; }
+.prop .p-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.prop .p-tasklist { list-style: none; margin: 0; padding: 0; display: grid; }
+.prop .p-tasklist li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.prop .p-tasklist li:last-child { border-bottom: 0; }
+.prop .p-tasklist .mk { font-family: var(--mono); color: var(--faint); }
+.prop .p-tasklist .done .mk { color: var(--ok); } .prop .p-tasklist .now .mk { color: var(--accent-ink); }
+.prop .p-tasklist .done span:last-child { color: var(--muted); }
+</style>
+<style>/* Page layouts for the studio mocks, on top of prop.css (the approved library). Phone = the app's own width <= 720px. */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--rv-bg); color: var(--rv-ink); font: 14px/1.5 "IBM Plex Sans", system-ui, sans-serif; }
+:root { --rv-bg: #e9e9f1; --rv-ink: #15162a; --rv-muted: #585b73; --rv-line: #cfd1de; --rv-surface: #ffffff; --rv-accent: #4f4bd0; --rv-on: #ffffff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --rv-bg: #08090f; --rv-ink: #e9eaf4; --rv-muted: #a3a6c0; --rv-line: #34374d; --rv-surface: #161826; --rv-accent: #9c9aff; --rv-on: #0e0f17; color-scheme: dark; } }
+:root[data-theme="dark"] { --rv-bg: #08090f; --rv-ink: #e9eaf4; --rv-muted: #a3a6c0; --rv-line: #34374d; --rv-surface: #161826; --rv-accent: #9c9aff; --rv-on: #0e0f17; color-scheme: dark; }
+
+/* Review bar: not part of the app */
+.rv { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px dashed var(--rv-line); font-size: 13px; color: var(--rv-muted); }
+.rv b { color: var(--rv-ink); font-weight: 600; }
+.rv-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rv-line); border-radius: 8px; overflow: hidden; }
+.rv-seg button { border: 0; background: var(--rv-surface); color: var(--rv-ink); padding: 6px 11px; min-height: 32px; font: inherit; cursor: pointer; }
+.rv-seg button + button { border-left: 1px solid var(--rv-line); }
+.rv-seg button[aria-pressed="true"] { background: var(--rv-accent); color: var(--rv-on); }
+.stage.phone { padding-block: 24px; }
+.stage.phone .app { width: 390px; margin: 0 auto; border: 1px solid var(--rv-line); border-radius: 22px; overflow: hidden; min-height: 820px; }
+.decide { max-width: 1280px; margin: 0 auto; padding-block: 24px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.decide h2 { margin: 0 0 8px; font: 700 20px/1.2 "Bricolage Grotesque", system-ui, sans-serif; color: var(--rv-ink); }
+.decide ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 100ch; color: var(--rv-ink); font-size: 14px; }
+.decide code { font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+
+/* App shell */
+.app { container: app / inline-size; position: relative; min-height: 100vh; }
+.app .p-top { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.app .p-nav a { cursor: pointer; }
+.app .menu { display: none; }
+.app .page { max-width: 1280px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 20px; }
+.app .page > * { min-width: 0; }
+.app .hrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.app .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.app .foot { font-size: 13px; color: var(--faint); }
+.app .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.app .grid2 { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.app .stack { display: grid; gap: 16px; align-content: start; }
+
+/* Live (the approved v3 rows) */
+.app .needs .need { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px 16px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .needs .need:first-of-type { border-top: 0; }
+.app .need .since { color: var(--muted); font-size: 14px; }
+.app .shead { display: grid; grid-template-columns: 1fr auto; gap: 12px 32px; align-items: end; padding: 18px 20px 14px; }
+.app .who { display: grid; gap: 4px; min-width: 0; }
+.app .who .l1 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.app .who h2 { margin: 0; font: 600 21px/1.2 var(--display); letter-spacing: -.01em; }
+.app .meta { font-size: 13px; color: var(--muted); }
+.app .stats { display: flex; gap: 28px; align-items: end; }
+.app .stats .p-stat .v { font-size: 20px; }
+.app .skills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0 20px 14px; font-size: 13px; color: var(--muted); }
+.app .cols, .app .agent { display: grid; grid-template-columns: minmax(200px, 1.1fr) minmax(220px, 2fr) 116px 76px 64px 150px; gap: 16px; align-items: center; }
+.app .cols { padding: 8px 20px; background: var(--sunk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .r { text-align: right; }
+.app .agent { padding: 12px 20px; min-height: 60px; border-top: 1px solid var(--line); cursor: pointer; position: relative; }
+.app .cols + .agent { border-top: 0; }
+.app .agent:hover { background: var(--sunk); }
+.app .agent[aria-expanded="true"] { background: var(--accent-soft); }
+.app .name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.app .name > span:last-child { display: grid; min-width: 0; line-height: 1.3; }
+.app .name b { font-weight: 600; }
+.app .name small { color: var(--muted); font-size: 13px; }
+.app .d1 .name { padding-left: 30px; }
+.app .d1 .name::before { content: ""; position: absolute; left: 34px; top: 0; height: 50%; width: 16px; border-left: 1.5px solid var(--line-strong); border-bottom: 1.5px solid var(--line-strong); border-bottom-left-radius: 8px; }
+.app .d1.more .name::after { content: ""; position: absolute; left: 34px; top: 50%; bottom: 0; border-left: 1.5px solid var(--line-strong); }
+.app .doing { display: grid; gap: 2px; min-width: 0; }
+.app .doing .what { font-weight: 500; overflow-wrap: anywhere; }
+.app .doing .sub { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.app .doing .sub .num { color: var(--ink); }
+.app .mini { display: inline-flex; align-items: center; gap: 6px; }
+.app .mini .p-track { width: 44px; }
+.app .agent.is-done .name b, .app .agent.is-done .doing .what { color: var(--muted); font-weight: 500; }
+.app .agent.is-stalled { box-shadow: inset 3px 0 0 var(--bad-dot); }
+.app .agent.is-waiting { box-shadow: inset 3px 0 0 var(--wait-dot); }
+.app .agent .p-state { justify-self: end; }
+.app .agent .facts { display: none; }
+
+/* Drawer */
+.app .scrim { position: fixed; inset: 0; background: rgba(10, 11, 20, .28); z-index: 20; }
+.app .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(500px, 100%); border-radius: 0; border-top: 0; border-bottom: 0; border-right: 0; z-index: 21; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.app .drawer .p-dh { padding-top: max(16px, env(safe-area-inset-top, 0px)); }
+.app .drawer .dbody { overflow-y: auto; padding-bottom: 24px; }
+.app .note2 { margin: 12px 20px 0; }
+
+/* Ledger chart */
+.app .chartbox { position: relative; padding: 16px 20px 8px; }
+.app .chartbox svg { display: block; width: 100%; height: auto; overflow: visible; }
+.app .chartbox .grid line { stroke: var(--line); stroke-width: 1; }
+.app .chartbox .axis text { font: 12px var(--mono); fill: var(--muted); }
+.app .chartbox .bar { cursor: pointer; }
+.app .chartbox .bar:focus { outline: none; }
+.app .chartbox .bar:focus-visible rect.hit, .app .chartbox .bar:hover rect.hit { fill: var(--accent); fill-opacity: .06; }
+.app .chartbox .p-tip { position: absolute; pointer-events: none; transform: translate(-50%, calc(-100% - 10px)); z-index: 2; min-width: 200px; }
+.app .tableview summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; color: var(--accent-ink); font-weight: 500; border-top: 1px solid var(--line); }
+.app .tableview[open] summary { border-bottom: 1px solid var(--line); }
+.app .warnnum { color: var(--wait); }
+.app .badnum { color: var(--bad); }
+
+/* Pipeline roles: HTML nodes over an SVG edge layer */
+.app .orgwrap { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.app .orgscroll { overflow-x: auto; }
+.app .org { position: relative; width: 1000px; height: 440px; margin: 8px auto 16px; }
+.app .org svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.app .org .edge { fill: none; stroke: var(--data); stroke-opacity: .35; stroke-linecap: round; }
+.app .org .elabel { font: 500 12px var(--mono); fill: var(--muted); }
+.app .node { position: absolute; width: 190px; height: 94px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); box-shadow: var(--shadow); display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-content: start; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.app .node:hover { border-color: var(--accent); }
+.app .node[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.app .node .p-av { grid-row: span 2; background: var(--data); }
+.app .node b { font-weight: 600; font-size: 15px; line-height: 1.2; }
+.app .node .ty { font-size: 13px; color: var(--muted); line-height: 1.2; }
+.app .node .nu { grid-column: 1 / -1; font: 13px var(--mono); color: var(--ink); margin-top: 6px; }
+.app .node .nu span { color: var(--muted); }
+.app .rolelist { display: none; }
+.app .panel .p-card-b { display: grid; gap: 14px; }
+.app .panel .rinfo { color: var(--muted); font-size: 14px; }
+.app .alist { list-style: none; margin: 0; padding: 0; display: grid; }
+.app .alist li { display: grid; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.app .alist li:last-child { border-bottom: 0; }
+.app .alist .d { font-size: 13px; color: var(--muted); }
+.app .fix { display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); }
+.app .fix .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.app .ok-msg { color: var(--ok); font-size: 14px; }
+
+/* Lanes */
+.app .lanes { display: grid; grid-template-columns: 170px minmax(0, 1fr); padding: 12px 20px 16px; gap: 0 16px; }
+.app .lanes .lh { font-size: 14px; display: flex; align-items: center; gap: 8px; min-height: 44px; border-bottom: 1px solid var(--line); }
+.app .lanes .lh small { color: var(--muted); font-size: 13px; }
+.app .lanes .lt { position: relative; min-height: 44px; border-bottom: 1px solid var(--line); }
+.app .lanes .seg-bar { position: absolute; top: 14px; height: 16px; border-radius: 4px; background: var(--m); }
+.app .lanes .seg-bar.stall { background: repeating-linear-gradient(45deg, var(--bad-dot) 0 6px, var(--bad-bg) 6px 12px); }
+.app .lanes .seg-bar.tool { top: 18px; height: 8px; opacity: .55; }
+.app .lanes .ax { grid-column: 2; position: relative; height: 24px; }
+.app .lanes .ax span { position: absolute; top: 6px; transform: translateX(-50%); font: 12px var(--mono); color: var(--muted); }
+.app .lanes .slabel { position: absolute; top: 12px; font: 600 12px var(--sans); color: var(--bad); white-space: nowrap; }
+
+/* Skills graph */
+.app .skg { position: relative; width: 760px; height: 300px; margin: 8px 0 12px; }
+.app .skg svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.app .skg .e { fill: none; stroke: var(--accent); stroke-opacity: .45; stroke-linecap: round; }
+.app .skg .e.named { stroke: var(--muted); stroke-opacity: .7; stroke-dasharray: 5 5; stroke-width: 1.5; }
+.app .skg .el { font: 500 12px var(--mono); fill: var(--muted); }
+.app .skg .colt { position: absolute; top: 0; font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .sknode { position: absolute; width: 176px; height: 58px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); display: grid; align-content: center; gap: 2px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.app .sknode.skill b { font-family: var(--mono); color: var(--accent-ink); font-weight: 500; }
+.app .sknode.agent { border-radius: 29px; padding-left: 16px; }
+.app .sknode.ghost { border-style: dashed; background: transparent; color: var(--muted); }
+.app .sknode small { font-size: 12px; color: var(--muted); }
+.app .sknode:hover { border-color: var(--accent); }
+.app .runs { display: flex; align-items: center; gap: 10px; }
+.app .runs .p-track { flex: 1; min-width: 60px; }
+.app .spark { display: block; }
+.app .spark rect { fill: var(--data); }
+.app .idle { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 20px; }
+
+/* Office */
+.app .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.app .room .scene { display: block; width: 100%; height: auto; background: var(--sunk); border-bottom: 1px solid var(--line); image-rendering: pixelated; }
+.app .roster { list-style: none; margin: 0; padding: 0; }
+.app .roster li { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; min-height: 52px; padding: 8px 20px; border-top: 1px solid var(--line); cursor: pointer; }
+.app .roster li:first-child { border-top: 0; }
+.app .roster li:hover { background: var(--sunk); }
+.app .roster .w { display: grid; line-height: 1.3; min-width: 0; }
+.app .roster .w small { font-size: 13px; color: var(--muted); }
+.app .roomh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.app .roomh h3 { margin: 0; font: 600 18px/1.2 var(--display); }
+.app .roomh .nums { display: flex; gap: 14px; align-items: center; font-size: 13px; color: var(--muted); }
+.app .roomh .nums b { font: 500 14px var(--mono); color: var(--ink); }
+.app .roomh .p-track { width: 64px; display: inline-block; vertical-align: middle; }
+
+/* Analysis */
+.app .fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
+.app .fields .p-select { width: 100%; }
+.app .reads { display: flex; flex-wrap: wrap; gap: 8px; }
+.app .est { display: grid; gap: 14px; padding: 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--sunk); }
+.app .est .big { display: flex; flex-wrap: wrap; gap: 16px 36px; }
+.app .est .alt { font-size: 14px; color: var(--muted); }
+.app .est .alt b { color: var(--ink); font-weight: 600; }
+.app .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.app .reports { list-style: none; margin: 0; padding: 0; }
+.app .reports li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 12px 20px; border-top: 1px solid var(--line); cursor: pointer; }
+.app .reports li:first-child { border-top: 0; }
+.app .reports li[aria-current="true"] { background: var(--accent-soft); }
+.app .reports .d { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.app .report { display: grid; gap: 18px; padding: 18px 20px 22px; }
+.app .report h4 { margin: 0 0 6px; font: 600 16px/1.3 var(--display); }
+.app .report p, .app .report li { font-size: 14px; line-height: 1.55; }
+.app .report p { margin: 0; color: var(--ink); max-width: 72ch; }
+.app .report ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 72ch; }
+.app .excerpt { font-size: 12px; font-weight: 600; color: var(--muted); }
+
+@container app (max-width: 720px) {
+  .app .p-nav { display: none; }
+  .app .menu { display: inline-flex; margin-left: auto; min-height: 44px; }
+  .app .p-conn .url { display: none; }
+  .app .p-conn { margin-left: 0; }
+  .app .p-head h1 { font-size: 26px; }
+  .app .p-seg button { min-height: 40px; }
+  .app .p-select, .app .p-input { min-height: 44px; font-size: 16px; }
+  .app .p-btn { min-height: 44px; }
+  .app .grid3, .app .grid2, .app .orgwrap { grid-template-columns: 1fr; }
+  .app .needs .need { grid-template-columns: 1fr auto; padding: 12px 16px; }
+  .app .needs .need .p-state { grid-column: 1 / -1; justify-self: start; }
+  .app .needs .need .since { grid-column: 1; }
+  .app .needs .need .p-btn { grid-column: 2; grid-row: 2 / span 2; }
+  .app .shead { grid-template-columns: 1fr; padding: 16px; }
+  .app .stats { gap: 20px; flex-wrap: wrap; }
+  .app .skills { padding: 0 16px 12px; }
+  .app .cols { display: none; }
+  .app .agent { grid-template-columns: 1fr auto; grid-template-areas: "name state" "doing doing" "facts facts"; gap: 6px 10px; padding: 14px 16px; }
+  .app .agent .name { grid-area: name; } .app .agent .p-state { grid-area: state; } .app .agent .doing { grid-area: doing; }
+  .app .agent .m, .app .agent .tok, .app .agent .cost { display: none; }
+  .app .agent .facts { grid-area: facts; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+  .app .d1 { padding-left: 34px; }
+  .app .d1 .name { padding-left: 0; }
+  .app .d1 .name::before, .app .d1.more .name::after { left: 20px; }
+  .app .drawer { top: auto; height: 88%; width: 100%; border-radius: 18px 18px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+  .app .p-ev { grid-template-columns: 56px 1fr auto; padding: 10px 16px; }
+  .app .p-ev .target { grid-column: 2 / -1; grid-row: 2; }
+  .app .p-card-h, .app .p-card-b { padding-left: 16px; padding-right: 16px; }
+  .app .p-table td, .app .p-table th { padding-left: 16px; padding-right: 16px; }
+  .app .hide-phone { display: none; }
+  .app .chartbox { padding: 12px 12px 4px; }
+  .app .orgscroll { display: none; }
+  .app .rolelist { display: block; }
+  .app .lanes { grid-template-columns: 96px minmax(0, 1fr); padding: 8px 16px 12px; gap: 0 10px; }
+  .app .skgscroll { overflow-x: auto; }
+  .app .rooms { grid-template-columns: 1fr; }
+  .app .fields { grid-template-columns: 1fr; }
+  .app .roster li { padding: 8px 16px; }
+}
+.stage.phone .drawer { left: 50%; right: auto; transform: translateX(-50%); width: 390px; top: auto; height: 720px; border-radius: 18px 18px 0 0; }
+.stage.phone .scrim { left: 50%; transform: translateX(-50%); width: 390px; }
+
+/* Fixes from the first look */
+.app .orgwrap { grid-template-columns: 1fr; }
+.app .panel .p-card-b { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 24px; align-items: start; }
+.app .panel .pcol { display: grid; gap: 12px; }
+.app td.rk { width: 100%; }
+.app td.rk .p-track { margin-top: 8px; }
+.app .sknode { overflow: hidden; }
+.app .sknode small, .app .sknode b, .app .sknode span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app .sklist { display: none; list-style: none; margin: 0; padding: 0 16px; }
+.app .sklist li { display: grid; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.app .sklist .sub { font-size: 13px; color: var(--muted); }
+.app .daybars { display: none; padding: 12px 16px 4px; gap: 8px; }
+.app .dayrow { display: grid; grid-template-columns: 56px 1fr 48px; gap: 10px; align-items: center; font-size: 13px; }
+.app .dayrow .dl { color: var(--muted); }
+.app .dayrow .stk { display: flex; gap: 2px; height: 12px; }
+.app .dayrow .stk i { display: block; height: 100%; border-radius: 2px; }
+.app .dayrow .num { text-align: right; }
+@container app (max-width: 720px) {
+  .app .panel .p-card-b { grid-template-columns: 1fr; }
+  .app .skgscroll { display: none; }
+  .app .sklist { display: block; }
+  .app .chartbox { display: none; }
+  .app .daybars { display: grid; }
+  .app .lanes .ax span.odd { display: none; }
+}
+</style>
+<style>/* v0.3 "readable" additions, on top of the approved library and page layouts. Carried over from the earlier mocks: .formula, .tag, .real, .settings, .sizes, .pr, .stats6, .repeat, .kinds, .bar, the Trends marker, list and before/after pieces. */
+.app .formula { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); overflow-x: auto; white-space: pre; font: 13px/1.7 var(--mono); }
+.app .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 5px; background: var(--wait-bg); color: var(--wait); font: 500 12px/1.7 var(--mono); vertical-align: 1px; }
+.app .real { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 5px; background: var(--ok-bg); color: var(--ok); font: 500 12px/1.7 var(--mono); vertical-align: 1px; }
+.app .settings { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: end; }
+.app .settings label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.app .settings .p-input { width: 120px; }
+.app .sizes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); }
+.app .sizes b { color: var(--ink); font-weight: 600; font-family: var(--mono); }
+.app .prs { display: grid; }
+.app .pr { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .pr .n { font: 500 14px var(--mono); color: var(--accent-ink); }
+.app .pr .t { min-width: 0; display: grid; gap: 2px; }
+.app .pr .t b { font-weight: 500; font-size: 14px; overflow-wrap: anywhere; }
+.app .pr .t small { color: var(--muted); font-size: 13px; }
+.app .pr .p-seg button { min-width: 44px; }
+.app .stats6 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 18px 28px; }
+.app .repeat { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .repeat b { font-weight: 600; font-size: 14px; }
+.app .repeat p { margin: 0; color: var(--muted); font-size: 14px; }
+.app .repeat code, .app .repeat-more code { font-family: var(--mono); font-size: 13px; }
+.app .repeat .num { font: 500 14px var(--mono); text-align: right; }
+.app .repeat .try { grid-column: 1 / -1; font-size: 13px; color: var(--ok); }
+.app .repeat-more { margin: 0; padding: 12px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+.app .kinds { width: 100%; border-collapse: collapse; font-size: 14px; }
+.app .kinds td, .app .kinds th { padding: 9px 20px; border-top: 1px solid var(--line); text-align: left; }
+.app .kinds thead th { border-top: 0; font-size: 12px; font-weight: 500; color: var(--muted); background: var(--sunk); }
+.app .kinds td.r, .app .kinds th.r { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+.app .kinds .sub td { color: var(--muted); padding-left: 40px; }
+.app .bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--data); vertical-align: middle; }
+.app .mk line { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.app .mk rect { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
+.app .mk text { font: 600 12px var(--sans); fill: var(--ink); }
+.app .mk[aria-pressed="true"] rect { fill: var(--ink); }
+.app .mk[aria-pressed="true"] text { fill: var(--surface); }
+.app .mk { cursor: pointer; }
+.app .chartbox .bar text.tot { font: 500 12px var(--mono); fill: var(--muted); }
+.app .mkrow { display: grid; grid-template-columns: minmax(28px, auto) minmax(0, 1fr); gap: 10px; align-items: center; font-size: 13px; color: var(--ink); padding: 2px 0; }
+.app .mkrow > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .mkdot { display: grid; place-items: center; flex: none; justify-self: start; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; white-space: nowrap; border: 1.5px solid var(--ink); font: 600 12px/1 var(--sans); }
+.app .mklist { list-style: none; margin: 0; padding: 0 20px 16px; display: grid; gap: 8px; }
+.app .mkbtn { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; text-align: left; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: 14px/1.4 var(--sans); cursor: pointer; }
+.app .mkbtn:hover { border-color: var(--line-strong); }
+.app .mkbtn[aria-pressed="true"], .app .mkbtn[aria-expanded="true"] { border-color: var(--line-strong); background: var(--sunk); box-shadow: var(--shadow); }
+.app .mkbtn small { color: var(--muted); font-size: 13px; }
+.app .mkbtn .mkt { display: grid; min-width: 0; }
+.app .mkbtn .mkt small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .mkbtn .act { color: var(--accent-ink); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.app .mkmore { padding: 0 20px 16px; }
+.app .mkmore .p-btn { width: 100%; min-height: 44px; }
+.app .ba { width: 100%; border-collapse: collapse; font-size: 14px; }
+.app .ba th, .app .ba td { padding: 10px 0; border-top: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; }
+.app .ba th:first-child, .app .ba td:first-child { text-align: left; font-weight: 400; color: var(--ink); }
+.app .ba thead th { border-top: 0; font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .ba td.num, .app .ba th.num { font-family: var(--mono); }
+.app .ba .down { color: var(--ok); }
+.app .ba td:last-child, .app .ba th:last-child { padding-left: 12px; }
+.app .files { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; }
+.app .files code, .app .commits code { font-family: var(--mono); font-size: 13px; }
+.app .commits { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; }
+.app .commits li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.app .commits code { color: var(--muted); }
+.app .cbody { display: grid; gap: 16px; padding: 16px 20px; }
+.app .goal { display: grid; gap: 10px; }
+.app .goal .big { font: 500 22px/1.1 var(--mono); }
+.app .chead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; padding: 8px 20px; border-bottom: 1px solid var(--line); }
+.app .chead h3 { margin: 0; font: 600 15px/1.3 var(--sans); }
+.app .tint td { background: var(--accent-soft); }
+
+/* The proposed header: the title and one line, then the views and the pickers, always in the same places */
+.app .ph { display: grid; gap: 12px; }
+.app .ph-1 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; min-width: 0; }
+.app .ph-1 h1 { margin: 0; font: 700 30px/1.1 var(--display); letter-spacing: -.02em; flex: none; }
+.app .ph-sub { flex: 1 1 0; min-width: 0; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app .ph-2 { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 12px; }
+.app .ph-pick { display: flex; gap: 10px; margin-left: auto; }
+.app .ph-pick .p-select { width: 200px; }
+.app .ph-pick .p-select.period { width: 176px; }
+.app .p-select[disabled] { background-color: var(--sunk); color: var(--faint); cursor: not-allowed; }
+.app .live-sub { font-size: 14px; color: var(--muted); }
+
+/* The reading: what the page says in a sentence */
+.app .reading { padding: 16px 20px; border-left: 4px solid var(--accent); display: grid; gap: 6px; }
+.app .reading p { margin: 0; font-size: 17px; line-height: 1.55; max-width: 80ch; }
+.app .reading b { font-weight: 600; }
+.app .reading .by { font-size: 13px; color: var(--muted); }
+
+/* A figure that says what it means: a plain label, a readable value, one line, and the explanation in place */
+.app .figgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px 32px; align-items: start; }
+.app .figgrid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.app .fig { display: grid; gap: 3px; align-content: start; min-width: 0; }
+.app .fig .k { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.app .fig .v { font: 500 26px/1.15 var(--mono); font-variant-numeric: tabular-nums; }
+.app .fig .v.neg { color: var(--bad); }
+.app .fig .d { font-size: 14px; color: var(--ink); }
+.app .fig .why { margin: 6px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+.app .fig .why b { color: var(--ink); font-weight: 600; }
+.app .info { position: relative; width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface); color: var(--muted); font: 600 13px/1 var(--sans); cursor: pointer; flex: none; }
+.app .info::after { content: ""; position: absolute; inset: -11px; }
+.app .info:hover, .app .info[aria-expanded="true"] { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+
+/* Live, proposed: the figures as words with units */
+.app .figs { display: grid; gap: 6px; justify-items: start; font-size: 14px; color: var(--muted); }
+.app .figs b { font: 500 16px var(--mono); color: var(--ink); }
+.app .ctxline { display: flex; align-items: center; gap: 10px; }
+.app .ctxline .p-track { width: 110px; }
+.app .p-conn.q i { background: var(--done-dot); box-shadow: 0 0 0 3px var(--done-bg); }
+.app .p-conn.r i { background: var(--wait-dot); box-shadow: 0 0 0 3px var(--wait-bg); }
+.app .p-conn.r { color: var(--wait); }
+
+/* Worth, proposed */
+.app .pr2 { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .pr2 .n { font: 500 14px var(--mono); color: var(--accent-ink); }
+.app .pr2 .t { min-width: 0; display: grid; gap: 2px; }
+.app .pr2 .t b { font-weight: 500; font-size: 14px; overflow-wrap: anywhere; }
+.app .pr2 .t small { color: var(--muted); font-size: 13px; }
+.app .pr2 .pz { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 10px; }
+.app .pr2 .p-seg button { min-width: 44px; }
+.app .szchip { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--sunk); color: var(--muted); font: 500 13px/1 var(--mono); white-space: nowrap; }
+.app .szchip.mine { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); }
+.app .back { border: 0; background: none; padding: 0 4px; min-height: 28px; color: var(--accent-ink); font: 600 13px/1 var(--sans); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.app .cuts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; }
+.app .cuts label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.app .cuts .p-input { width: 100%; font-family: var(--mono); }
+.app .cuts .p-input[aria-invalid="true"] { border-color: var(--bad-dot); }
+.app .werr { margin: 0; color: var(--bad); font-size: 14px; }
+.app .dist { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; }
+.app .dist > div { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.app .dist b { font: 500 16px var(--mono); color: var(--ink); }
+.app .dist .p-track { height: 6px; }
+.app .neg { color: var(--bad); }
+.app .rowsnote { margin: 0; padding: 12px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+
+/* Mock only: not part of the app */
+.mockbox { border: 1px dashed var(--line-strong); border-radius: 12px; padding: 12px 14px; background: transparent; display: grid; gap: 8px; font-size: 13px; color: var(--muted); }
+.mockbox b { color: var(--ink); font-weight: 600; }
+.mockbox table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.mockbox th, .mockbox td { text-align: left; padding: 6px 10px 6px 0; border-top: 1px solid var(--line); font-weight: 400; }
+.mockbox thead th { border-top: 0; font-weight: 500; }
+.mockbox .num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+.mockbox .ok { color: var(--ok); font-weight: 600; } .mockbox .off { color: var(--bad); font-weight: 600; }
+.mocknote { display: inline-block; font-size: 13px; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 8px; padding: 4px 10px; }
+.mockhold { position: absolute; top: 0; left: 0; right: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+.mockhold .page { padding-block: 0; }
+
+@container app (max-width: 720px) {
+  .app .ph-1 { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .app .ph-1 h1 { font-size: 26px; }
+  .app .ph-sub { flex: none; width: 100%; }
+  .app .ph-2 > .p-seg { display: flex; width: 100%; }
+  .app .ph-2 > .p-seg button { flex: 1; }
+  .app .ph-pick { width: 100%; margin-left: 0; display: grid; grid-template-columns: 1fr 1fr; }
+  .app .ph-pick .p-select, .app .ph-pick .p-select.period { width: 100%; }
+  .app .pr { grid-template-columns: 1fr; }
+  .app .pr2 { grid-template-columns: 1fr; }
+  .app .pr2 .pz { justify-content: flex-start; }
+  .app .figgrid, .app .figgrid.four { grid-template-columns: 1fr; }
+  .app .cuts, .app .dist { grid-template-columns: 1fr 1fr; }
+  .app .reading { padding: 14px 16px; }
+  .app .reading p { font-size: 16px; }
+  .app .repeat { padding-left: 16px; padding-right: 16px; }
+  .app .kinds td, .app .kinds th { padding: 9px 14px; }
+  .app .kinds .sub td { padding-left: 26px; }
+  .app .mklist, .app .mkmore { padding-left: 16px; padding-right: 16px; }
+  .app .mkbtn { grid-template-columns: 28px minmax(0, 1fr); }
+  .app .mkbtn .act { grid-column: 2; }
+  .app .cbody, .app .chead { padding-left: 16px; padding-right: 16px; }
+  .app .ba { font-size: 13px; }
+  .app .rowsnote { padding-left: 16px; padding-right: 16px; }
+  .app .live-sub { display: block; }
+}
+@container app (min-width: 721px) and (max-width: 1000px) {
+  .app .figgrid, .app .figgrid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.app .p-table td.r { white-space: nowrap; }
+.app .ph-1 .live-sub { flex: 1 1 0; min-width: 0; }
+.app .ctxline b { font: 600 14px var(--sans); }
+.app .dist b { white-space: nowrap; }
+</style>
+<div class="rv" role="region" aria-label="Mock controls">
+  <span><b>Mock controls</b>, not part of the app</span>
+  <span>Board <span class="rv-seg" id="rv-page"><button type="button" data-v="header" aria-pressed="false">Header</button><button type="button" data-v="live" aria-pressed="false">Live</button><button type="button" data-v="totals" aria-pressed="false">Ledger · Totals</button><button type="button" data-v="trends" aria-pressed="false">Ledger · Trends</button><button type="button" data-v="worth" aria-pressed="true">Ledger · Worth</button><button type="button" data-v="patterns" aria-pressed="false">Analysis · Patterns</button></span></span>
+  <span>Show <span class="rv-seg" id="rv-ver"><button type="button" data-v="today" aria-pressed="false">Today</button><button type="button" data-v="proposed" aria-pressed="true">Proposed</button></span></span>
+  <span>Theme <span class="rv-seg" id="rv-theme"><button type="button" data-v="system" aria-pressed="true">System</button><button type="button" data-v="light" aria-pressed="false">Light</button><button type="button" data-v="dark" aria-pressed="false">Dark</button></span></span>
+  <span>Width <span class="rv-seg" id="rv-width"><button type="button" data-v="desktop" aria-pressed="true">Desktop</button><button type="button" data-v="phone" aria-pressed="false">Phone</button></span></span>
+  <span id="rv-connwrap" hidden>Connection <span class="rv-seg" id="rv-conn"><button type="button" data-v="live" aria-pressed="true">Connected</button><button type="button" data-v="quiet" aria-pressed="false">Quiet for 4 min</button><button type="button" data-v="dropped" aria-pressed="false">Dropped</button></span></span>
+  <span id="rv-note"></span>
+  <span>Every figure is the owner's own, read from the studio on 26 Oct 2026 at 16:52, or computed from them. Green tags are real, amber ones are examples or mock notes. The pickers are drawn on every board and wired only on Header.</span>
+</div>
+<div class="stage" id="stage"><div class="app prop" id="app">
+  <header class="p-top"><span class="p-brand"><span class="p-orb" aria-hidden="true"></span>agent-orb</span>
+    <nav class="p-nav" aria-label="Studio"><a href="#live" data-go="live">Live <span class="p-count" aria-label="2 sessions running">2</span></a><a href="#ledger" data-go="ledger">Ledger</a><a href="#pipeline" data-go="pipeline">Pipeline</a><a href="#office" data-go="office">Office</a><a href="#analysis" data-go="analysis">Analysis</a></nav>
+    <span class="p-conn" id="conn"></span>
+    <button type="button" class="p-btn menu" aria-label="Open the menu">Menu</button></header>
+  <main class="page" id="page"></main>
+  <div class="mockhold" id="hold" aria-hidden="true"></div>
+</div></div>
+<section class="decide" id="decide" aria-live="polite"></section>
+<script>(() => {
+const D = {"totals":{"tokens":8105654035,"cost":2615.2753645100383,"costPartial":false,"cacheShare":0.9740513237388398,"sessions":67,"agents":396,"toolCalls":30060,"failedCalls":779,"waits":947,"waitMs":299112893,"previousTokens":8262001276,"pricier":{"agents":0,"cost":0},"prev":{"tokens":8262001276,"cost":2690.962968845009,"sessions":28,"agents":541}},"series":[{"k":"2026-10-20","tokens":1029860839,"cost":355.83172388,"opus":909559874,"sonnet":117768550,"haiku":2532415,"other":0},{"k":"2026-10-21","tokens":816380579,"cost":250.89677391999973,"opus":770166103,"sonnet":34935446,"haiku":11279030,"other":0},{"k":"2026-10-22","tokens":1678074765,"cost":527.0394262199991,"opus":1225435183,"sonnet":405287341,"haiku":47352241,"other":0},{"k":"2026-10-23","tokens":974223032,"cost":367.4751582699999,"opus":676581409,"sonnet":293378454,"haiku":4263169,"other":0},{"k":"2026-10-24","tokens":1066861221,"cost":330.5408352499996,"opus":550539029,"sonnet":510730035,"haiku":5592157,"other":0},{"k":"2026-10-25","tokens":1581651680,"cost":448.53917708999984,"opus":920239592,"sonnet":638534875,"haiku":22877213,"other":0},{"k":"2026-10-26","tokens":958601919,"cost":334.95226988000024,"opus":620902301,"sonnet":236417949,"haiku":101188489,"other":93180}],"projects":[{"name":"mobile-app","tokens":3150305857,"cost":1012.2277166600029,"sessions":23,"agents":247},{"name":"docs-site","tokens":1786123018,"cost":530.2204656999993,"sessions":2,"agents":64},{"name":"shop-api","tokens":1044968182,"cost":295.0781550000017,"sessions":3,"agents":26},{"name":"field-notes","tokens":978098112,"cost":327.27598400000034,"sessions":1,"agents":2},{"name":"workspace","tokens":256261418,"cost":68.21495640000002,"sessions":1,"agents":1},{"name":"data-loader","tokens":218363350,"cost":97.49969959999999,"sessions":1,"agents":1},{"name":"test-sandbox","tokens":154944146,"cost":54.59402799999996,"sessions":1,"agents":1},{"name":"scratch-2026-10-21-045253","tokens":151285179,"cost":66.3694404,"sessions":1,"agents":1},{"name":"training-kit","tokens":151285179,"cost":66.3694404,"sessions":1,"agents":1},{"name":"team-wiki","tokens":104477179,"cost":56.79966340000006,"sessions":3,"agents":6},{"name":"trail-guide","tokens":95511488,"cost":34.72597519999999,"sessions":1,"agents":1},{"name":"agent-orb","tokens":9064778,"cost":5.3373013799999995,"sessions":15,"agents":21},{"name":"skills-fixture","tokens":2377234,"cost":0.09688517000000005,"sessions":7,"agents":13},{"name":"todo-app","tokens":1409688,"cost":0.04737620000000001,"sessions":2,"agents":4},{"name":"proj","tokens":1143631,"cost":0.41511727000000004,"sessions":5,"agents":7},{"name":"repo","tokens":35596,"cost":0.00315973,"sessions":1,"agents":1}],"models":[{"model":"claude-opus-5-5","tokens":5673423491,"cost":2142.82558920001,"agents":78},{"model":"claude-sonnet-5-5","tokens":1981749603,"cost":395.86533699999916,"agents":207},{"model":"claude-sonnet-5","tokens":255303047,"cost":68.18216240000005,"agents":2},{"model":"claude-haiku-5-5","tokens":195084714,"cost":7.7541654100000015,"agents":109},{"model":"claude-fable-5-1","tokens":93180,"cost":0.6481105,"agents":1}],"roles":[{"role":"orchestrator","tokens":5554667138,"cost":2044.7927927350015,"agents":67,"types":["main"]},{"role":"unassigned","tokens":1970309501,"cost":430.402149445001,"agents":260,"types":["adversarial-reviewer","cheap-scout","implementer","scout","test-runner","unknown","workflow-subagent"]},{"role":"generalist","tokens":566331677,"cost":134.60562846499997,"agents":56,"types":["general-purpose"]},{"role":"researcher","tokens":13359511,"cost":5.362992095000002,"agents":8,"types":["Explore"]},{"role":"consultant","tokens":739859,"cost":0.09435784,"agents":1,"types":["claude-code-guide"]},{"role":"reviewer","tokens":189698,"cost":0.012340664999999999,"agents":3,"types":["general-purpose"]},{"role":"planner","tokens":56651,"cost":0.005103265,"agents":1,"types":["Plan"]}],"eff":[{"project":"mobile-app","tokens":3150305857,"requests":11685,"cache":0.9720360325922888,"files":110,"calls":12407,"failed":358,"waitMs":299112893},{"project":"docs-site","tokens":1786123018,"requests":8051,"cache":0.9777680051841925,"files":91,"calls":8886,"failed":276,"waitMs":0},{"project":"shop-api","tokens":1044968182,"requests":3380,"cache":0.9765103985606054,"files":20,"calls":3600,"failed":44,"waitMs":0},{"project":"field-notes","tokens":978098112,"requests":2100,"cache":0.9814825029350265,"files":13,"calls":2354,"failed":38,"waitMs":0},{"project":"workspace","tokens":256261418,"requests":546,"cache":0.9711128081188809,"files":0,"calls":0,"failed":0,"waitMs":0},{"project":"data-loader","tokens":218363350,"requests":310,"cache":0.9566315563390962,"files":3,"calls":306,"failed":6,"waitMs":0},{"project":"test-sandbox","tokens":154944146,"requests":462,"cache":0.9858708915153973,"files":2,"calls":576,"failed":22,"waitMs":0},{"project":"scratch-2026-10-21-045253","tokens":151285179,"requests":311,"cache":0.9647438586559117,"files":0,"calls":471,"failed":4,"waitMs":0},{"project":"training-kit","tokens":151285179,"requests":311,"cache":0.9647438586559117,"files":0,"calls":471,"failed":4,"waitMs":0},{"project":"team-wiki","tokens":104477179,"requests":477,"cache":0.9449968681057538,"files":22,"calls":592,"failed":16,"waitMs":0},{"project":"trail-guide","tokens":95511488,"requests":202,"cache":0.9760641484608173,"files":1,"calls":208,"failed":4,"waitMs":0},{"project":"agent-orb","tokens":9064778,"requests":82,"cache":0.8907602780010696,"files":0,"calls":95,"failed":0,"waitMs":0},{"project":"skills-fixture","tokens":2377234,"requests":66,"cache":0.7697814480262389,"files":0,"calls":46,"failed":0,"waitMs":0},{"project":"todo-app","tokens":1409688,"requests":44,"cache":0.8398707179443408,"files":0,"calls":40,"failed":5,"waitMs":0},{"project":"proj","tokens":1143631,"requests":33,"cache":0.7053852247813511,"files":0,"calls":8,"failed":2,"waitMs":0},{"project":"repo","tokens":35596,"requests":1,"cache":0.3154641492470218,"files":0,"calls":0,"failed":0,"waitMs":0}],"waits":{"rows":947,"calls":499,"uncappedH":47.51,"cappedH":5.52,"over1h":8,"rowsH":83.09},"weeks":[{"k":"2026-08-10","main":231.9382,"typed":0,"generic":59.9779,"opus":291.9161,"sonnet":0,"haiku":0,"other":0,"tokens":296862502,"cacheRead":275033570,"inputSide":295900730,"activeDays":5,"prompts":44},{"k":"2026-08-17","main":157.0748,"typed":0,"generic":0,"opus":157.0748,"sonnet":0,"haiku":0,"other":0,"tokens":142750366,"cacheRead":128452154,"inputSide":142564468,"activeDays":4,"prompts":44},{"k":"2026-08-24","main":511.0206,"typed":0,"generic":0,"opus":308.6663,"sonnet":0,"haiku":0,"other":202.3542,"tokens":650700374,"cacheRead":638714902,"inputSide":649869424,"activeDays":4,"prompts":20},{"k":"2026-08-31","main":1333.3934,"typed":0,"generic":1230.4682,"opus":1390.313,"sonnet":0,"haiku":0,"other":1173.5486,"tokens":2859240514,"cacheRead":2762995558,"inputSide":2846841950,"activeDays":7,"prompts":238},{"k":"2026-09-07","main":757.6037,"typed":0,"generic":1246.998,"opus":1771.4777,"sonnet":0,"haiku":0,"other":233.1239,"tokens":2849056750,"cacheRead":2758953952,"inputSide":2845078210,"activeDays":3,"prompts":50},{"k":"2026-09-14","main":0,"typed":0,"generic":0,"opus":0,"sonnet":0,"haiku":0,"other":0,"tokens":0,"cacheRead":0,"inputSide":0,"activeDays":0,"prompts":0},{"k":"2026-09-21","main":0,"typed":0,"generic":0,"opus":0,"sonnet":0,"haiku":0,"other":0,"tokens":0,"cacheRead":0,"inputSide":0,"activeDays":0,"prompts":0},{"k":"2026-09-28","main":0,"typed":0,"generic":0,"opus":0,"sonnet":0,"haiku":0,"other":0,"tokens":0,"cacheRead":0,"inputSide":0,"activeDays":0,"prompts":0},{"k":"2026-10-05","main":91.1042,"typed":16.5856,"generic":4.635,"opus":104.2187,"sonnet":8.106,"haiku":0,"other":0,"tokens":285088276,"cacheRead":274529736,"inputSide":284239276,"activeDays":4,"prompts":13},{"k":"2026-10-12","main":325.3089,"typed":183.7818,"generic":0,"opus":393.9168,"sonnet":115.1107,"haiku":0.0631,"other":0,"tokens":1811528805,"cacheRead":1763325163,"inputSide":1809481110,"activeDays":5,"prompts":95},{"k":"2026-10-19","main":386.2774,"typed":219.2942,"generic":6.5834,"opus":466.1754,"sonnet":145.9794,"haiku":0,"other":0,"tokens":2215767440,"cacheRead":2167113724,"inputSide":2210336516,"activeDays":7,"prompts":144},{"k":"2026-10-26","main":47.5006,"typed":17.4949,"generic":0,"opus":51.9884,"sonnet":12.359,"haiku":0,"other":0.6481,"tokens":204678458,"cacheRead":198322802,"inputSide":204309892,"activeDays":1,"prompts":14}],"changes":[{"n":1,"day":"2026-08-21","ts":1787314804000,"commits":[{"sha":"5dfaa2b","subject":"docs(style-guide): the heading levels table lists the sizes the site uses (#612)"}],"files":[".claude/skills/ui-check/skill.md"],"before":null,"after":null},{"n":2,"day":"2026-09-02","ts":1788347740000,"commits":[{"sha":"c770b16","subject":"design(tokens): code blocks get their own background and border colours"}],"files":[".claude/skills/ui-check/skill.md"],"before":null,"after":null},{"n":3,"day":"2026-09-04","ts":1788484270000,"commits":[{"sha":"3a9ab16","subject":"chore(docs): the generated API pages are no longer committed"}],"files":[".claude/skills/ui-check/skill.md"],"before":null,"after":null},{"n":4,"day":"2026-09-09","ts":1788916278000,"commits":[{"sha":"37b11a2","subject":"fix(component): every page passes the contrast check, and the two that failed are fixed (#619)"}],"files":[".claude/skills/ui-check/skill.md"],"before":null,"after":null},{"n":5,"day":"2026-09-10","ts":1789001632000,"commits":[{"sha":"156e5eb","subject":"chore(practice): drafts move to their own folder, out of the published tree"},{"sha":"57807c9","subject":"fix(docs): links to renamed pages redirect, and the link check runs on every PR (#621)"}],"files":[".claude/agents/planner.md",".claude/skills/code/SKILL.md",".claude/skills/deploy/SKILL.md",".claude/skills/pick-next/SKILL.md",".claude/skills/plan/SKILL.md",".claude/skills/roadmap/SKILL.md"],"before":null,"after":null},{"n":6,"day":"2026-09-16","ts":1789553517000,"commits":[{"sha":"9a54ff0","subject":"fix(hooks): the pre-commit hook runs on staged files only (#630)"},{"sha":"c3dbdda","subject":"chore(claude): one agent per job, and the end-to-end tests run only for touched pages"}],"files":[".claude/agents/style-reviewer.md",".claude/agents/ui-reviewer.md",".claude/agents/formatter.md",".claude/agents/test-runner.md",".claude/agents/persona-guest.md",".claude/skills/code/SKILL.md",".claude/skills/deploy/SKILL.md",".claude/skills/ui-check/SKILL.md",".claude/skills/ui-check/reference.md",".claude/skills/address-review/SKILL.md",".claude/skills/secure/SKILL.md",".claude/skills/issue/SKILL.md",".claude/skills/pick-next/SKILL.md",".claude/skills/plan/SKILL.md",".claude/skills/pr/SKILL.md",".claude/skills/roadmap/SKILL.md",".claude/skills/review/SKILL.md",".claude/skills/test/SKILL.md"],"before":null,"after":null},{"n":7,"day":"2026-09-17","ts":1789656717000,"commits":[{"sha":"2d9721e","subject":"chore(claude): the scout agent starts without the project instructions (#634)"},{"sha":"a8a8adc","subject":"docs: the contributing guide says how to preview a page locally (#636)"}],"files":[".claude/agents/spec-reviewer.md",".claude/agents/test-runner.md",".claude/agents/persona-owner.md",".claude/agents/persona-guest.md",".claude/agents/screen-walker.md",".claude/skills/deploy/SKILL.md"],"before":null,"after":null},{"n":8,"day":"2026-10-05","ts":1791198312000,"commits":[{"sha":"b25ea5a","subject":"chore(claude): the writer runs on Sonnet and the scout on Haiku (#651)"},{"sha":"415403e","subject":"chore(claude): every agent file names its model (#651)"}],"files":[".claude/agents/adversarial-reviewer.md",".claude/agents/implementer.md"],"before":null,"after":{"days":4,"cost":56.1624,"generic":2.3175,"typed":8.2928,"opus":52.1093}},{"n":9,"day":"2026-10-08","ts":1791454508000,"commits":[{"sha":"171f55f","subject":"chore(claude): the skills are rewritten as checklists (#655)"}],"files":[".claude/agents/adversarial-reviewer.md",".claude/agents/style-reviewer.md",".claude/agents/implementer.md",".claude/agents/planner.md",".claude/skills/code/SKILL.md",".claude/skills/commit/SKILL.md",".claude/skills/interview/SKILL.md",".claude/skills/address-review/SKILL.md",".claude/skills/git-flow/SKILL.md",".claude/skills/issue/SKILL.md",".claude/skills/pick-next/SKILL.md",".claude/skills/pr/SKILL.md",".claude/skills/triage/SKILL.md",".claude/skills/release/SKILL.md",".claude/skills/test/SKILL.md"],"before":{"days":3,"cost":34.5288,"generic":0,"typed":7.2033,"opus":30.4758},"after":{"days":2,"cost":26.3844,"generic":2.3175,"typed":1.0895,"opus":26.3844}},{"n":10,"day":"2026-10-14","ts":1791982255000,"commits":[{"sha":"9cc08fd","subject":"chore(claude): the review skill asks for screenshots of every changed page (#660)"}],"files":[".claude/agents/implementer.md",".claude/skills/interview/SKILL.md",".claude/skills/pr/SKILL.md"],"before":{"days":3,"cost":40.3297,"generic":2.3175,"typed":5.1567,"opus":38.0907},"after":{"days":6,"cost":352.0497,"generic":0,"typed":126.5245,"opus":270.3601}},{"n":11,"day":"2026-10-16","ts":1792142496000,"commits":[{"sha":"1acd2e8","subject":"feat(component): a callout box for notes, tips and warnings (#664)"},{"sha":"7dac1ad","subject":"fix(claude): the release skill tags from the release branch (#665)"},{"sha":"23ac7d4","subject":"fix(claude): the link checker skips pages still in draft (#666)"}],"files":[".claude/agents/ui-reviewer.md",".claude/skills/code/SKILL.md",".claude/skills/ui-check/SKILL.md",".claude/skills/ui-check/reference.md",".claude/skills/git-flow/SKILL.md",".claude/skills/pick-next/SKILL.md",".claude/skills/pr/SKILL.md",".claude/skills/test/SKILL.md"],"before":{"days":2,"cost":33.2857,"generic":0,"typed":0,"opus":33.2857},"after":{"days":7,"cost":331.4152,"generic":0,"typed":127.5377,"opus":248.7124}},{"n":12,"day":"2026-10-17","ts":1792233965000,"commits":[{"sha":"80c87d7","subject":"feat(component): the sidebar collapses the sections you are not reading (#668)"},{"sha":"a88b2c7","subject":"fix(component): the table of contents follows the scroll position (#669)"},{"sha":"7631d5c","subject":"feat(component): a version picker in the header (#670)"},{"sha":"15a0d4d","subject":"fix(component): long code lines wrap on phones instead of scrolling the page (#671)"},{"sha":"53b9baa","subject":"fix(component): the copy button sits inside the code block on every theme (#672)"}],"files":[".claude/agents/ui-reviewer.md",".claude/skills/ui-check/SKILL.md",".claude/skills/ui-check/reference.md"],"before":{"days":3,"cost":129.7355,"generic":0,"typed":39.4476,"opus":104.5051},"after":{"days":7,"cost":257.7464,"generic":0,"typed":93.5896,"opus":197.1509}},{"n":13,"day":"2026-10-18","ts":1792328646000,"commits":[{"sha":"24489bd","subject":"chore(claude): a second agent proofreads every new page (#674)"},{"sha":"9e47703","subject":"fix(claude): the proofreader skips code blocks (#675)"},{"sha":"cfca05f","subject":"fix(claude): the writer builds the site before it opens a PR (#676)"},{"sha":"0d35a1e","subject":"chore(claude): review comments are answered one by one in the PR (#677)"},{"sha":"f097070","subject":"feat(app): search shows the section each result comes from (#678)"}],"files":[".claude/agents/implementer.md",".claude/skills/code/SKILL.md",".claude/skills/ui-check/reference.md",".claude/skills/address-review/SKILL.md",".claude/skills/pick-next/SKILL.md",".claude/skills/pr/SKILL.md"],"before":{"days":4,"cost":197.4426,"generic":0,"typed":68.9504,"opus":154.3713},"after":{"days":7,"cost":225.9866,"generic":3.2917,"typed":75.5953,"opus":175.4588}},{"n":14,"day":"2026-10-19","ts":1792421093000,"commits":[{"sha":"6eeb37c","subject":"fix(app): search keeps the query when you go back (#680)"},{"sha":"adfab4a","subject":"chore(claude): agents read the site map before they edit a page (#681)"},{"sha":"fa4e380","subject":"feat(component): breadcrumbs above every page title (#682)"},{"sha":"a1cdded","subject":"feat(component): a feedback widget at the end of each page (#683)"},{"sha":"8e0edcf","subject":"fix(component): the feedback widget remembers a vote (#684)"}],"files":[".claude/agents/adversarial-reviewer.md",".claude/agents/implementer.md",".claude/skills/ui-check/SKILL.md",".claude/skills/ui-check/reference.md"],"before":{"days":5,"cost":254.5137,"generic":0,"typed":91.8909,"opus":196.9584},"after":{"days":7,"cost":305.8328,"generic":3.2917,"typed":109.6471,"opus":232.8431}},{"n":15,"day":"2026-10-20","ts":1792456514000,"commits":[{"sha":"f30a140","subject":"feat(component): tabs for code samples in several languages (#686)"},{"sha":"f10a8f3","subject":"fix(component): the chosen code language sticks across pages (#687)"}],"files":[".claude/skills/ui-check/reference.md"],"before":{"days":5,"cost":322.9833,"generic":0,"typed":118.6617,"opus":246.4639},"after":{"days":7,"cost":264.7862,"generic":3.2917,"typed":91.6238,"opus":204.581}},{"n":16,"day":"2026-10-22","ts":1792684145000,"commits":[{"sha":"62141e6","subject":"fix(component): anchors land below the sticky header (#690)"}],"files":[".claude/skills/ui-check/reference.md"],"before":{"days":7,"cost":354.3699,"generic":0,"typed":126.5245,"opus":272.6803},"after":{"days":5,"cost":233.3996,"generic":3.2917,"typed":83.7609,"opus":178.3646}},{"n":17,"day":"2026-10-23","ts":1792755350000,"commits":[{"sha":"f03cd6b","subject":"feat(component): images open full size on click (#693)"}],"files":[".claude/skills/ui-check/reference.md"],"before":{"days":7,"cost":331.4152,"generic":0,"typed":127.5377,"opus":248.7124},"after":{"days":4,"cost":227.8194,"generic":3.2917,"typed":82.7477,"opus":173.7976}},{"n":18,"day":"2026-10-24","ts":1792801902000,"commits":[{"sha":"598a27c","subject":"feat(component): a print stylesheet for every page (#695)"},{"sha":"d98a892","subject":"fix(component): printed pages keep a code block on one page (#697)"}],"files":[".claude/skills/ui-check/reference.md"],"before":{"days":7,"cost":257.7464,"generic":0,"typed":93.5896,"opus":197.1509},"after":{"days":3,"cost":205.0384,"generic":3.2917,"typed":77.2482,"opus":154.1397}}],"goal":{"month":"October","spent":1298.57,"goal":null},"worth":{"settings":{"rate":100,"plan":200,"sizes":{"S":0.5,"M":2,"L":6,"XL":16}},"attention":49.97,"prompts":694,"days":23,"apiCost":2705,"total":128,"sized":1,"today":[{"n":385,"title":"chore: merge main into release/2.15.1","merged":1793028496000,"add":0,"dele":0,"size":"S","sessions":1,"agents":1406,"cost":2882.0092813650426},{"n":383,"title":"fix(profile): the profile loads on a slow network without timing out","merged":1793028427000,"add":32,"dele":24,"size":null,"sessions":1,"agents":1406,"cost":2882.0092813650426},{"n":382,"title":"test(auth): an expired session signs in again","merged":1793025603000,"add":2,"dele":1,"size":null,"sessions":1,"agents":1406,"cost":2882.0092813650426},{"n":380,"title":"chore(release): 2.15.1","merged":1793024000000,"add":1,"dele":1,"size":null,"sessions":1,"agents":1406,"cost":2882.0092813650426},{"n":377,"title":"fix(search): the search page stops retrying after a refused request","merged":1793023609000,"add":29,"dele":5,"size":null,"sessions":1,"agents":1406,"cost":2882.0092813650426},{"n":379,"title":"test(places): a saved place round-trips through the API","merged":1793023310000,"add":109,"dele":5,"size":null,"sessions":1,"agents":1406,"cost":2882.0092813650426},{"n":378,"title":"fix(lists): a shared list no longer appears twice after a retry","merged":1793021801000,"add":222,"dele":63,"size":null,"sessions":1,"agents":1406,"cost":2882.0092813650426},{"n":376,"title":"fix(albums): an album shows the right time across time zones","merged":1793021142000,"add":72,"dele":18,"size":null,"sessions":1,"agents":1406,"cost":2882.0092813650426}],"prs":[{"n":384,"title":"fix(settings): the settings page no longer loses edits made offline","merged":1793028571000,"lines":56,"files":3,"cost":0.38,"agents":1},{"n":383,"title":"fix(profile): the profile loads on a slow network without timing out","merged":1793028427000,"lines":56,"files":3,"cost":4.61,"agents":1},{"n":382,"title":"test(auth): an expired session signs in again","merged":1793025603000,"lines":3,"files":1,"cost":2.65,"agents":2},{"n":377,"title":"fix(search): the search page stops retrying after a refused request","merged":1793023609000,"lines":34,"files":3,"cost":3.14,"agents":7},{"n":379,"title":"test(places): a saved place round-trips through the API","merged":1793023310000,"lines":114,"files":8,"cost":6.22,"agents":4},{"n":378,"title":"fix(lists): a shared list no longer appears twice after a retry","merged":1793021801000,"lines":285,"files":20,"cost":0.03,"agents":1},{"n":376,"title":"fix(albums): an album shows the right time across time zones","merged":1793021142000,"lines":90,"files":5,"cost":5.09,"agents":13},{"n":367,"title":"fix(photos): the photo grid keeps its scroll position after a refresh","merged":1793014189000,"lines":138,"files":8,"cost":0.3,"agents":5},{"n":366,"title":"feat(places): a saved place loads in pages as you scroll","merged":1793014064000,"lines":208,"files":6,"cost":3.39,"agents":10},{"n":365,"title":"fix(trips): a trip no longer loses edits made offline","merged":1793013558000,"lines":1305,"files":5,"cost":4.74,"agents":17},{"n":364,"title":"test(sync): offline edits merge in the right order","merged":1793012173000,"lines":152,"files":4,"cost":1.62,"agents":9},{"n":363,"title":"fix(maps): the map loads on a slow network without timing out","merged":1793011915000,"lines":241,"files":6,"cost":21.38,"agents":20},{"n":360,"title":"fix(push): a notification shows the right time across time zones","merged":1793009630000,"lines":430,"files":19,"cost":1.89,"agents":8},{"n":361,"title":"chore(build): drop the unused polyfills","merged":1793009561000,"lines":119,"files":11,"cost":2.25,"agents":9},{"n":362,"title":"fix(places): a saved place no longer appears twice after a retry","merged":1793008436000,"lines":245,"files":4,"cost":0.03,"agents":3},{"n":359,"title":"fix(onboarding): the onboarding keeps its scroll position after a refresh","merged":1793003637000,"lines":474,"files":9,"cost":6.35,"agents":19},{"n":358,"title":"fix(comments): a comment no longer loses edits made offline","merged":1792967572000,"lines":246,"files":7,"cost":32.9,"agents":16},{"n":338,"title":"feat(push): a notification opens where you left it","merged":1792943919000,"lines":1202,"files":12,"cost":10.12,"agents":5},{"n":337,"title":"feat(onboarding): the onboarding keeps working offline and syncs later","merged":1792925709000,"lines":1837,"files":48,"cost":17.24,"agents":5},{"n":336,"title":"feat(comments): a comment can be shared with a link","merged":1792877019000,"lines":2879,"files":48,"cost":15.84,"agents":5},{"n":335,"title":"feat(sync): the offline queue shows its last edit and who made it","merged":1792865223000,"lines":1769,"files":33,"cost":15.03,"agents":8},{"n":333,"title":"feat(uploads): an upload reads well with large text","merged":1792780414000,"lines":704,"files":8,"cost":30.94,"agents":6},{"n":322,"title":"fix(sync): the offline queue loads on a slow network without timing out","merged":1792683561000,"lines":151,"files":7,"cost":4.42,"agents":5},{"n":321,"title":"fix(uploads): an upload no longer appears twice after a retry","merged":1792681286000,"lines":227,"files":6,"cost":5.14,"agents":5},{"n":320,"title":"fix(feed): the home feed stops retrying after a refused request","merged":1792677986000,"lines":126,"files":2,"cost":5.73,"agents":5},{"n":318,"title":"fix(reminders): a reminder shows the right time across time zones","merged":1792674729000,"lines":139,"files":14,"cost":4.97,"agents":5},{"n":316,"title":"feat(feed): the home feed loads in pages as you scroll","merged":1792669991000,"lines":168,"files":9,"cost":5.69,"agents":6},{"n":313,"title":"fix(settings): the settings page keeps its scroll position after a refresh","merged":1792666136000,"lines":145,"files":13,"cost":6.89,"agents":5},{"n":309,"title":"fix(profile): the profile no longer loses edits made offline","merged":1792658568000,"lines":129,"files":7,"cost":11.32,"agents":7},{"n":307,"title":"feat(reminders): a reminder can be sorted and filtered","merged":1792651888000,"lines":201,"files":4,"cost":6.81,"agents":5},{"n":306,"title":"fix(lists): a shared list loads on a slow network without timing out","merged":1792624479000,"lines":349,"files":9,"cost":5.63,"agents":5},{"n":305,"title":"fix(search): the search page no longer appears twice after a retry","merged":1792583995000,"lines":66,"files":3,"cost":13.54,"agents":8},{"n":301,"title":"chore(lint): one import order everywhere","merged":1792534753000,"lines":92,"files":5,"cost":8.5,"agents":4},{"n":297,"title":"fix(albums): an album stops retrying after a refused request","merged":1792452806000,"lines":194,"files":6,"cost":7.64,"agents":14},{"n":295,"title":"feat(settings): the settings page opens where you left it","merged":1792434109000,"lines":557,"files":10,"cost":6.18,"agents":7},{"n":294,"title":"fix(photos): the photo grid shows the right time across time zones","merged":1792426741000,"lines":340,"files":5,"cost":16.79,"agents":6},{"n":290,"title":"fix(trips): a trip keeps its scroll position after a refresh","merged":1792412331000,"lines":54,"files":7,"cost":4.47,"agents":7},{"n":289,"title":"fix(maps): the map no longer loses edits made offline","merged":1792409172000,"lines":191,"files":14,"cost":3.27,"agents":7},{"n":288,"title":"fix(places): a saved place loads on a slow network without timing out","merged":1792409169000,"lines":276,"files":13,"cost":4.73,"agents":6},{"n":283,"title":"feat(profile): the profile keeps working offline and syncs later","merged":1792403516000,"lines":777,"files":13,"cost":13.81,"agents":7},{"n":281,"title":"perf(photos): thumbnails decode off the main thread","merged":1792343223000,"lines":1051,"files":25,"cost":6.44,"agents":7},{"n":280,"title":"feat(lists): a shared list can be shared with a link","merged":1792343153000,"lines":190,"files":12,"cost":3.81,"agents":7},{"n":279,"title":"feat(search): the search page shows its last edit and who made it","merged":1792343096000,"lines":313,"files":17,"cost":3.22,"agents":7},{"n":278,"title":"fix(push): a notification stops retrying after a refused request","merged":1792343080000,"lines":98,"files":13,"cost":3.45,"agents":7},{"n":277,"title":"chore(i18n): add the German strings","merged":1792343077000,"lines":463,"files":14,"cost":12.6,"agents":8},{"n":272,"title":"perf(feed): the home feed renders half as many rows","merged":1792310388000,"lines":341,"files":16,"cost":12.1,"agents":7},{"n":270,"title":"fix(onboarding): the onboarding shows the right time across time zones","merged":1792263925000,"lines":385,"files":8,"cost":null,"agents":null},{"n":269,"title":"fix(comments): a comment keeps its scroll position after a refresh","merged":1792249117000,"lines":208,"files":12,"cost":9.89,"agents":6},{"n":265,"title":"feat(albums): an album reads well with large text","merged":1792197539000,"lines":282,"files":15,"cost":3.6,"agents":7},{"n":264,"title":"chore(docs): the README says how to run the app locally","merged":1792194588000,"lines":3299,"files":56,"cost":3.88,"agents":7},{"n":263,"title":"feat(photos): the photo grid loads in pages as you scroll","merged":1792192926000,"lines":1149,"files":14,"cost":4.72,"agents":7},{"n":262,"title":"feat(trips): a trip can be sorted and filtered","merged":1792190708000,"lines":1946,"files":31,"cost":4.28,"agents":7},{"n":261,"title":"feat(maps): the map opens where you left it","merged":1792188629000,"lines":1322,"files":13,"cost":5.72,"agents":8},{"n":260,"title":"feat(places): a saved place keeps working offline and syncs later","merged":1792182877000,"lines":1335,"files":20,"cost":4.26,"agents":7},{"n":259,"title":"fix(sync): the offline queue no longer loses edits made offline","merged":1792180336000,"lines":205,"files":19,"cost":4.33,"agents":7},{"n":258,"title":"fix(uploads): an upload loads on a slow network without timing out","merged":1792178467000,"lines":310,"files":23,"cost":4.61,"agents":9},{"n":257,"title":"feat(push): a notification shows its last edit and who made it","merged":1792174635000,"lines":809,"files":13,"cost":6.73,"agents":11},{"n":254,"title":"feat(onboarding): the onboarding reads well with large text","merged":1792170863000,"lines":524,"files":7,"cost":3.32,"agents":7},{"n":252,"title":"feat(comments): a comment loads in pages as you scroll","merged":1792168577000,"lines":1295,"files":27,"cost":5.24,"agents":7},{"n":251,"title":"fix(feed): the home feed no longer appears twice after a retry","merged":1792165027000,"lines":1369,"files":31,"cost":8.0,"agents":7},{"n":250,"title":"feat(sync): the offline queue can be sorted and filtered","merged":1792161014000,"lines":1803,"files":27,"cost":6.52,"agents":7},{"n":248,"title":"feat(uploads): an upload opens where you left it","merged":1792157791000,"lines":1185,"files":12,"cost":5.36,"agents":7},{"n":247,"title":"feat(feed): the home feed keeps working offline and syncs later","merged":1792152199000,"lines":728,"files":6,"cost":9.31,"agents":9},{"n":246,"title":"feat(reminders): a reminder can be shared with a link","merged":1792147408000,"lines":1686,"files":13,"cost":5.38,"agents":7},{"n":245,"title":"feat(settings): the settings page shows its last edit and who made it","merged":1792116209000,"lines":313,"files":8,"cost":8.59,"agents":7},{"n":244,"title":"feat(profile): the profile reads well with large text","merged":1792113918000,"lines":1538,"files":13,"cost":5.33,"agents":9},{"n":243,"title":"feat(lists): a shared list loads in pages as you scroll","merged":1792109771000,"lines":1400,"files":10,"cost":2.74,"agents":4},{"n":242,"title":"chore(ci): cache the build between runs","merged":1792109517000,"lines":515,"files":9,"cost":20.62,"agents":6},{"n":241,"title":"feat(search): the search page can be sorted and filtered","merged":1792106917000,"lines":1323,"files":16,"cost":20.87,"agents":6},{"n":240,"title":"feat(albums): an album opens where you left it","merged":1792102175000,"lines":895,"files":7,"cost":12.88,"agents":6},{"n":239,"title":"feat(photos): the photo grid keeps working offline and syncs later","merged":1792098829000,"lines":1465,"files":12,"cost":16.81,"agents":6},{"n":238,"title":"feat(trips): a trip can be shared with a link","merged":1792095719000,"lines":1058,"files":10,"cost":17.65,"agents":6},{"n":237,"title":"feat(maps): the map shows its last edit and who made it","merged":1792091862000,"lines":2174,"files":12,"cost":25.96,"agents":6},{"n":236,"title":"feat(places): a saved place reads well with large text","merged":1792087149000,"lines":1596,"files":17,"cost":29.74,"agents":7},{"n":235,"title":"feat(push): a notification can be sorted and filtered","merged":1792072611000,"lines":3491,"files":23,"cost":23.55,"agents":6},{"n":234,"title":"feat(onboarding): the onboarding opens where you left it","merged":1792066873000,"lines":1193,"files":11,"cost":16.76,"agents":6},{"n":232,"title":"chore(deps): bump the image library","merged":1792062172000,"lines":126,"files":6,"cost":1.81,"agents":4},{"n":231,"title":"feat(comments): a comment keeps working offline and syncs later","merged":1792062043000,"lines":788,"files":11,"cost":20.38,"agents":7},{"n":230,"title":"feat(sync): the offline queue can be shared with a link","merged":1792058945000,"lines":2616,"files":17,"cost":14.23,"agents":6},{"n":229,"title":"feat(uploads): an upload shows its last edit and who made it","merged":1792055570000,"lines":847,"files":14,"cost":44.77,"agents":16},{"n":228,"title":"feat(feed): the home feed reads well with large text","merged":1792047796000,"lines":1102,"files":13,"cost":13.37,"agents":6},{"n":227,"title":"feat(reminders): a reminder loads in pages as you scroll","merged":1792043722000,"lines":1475,"files":33,"cost":26.3,"agents":8},{"n":226,"title":"feat(settings): the settings page can be sorted and filtered","merged":1792038959000,"lines":597,"files":49,"cost":25.02,"agents":8},{"n":225,"title":"test(e2e): the upload flow runs on a slow network","merged":1792030002000,"lines":621,"files":21,"cost":11.53,"agents":5},{"n":224,"title":"fix(reminders): a reminder stops retrying after a refused request","merged":1792024818000,"lines":257,"files":14,"cost":51.48,"agents":17},{"n":222,"title":"feat(profile): the profile opens where you left it","merged":1791992657000,"lines":104,"files":3,"cost":null,"agents":null},{"n":221,"title":"fix(settings): the settings page shows the right time across time zones","merged":1791989657000,"lines":536,"files":12,"cost":29.84,"agents":16},{"n":220,"title":"fix(profile): the profile keeps its scroll position after a refresh","merged":1791987089000,"lines":174,"files":7,"cost":null,"agents":null},{"n":218,"title":"feat(lists): a shared list keeps working offline and syncs later","merged":1791986726000,"lines":83,"files":3,"cost":null,"agents":null},{"n":216,"title":"feat(albums): an album shows its last edit and who made it","merged":1791981289000,"lines":461,"files":6,"cost":1.07,"agents":2},{"n":217,"title":"feat(search): the search page can be shared with a link","merged":1791935387000,"lines":972,"files":8,"cost":24.34,"agents":14},{"n":213,"title":"fix(search): the search page loads on a slow network without timing out","merged":1791934565000,"lines":576,"files":9,"cost":1.06,"agents":1},{"n":215,"title":"fix(lists): a shared list no longer loses edits made offline","merged":1791890626000,"lines":25,"files":2,"cost":5.19,"agents":4},{"n":214,"title":"feat(photos): the photo grid reads well with large text","merged":1791854510000,"lines":918,"files":13,"cost":22.23,"agents":17},{"n":209,"title":"feat(trips): a trip loads in pages as you scroll","merged":1791846590000,"lines":2151,"files":18,"cost":22.18,"agents":19},{"n":208,"title":"feat(maps): the map can be sorted and filtered","merged":1791808211000,"lines":1239,"files":18,"cost":21.89,"agents":13},{"n":206,"title":"fix(albums): an album no longer appears twice after a retry","merged":1791766925000,"lines":1968,"files":70,"cost":60.66,"agents":23},{"n":205,"title":"fix(photos): the photo grid stops retrying after a refused request","merged":1791753398000,"lines":1078,"files":55,"cost":64.25,"agents":31},{"n":204,"title":"refactor(state): the stores share one cache","merged":1791741722000,"lines":4941,"files":71,"cost":3.48,"agents":3},{"n":203,"title":"feat(places): a saved place opens where you left it","merged":1791740659000,"lines":1494,"files":8,"cost":84.14,"agents":45},{"n":202,"title":"feat(push): a notification can be shared with a link","merged":1791693557000,"lines":1221,"files":15,"cost":2.09,"agents":2},{"n":201,"title":"feat(onboarding): the onboarding shows its last edit and who made it","merged":1791691816000,"lines":978,"files":12,"cost":46.45,"agents":29},{"n":200,"title":"feat(comments): a comment reads well with large text","merged":1791646933000,"lines":2098,"files":16,"cost":20.44,"agents":19},{"n":199,"title":"feat(sync): the offline queue loads in pages as you scroll","merged":1791643070000,"lines":2348,"files":28,"cost":57.36,"agents":33},{"n":197,"title":"feat(uploads): an upload can be sorted and filtered","merged":1791563929000,"lines":2803,"files":23,"cost":34.49,"agents":26},{"n":196,"title":"feat(feed): the home feed opens where you left it","merged":1791511675000,"lines":4814,"files":18,"cost":59.23,"agents":32},{"n":195,"title":"feat(reminders): a reminder keeps working offline and syncs later","merged":1791485059000,"lines":5338,"files":37,"cost":53.57,"agents":31},{"n":194,"title":"feat(settings): the settings page can be shared with a link","merged":1791470921000,"lines":4551,"files":33,"cost":48.39,"agents":37},{"n":193,"title":"feat(profile): the profile shows its last edit and who made it","merged":1791455126000,"lines":2140,"files":26,"cost":51.36,"agents":28},{"n":192,"title":"fix(trips): a trip shows the right time across time zones","merged":1791415762000,"lines":176,"files":7,"cost":19.16,"agents":15},{"n":191,"title":"feat(lists): a shared list reads well with large text","merged":1791386814000,"lines":1607,"files":15,"cost":30.41,"agents":37},{"n":190,"title":"feat(search): the search page loads in pages as you scroll","merged":1791386253000,"lines":1509,"files":14,"cost":24.78,"agents":29},{"n":189,"title":"feat(albums): an album can be sorted and filtered","merged":1791385321000,"lines":703,"files":20,"cost":29.13,"agents":19},{"n":188,"title":"refactor(api): one client for every endpoint","merged":1791334124000,"lines":185,"files":23,"cost":14.56,"agents":12},{"n":186,"title":"fix(maps): the map keeps its scroll position after a refresh","merged":1790892233000,"lines":321,"files":12,"cost":23.95,"agents":7},{"n":185,"title":"feat(photos): the photo grid opens where you left it","merged":1790880342000,"lines":4615,"files":22,"cost":55.22,"agents":28},{"n":183,"title":"feat(trips): a trip keeps working offline and syncs later","merged":1790862586000,"lines":1948,"files":32,"cost":33.56,"agents":21},{"n":182,"title":"feat(maps): the map can be shared with a link","merged":1790854413000,"lines":2614,"files":33,"cost":2.37,"agents":1},{"n":181,"title":"fix(places): a saved place no longer loses edits made offline","merged":1790852503000,"lines":70,"files":2,"cost":0.88,"agents":2},{"n":180,"title":"feat(places): a saved place shows its last edit and who made it","merged":1790852443000,"lines":547,"files":5,"cost":61.32,"agents":37}],"releases":18},"patterns":{"calls":46473,"failed":1136,"kinds":[{"errorClass":"exit_code","count":586,"commands":[{"commandClass":"other","count":374},{"commandClass":"git","count":90},{"commandClass":"gh","count":47},{"commandClass":"docker","count":35},{"commandClass":"test","count":33},{"commandClass":"build","count":4},{"commandClass":"lint","count":2},{"commandClass":"install","count":1}]},{"errorClass":"refused","count":390},{"errorClass":"other","count":82},{"errorClass":"invalid_input","count":31},{"errorClass":"not_found","count":25},{"errorClass":"timeout","count":8},{"errorClass":"read_first","count":7},{"errorClass":"unknown_command","count":5},{"errorClass":"no_match","count":2}],"repeats":[{"shape":"sleep_blocked","tool":"Bash","errorClass":"refused","commandClass":"other","count":233,"sessions":5,"sample":null},{"shape":"hook_blocked","tool":"Write","errorClass":"refused","commandClass":null,"count":68,"sessions":7,"sample":null},{"shape":"outside_worktree","tool":"Bash","errorClass":"refused","commandClass":"test","count":50,"sessions":1,"sample":null},{"shape":"h:e01818cd","tool":"Bash","errorClass":"exit_code","commandClass":"other","count":38,"sessions":3,"sample":null},{"shape":"gh_projects_classic","tool":"Bash","errorClass":"exit_code","commandClass":"gh","count":21,"sessions":3,"sample":null},{"shape":"classifier_denied","tool":"Bash","errorClass":"refused","commandClass":"other","count":17,"sessions":3,"sample":null},{"shape":"h:be391fa8","tool":"Bash","errorClass":"exit_code","commandClass":"other","count":16,"sessions":2,"sample":null},{"shape":"wrong_tool_name","tool":"bash","errorClass":"invalid_input","commandClass":null,"count":15,"sessions":3,"sample":null},{"shape":"h:14c0f72d","tool":"Bash","errorClass":"exit_code","commandClass":"docker","count":12,"sessions":1,"sample":null},{"shape":"h:beaf062c","tool":"Bash","errorClass":"exit_code","commandClass":"git","count":11,"sessions":1,"sample":null}],"tests":{"count":2,"sessions":2}}};
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const real = '<span class="real">real</span>', ex = '<span class="tag">example</span>';
+
+  /* ---------- Numbers: the studio's own formats (Today) and the readable ones (Proposed) ---------- */
+  const n0 = (v) => Math.round(v).toLocaleString('en-US');
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  // Today: tokens() and usd() from packages/studio/src/format.ts
+  const tokOld = (n) => (n >= 999_950 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? (n < 100_000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n / 1000)}k`) : String(n));
+  const usdOld = (n) => (n === 0 ? '$0.00' : n < 0.01 ? '<$0.01' : `$${n.toFixed(2)}`);
+  const durOld = (ms) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`.replace(/ 0(\ds)$/, ' $1');
+    return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`;
+  };
+  // Proposed: a unit is always written
+  const tokR = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)}\u00a0B` : n >= 1e6 ? (n >= 1e8 ? `${Math.round(n / 1e6)}\u00a0M` : `${(n / 1e6).toFixed(1)}\u00a0M`) : n >= 1e3 ? `${Math.round(n / 1e3)}\u00a0k` : String(n));
+  const money = (n) => (n >= 10 ? `$${n0(n)}` : `$${n.toFixed(2)}`);
+  const dollars = (n) => (n >= 0 ? money(n) : -n < 0.005 ? '$0.00' : `−${money(-n)}`);
+  const hoursOf = (h) => { const r = Math.round(Math.abs(h) * 10) / 10; return `${h < 0 && r > 0 ? '−' : ''}${r.toLocaleString('en-US')} h`; };
+  const pctChange = (cur, prev) => (cur === null || prev === null || prev === 0 ? null : Math.round(((cur - prev) / prev) * 100));
+  const signed = (p) => (p === 0 ? '0%' : `${p < 0 ? '−' : '+'}${Math.abs(p)}%`);
+  const niceMax = (n) => { if (n <= 0) return 1; const p = 10 ** Math.floor(Math.log10(n)); return [1, 2, 5, 10].map((m) => m * p).find((v) => v >= n); };
+  const axisMoney = (v) => (v >= 1000 ? `$${+(v / 1000).toFixed(1)}k` : `$${+v.toFixed(v >= 1 ? 1 : 2)}`);
+  const dShort = (ms) => new Date(ms).toLocaleDateString('en-GB', { timeZone: 'Europe/Rome', day: 'numeric', month: 'short' });
+  const dayName = (key) => { const d = new Date(`${key}T12:00:00Z`); return `${d.getUTCDate()} ${d.toLocaleDateString('en-GB', { timeZone: 'UTC', month: 'short' })}`; };
+  const dow = (key) => new Date(`${key}T12:00:00Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', weekday: 'short' });
+  const FAMS = ['opus', 'sonnet', 'haiku', 'other'];
+  const FAMN = { opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku', other: 'Other' };
+  const FAMC = { opus: 'var(--opus)', sonnet: 'var(--sonnet)', haiku: 'var(--haiku)', other: 'var(--faint)' };
+
+  /* ---------- The data: the owner's own studio, 26 Oct 2026, 16:52 (GET only), and one project's October PRs, shown as mobile-app with invented titles ---------- */
+  // D comes from the data block above.
+  const T = D.totals, W = D.worth, PT = D.patterns;
+  const PRICIER_NOW = { agents: 0, cost: 0 };
+  const MONTH_AT = { month: 'October 2026', soFar: 'October so far' };
+  const PROJECTS = ['mobile-app', 'docs-site', 'field-notes', 'shop-api', 'agent-orb', 'team-wiki'];
+
+  const state = {
+    board: 'worth',
+    ver: { header: 'proposed', live: 'proposed', totals: 'proposed', trends: 'proposed', worth: 'proposed', patterns: 'proposed' },
+    conn: 'live',
+    hpage: 'ledger', hview: { ledger: 'totals', analysis: 'patterns', pipeline: 'roles' },
+    single: 'mobile-app', all: true,                 // Proposed: one project for the page, "All projects" only where it makes sense
+    today: { totals: '', trends: 'docs-site', worth: 'mobile-app', patterns: 'mobile-app', reports: '', roles: 'mobile-app', skills: 'mobile-app' },
+    period: { totals: '7d', trends: '12w', worth: '2026-10', patterns: 'all', reports: '7d', roles: '7d', skills: '7d' },
+    totals: { unit: 'day', info: { waiting: true } },
+    trends: { split: 'who', all: false, open: 18, picked: 18, info: {} },
+    worth: { rate: 100, plan: 200, hours: { S: 0.5, M: 2, L: 6, XL: 16 }, cuts: [300, 1500, 6000], over: {}, all: false, edit: false, info: {} },
+    patterns: { info: {} },
+  };
+
+  const views = {
+    ledger: [['totals', 'Totals'], ['trends', 'Trends'], ['worth', 'Worth']],
+    analysis: [['patterns', 'Patterns'], ['reports', 'Reports']],
+    pipeline: [['roles', 'Roles'], ['skills', 'Skills']],
+  };
+  const PAGE_NAME = { ledger: 'Ledger', analysis: 'Analysis', pipeline: 'Pipeline' };
+  const pageOf = (view) => Object.keys(views).find((p) => views[p].some(([v]) => v === view));
+  const BOARD_OF_VIEW = { totals: 'totals', trends: 'trends', worth: 'worth', patterns: 'patterns' };
+
+  /* ---------- Small pieces ---------- */
+  const seg = (label, options, cur, attr, cls = '') =>
+    `<span class="p-seg ${cls}" role="group" aria-label="${label}">${options.map(([v, t]) => `<button type="button" ${attr} data-v="${v}" aria-pressed="${v === cur}">${t}</button>`).join('')}</span>`;
+  const select = (label, options, cur, attr, cls = '', extra = '') =>
+    `<select class="p-select ${cls}" aria-label="${label}" ${attr} ${extra}>${options.map(([v, t]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+  const card = (title, hint, body, extra = '') => `<section class="p-card" ${extra}><div class="p-card-h"><h3>${title}</h3>${hint ? `<span class="p-hint">${hint}</span>` : ''}</div>${body}</section>`;
+  const explain = (summary, text) => `<details class="p-explain"><summary>${summary}</summary><p>${text}</p></details>`;
+  const stat = (k, v, d, cls = '') => `<div class="p-stat"><span class="k">${k}</span><span class="v ${cls}">${v}</span><span class="d">${d}</span></div>`;
+  // A figure that says what it means: a plain label, a readable value, one line, an (i) that opens its explanation in place.
+  const fig = (id, board, k, v, d, why, neg = false) => {
+    const open = !!state[board].info[id];
+    return `<div class="fig"><span class="k">${k}<button type="button" class="info" data-act="info" data-board-k="${board}" data-id="${id}" aria-expanded="${open}" aria-controls="why-${board}-${id}" aria-label="What ${esc(k)} means">i</button></span>
+      <span class="v${neg ? ' neg' : ''}">${v}</span><span class="d">${d}</span><p class="why" id="why-${board}-${id}"${open ? '' : ' hidden'}>${why}</p></div>`;
+  };
+  const reading = (html, by = '') => `<section class="p-card"><div class="reading"><p>${html}</p>${by ? `<span class="by">${by}</span>` : ''}</div></section>`;
+  const foot = (t) => `<p class="foot">${t}</p>`;
+  const note = (t) => `<span class="mocknote">${t}</span>`;
+
+  /* ---------- The header, today and proposed ---------- */
+  const SUB_TODAY = {
+    totals: () => `Last 7 days · ${state.today.totals || 'all projects'} · ${plural(T.sessions, 'session')} · ${plural(T.agents, 'agent')}`,
+    trends: () => `${state.today.trends} · last 12 weeks`,
+    worth: () => `${state.today.worth} · October so far · your estimates beside what the logs measured`,
+    patterns: () => `${state.today.patterns} · whole history · from the plugin and the imported logs`,
+    reports: () => "Claude reads a project's week and suggests what to change. It runs only when you press Confirm.",
+    roles: () => `${state.today.roles} · last 7 days · 247 agents`,
+    skills: () => `${state.today.skills} · last 7 days`,
+  };
+  const SUB_NEW = {
+    totals: 'What your agents used, and what it would cost',
+    trends: 'What a day costs, and what each change did to it',
+    worth: 'What the agents saved you, and what you paid',
+    patterns: 'What keeps failing, and the rule to stop it',
+    reports: 'Claude reads a week and suggests what to change',
+    roles: 'Who delegates to whom, and what each role costs',
+    skills: 'Which skills ran, and which never did',
+  };
+  const PERIODS = {
+    totals: [['today', 'Today'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days']],
+    trends: [['12w', 'Last 12 weeks'], ['30d', 'Last 30 days']],
+    worth: [['2026-10', 'October 2026'], ['2026-09', 'September 2026'], ['2026-08', 'August 2026']],
+    patterns: [['all', 'Whole history']],
+    reports: [['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['session', 'One session']],
+    roles: [['7d', 'Last 7 days'], ['today', 'Today'], ['session', 'One session']],
+    skills: [['7d', 'Last 7 days'], ['today', 'Today'], ['session', 'One session']],
+  };
+  const NEEDS_ONE = new Set(['trends', 'worth', 'patterns', 'reports', 'roles', 'skills']); // views that need a single project
+  const projectList = (view) => [...(view === 'totals' ? [['', 'All projects']] : []), ...PROJECTS.map((p) => [p, p])]; // Today: only Totals offers all projects
+  const projectNow = (view) => (NEEDS_ONE.has(view) ? state.single : state.all ? '' : state.single);
+
+  /** Today: each view draws its own header, as the app does (Ledger.tsx, Trends.tsx, Worth.tsx, Patterns.tsx, Analysis.tsx, Pipeline.tsx). */
+  function headToday(page, view) {
+    const vsw = seg(`${PAGE_NAME[page]} view`, views[page], view, 'data-act="view"', 'vsw');
+    const proj = (v) => select('Project', projectList(v), state.today[v], `data-act="pick-today" data-view="${v}"`, '', '');
+    let filters = '';
+    if (view === 'totals') filters = vsw + seg('Range', [['today', 'Today'], ['7d', '7 days'], ['30d', '30 days']], '7d', 'data-act="tog"') + seg('Unit', [['day', 'Day'], ['week', 'Week'], ['month', 'Month']], state.totals.unit, 'data-act="unit"') + proj('totals');
+    else if (view === 'trends') filters = vsw + proj('trends') + seg('Period', [['week', 'Week'], ['day', 'Day']], 'week', 'data-act="tog"');
+    else if (view === 'worth') filters = vsw + proj('worth') + `<span class="monthnav" role="group" aria-label="Month" style="display:inline-flex;align-items:center;gap:6px"><button type="button" class="p-btn" aria-label="Previous Month">‹</button><span style="min-width:112px;text-align:center;font-size:14px">October 2026</span><button type="button" class="p-btn" aria-label="Next Month" disabled>›</button></span>`;
+    else if (view === 'patterns') filters = vsw + proj('patterns');
+    else if (view === 'reports') filters = vsw;
+    else filters = vsw + (view === 'roles' || view === 'skills' ? proj(view) + seg('Scope', [['session', 'Session'], ['day', 'Day'], ['week', 'Week']], 'week', 'data-act="tog"') : '');
+    return `<div class="hrow" data-head="today"><div class="p-head"><h1>${PAGE_NAME[page]}</h1><span class="p-sub">${esc(SUB_TODAY[view]())}</span></div><div class="filters">${filters}</div></div>`;
+  }
+
+  /** Proposed: row 1 is the title and one line; row 2 the views on the left, the pickers on the right, project then period, at fixed widths. */
+  function headNew(page, view, project) {
+    const one = NEEDS_ONE.has(view);
+    const cur = project !== undefined ? project : projectNow(view);
+    const opts = one ? PROJECTS.map((p) => [p, p]) : [['', 'All projects'], ...PROJECTS.map((p) => [p, p])];
+    const per = PERIODS[view];
+    return `<div class="ph" data-head="new"><div class="ph-1"><h1>${PAGE_NAME[page]}</h1><span class="ph-sub" title="${esc(SUB_NEW[view])}">${esc(SUB_NEW[view])}</span></div>
+      <div class="ph-2">${seg(`${PAGE_NAME[page]} view`, views[page], view, 'data-act="view"', 'vsw')}
+        <div class="ph-pick">${select('Project', opts, cur, 'data-act="pick-new" data-pick="project"')}${select('Period', per, state.period[view], 'data-act="period" data-pick="period"', 'period', per.length === 1 ? 'disabled' : '')}</div></div></div>`;
+  }
+  const head = (ver, page, view, project) => (ver === 'today' ? headToday(page, view) : headNew(page, view, project));
+
+  /* ---------- Board 1: the header ---------- */
+  const FIRST = {
+    totals: ['Six figures', 'the first card of Totals'], trends: ['Four figures', 'the first card of Trends'], worth: ['Your numbers', 'the first card of Worth'],
+    patterns: ['Failed calls', 'the first card of Patterns'], reports: ['New analysis', 'the first card of Reports'], roles: ['Who delegates to whom', 'the first card of Roles'], skills: ['Skills that ran', 'the first card of Skills'],
+  };
+  const skel = '<div class="p-skel" aria-hidden="true"><i style="width:62%"></i><i style="width:44%"></i><i style="width:78%"></i></div>';
+  const firstCard = (view, ver) => card(FIRST[view][0], view === 'reports' ? (ver === 'today' ? 'now holds the Project and Period fields' : 'the model and the estimate; project and period are above') : FIRST[view][1], skel);
+  function headerBoard() {
+    const ver = state.ver.header, page = state.hpage, view = state.hview[page];
+    return `${head(ver, page, view)}${firstCard(view, ver)}${card('The next card', 'every view goes on from here', skel)}
+      <section class="mockbox" id="measure" aria-label="Measured in this browser"></section>`;
+  }
+  /** Mock only: lay each view of the page out off screen at the width on screen, and read where its switch, its project picker and its first card sit. */
+  function measure() {
+    const box = $('#measure'), hold = $('#hold');
+    if (!box || !hold) return;
+    const ver = state.ver.header, page = state.hpage;
+    const rows = views[page].map(([v, t]) => {
+      hold.innerHTML = `<main class="page" id="m">${head(ver, page, v)}${firstCard(v, ver)}</main>`;
+      const m = $('#m', hold), mr = m.getBoundingClientRect(), padL = parseFloat(getComputedStyle(m).paddingLeft);
+      const at = (el) => (el ? { x: Math.round(el.getBoundingClientRect().left - mr.left - padL), y: Math.round(el.getBoundingClientRect().top - mr.top) } : null);
+      return { t, sw: at($('.vsw', m)), pj: at($('select[aria-label=Project]', m)), fc: Math.round($('.p-card', m).getBoundingClientRect().top - mr.top) };
+    });
+    hold.innerHTML = '';
+    const ref = rows[0], cell = (a, b) => (!a ? '<td>none in the header</td>' : `<td class="num">x ${a.x}, y ${a.y}${b && (a.x !== b.x || a.y !== b.y) ? ` <span class="off">(${a.x - b.x >= 0 ? '+' : '−'}${Math.abs(a.x - b.x)}, ${a.y - b.y >= 0 ? '+' : '−'}${Math.abs(a.y - b.y)})</span>` : ''}</td>`);
+    const still = rows.every((r) => r.fc === ref.fc && r.sw.x === ref.sw.x && r.sw.y === ref.sw.y && r.pj && ref.pj && r.pj.x === ref.pj.x && r.pj.y === ref.pj.y);
+    box.innerHTML = `<b>Mock only: measured here, at ${Math.round($('#app').getBoundingClientRect().width)} px wide</b>
+      <table><thead><tr><th>View</th><th>View switch</th><th>Project picker</th><th>First card starts at</th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr><th scope="row">${r.t}</th>${cell(r.sw, i ? ref.sw : null)}${cell(r.pj, i ? ref.pj : null)}<td class="num">y ${r.fc}${i && r.fc !== ref.fc ? ` <span class="off">(${r.fc - ref.fc >= 0 ? '+' : '−'}${Math.abs(r.fc - ref.fc)})</span>` : ''}</td></tr>`).join('')}
+      </tbody></table>
+      <span>${still ? '<span class="ok">Nothing moves between views.</span>' : '<span class="off">Things move between views.</span>'} Red figures are the distance from ${ref.t}, in pixels. Click through the ${PAGE_NAME[page]} views above, or switch the page in the top bar.</span>`;
+  }
+
+  /* ---------- Board 2: Live ---------- */
+  const NOW = 1793029946340; // 26 Oct 2026, 16:52:26 in Rome
+  const LIVE = [
+    { id: 'b738da', project: 'mobile-app', branch: 'release/2.16', host: 'Alfredos-MBP-4', serverSaw: 1793029380318, began: Date.parse('2026-10-19T16:23:43Z'), tokens: 4.9e6, cost: 1.34, ctx: null, state: 'working' },
+    { id: '5e28b9', project: 'field-notes', branch: 'main', host: 'Alfredos-MBP-4', serverSaw: 1793029352269, began: Date.parse('2026-10-21T09:00:58Z'), tokens: 5.2e6, cost: 1.19, ctx: 41, state: 'waiting' },
+  ];
+  const hhmm = (ms) => new Date(ms).toLocaleTimeString('en-GB', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hour12: false });
+  const runFor = (ms) => { const m = Math.floor(ms / 60000), h = Math.floor(ms / 3600000), d = Math.floor(ms / 86400000); return d >= 2 ? `${d} days` : h >= 1 ? plural(h, 'hour') : plural(m, 'minute'); };
+  const pill = (s) => `<span class="p-state s-${s}">${s === 'waiting' ? 'waiting for you' : s}</span>`;
+  const opus = '<span class="p-model m-opus">Opus 5.5</span>';
+  function liveRow(s, ver) {
+    const what = s.state === 'working' ? 'Thinking…' : 'Waiting for your next prompt';
+    return `<div class="agent d0 is-${s.state}" role="button" tabindex="0" aria-label="main, ${s.state}: open its history">
+      <span class="name"><span class="p-av" style="--m:var(--opus)" aria-hidden="true">M</span><span><b>main</b><small>orchestrator</small></span></span>
+      <span class="doing"><span class="what">${what}</span></span>
+      <span class="m">${opus}</span><span class="tok r num">${ver === 'today' ? tokOld(s.tokens) : tokR(s.tokens)}</span><span class="cost r num">${usdOld(s.cost)}</span>
+      <span class="facts">${opus}<span class="num">${ver === 'today' ? tokOld(s.tokens) : tokR(s.tokens)} tok</span><span class="num">${usdOld(s.cost)}</span></span>${pill(s.state)}</div>`;
+  }
+  function liveCard(s, ver) {
+    const today = ver === 'today';
+    const meta = today
+      ? `${s.host} · session ${s.id} · started ${hhmm(s.serverSaw)} · running ${durOld(NOW - s.serverSaw)}`
+      : `${s.host} · session ${s.id} · started ${dShort(s.began)} · running ${runFor(NOW - s.began)}`;
+    const ctxToday = s.ctx === null ? '<span class="p-stat"><span class="k">Context</span><span class="d">after the first turn</span></span>'
+      : `<span class="p-meter" style="width:132px"><span class="k">Context ${s.ctx}%</span><span class="p-track"><i style="width:${s.ctx}%"></i></span></span>`;
+    const stats = today
+      ? `<div class="stats"><span class="p-stat"><span class="k">Tokens</span><span class="v">${tokOld(s.tokens)}</span></span><span class="p-stat"><span class="k">API-equivalent</span><span class="v">${usdOld(s.cost)}</span></span>${ctxToday}</div>`
+      : `<div class="figs"><span><b>${tokR(s.tokens)}</b> tokens so far · <b>${usdOld(s.cost)}</b> at API prices</span>${s.ctx === null ? '<span>Context: known after the first turn</span>'
+        : `<span class="ctxline">Context <b>${s.ctx}% full</b><span class="p-track" role="img" aria-label="Context ${s.ctx}% full"><i style="width:${s.ctx}%"></i></span></span>`}</div>`;
+    return `<section class="p-card" aria-label="${s.project}"><div class="shead"><div class="who"><div class="l1"><h2>${s.project}</h2><span class="p-chip branch">${s.branch}</span></div><span class="meta">${meta}</span></div>${stats}</div>
+      <div class="cols" aria-hidden="true"><span>Agent</span><span>Doing now</span><span>Model</span><span class="r">Tokens</span><span class="r">${today ? 'Cost' : 'API cost'}</span><span class="r">State</span></div>${liveRow(s, ver)}</section>`;
+  }
+  function liveBoard() {
+    const ver = state.ver.live, today = ver === 'today';
+    const n = { working: LIVE.filter((s) => s.state === 'working').length, waiting: LIVE.filter((s) => s.state === 'waiting').length };
+    const header = today
+      ? `<div class="p-head"><h1>${LIVE.length} sessions running</h1><div class="p-tally"><span style="--c-dot:var(--ok-dot)">${n.working} at work</span><span style="--c-dot:var(--wait-dot)">${n.waiting} waiting for you</span><span style="--c-dot:var(--wait-dot)">0 on a pricier model</span><span style="--c-dot:var(--bad-dot)">0 stalled</span><span style="--c-dot:var(--done-dot)">0 done</span></div></div>`
+      : `<div class="ph" data-head="new"><div class="ph-1"><h1>Live</h1><span class="live-sub">${LIVE.length} sessions are running: ${n.working} is working, ${n.waiting} is waiting for your next prompt. Nothing is stalled.</span></div></div>`;
+    return `${header}${LIVE.map((s) => liveCard(s, ver)).join('')}
+      <section class="p-card">${explain('How to read Live', 'Each row says what the agent is doing now and how far its tasks are; click one for everything it did, what failed and what is left. Cost is <b>API-equivalent</b>: what these tokens would cost at API list prices (<span class="num">pricing.json</span>), not what a plan bills.')}
+      ${explain('How the model check works', "An agent is flagged when it runs on a pricier model than it should: its agent file's <code>model:</code>, or, for an agent with no file of its own (general-purpose, workflow agents, <code>model: inherit</code>), the ceiling you set, Sonnet unless you change it in the plugin's settings. The main session is never flagged.")}</section>
+      ${foot(today ? `Real: the two sessions the studio showed at ${hhmm(NOW)} on 26 Oct. “started ${hhmm(LIVE[0].serverSaw)}” is when the server last restarted, not when the session began.`
+        : `Real: the same two sessions. The starts are the sessions' own (the first thing the logs hold for each), not the server's restart at ${hhmm(LIVE[0].serverSaw)}. The row text is the state only, not what the agent is doing.`)}`;
+  }
+  function connHTML() {
+    const ver = state.ver[state.board === 'header' ? 'header' : state.board], c = state.conn;
+    if (ver === 'today') {
+      return c === 'dropped' ? '<i></i><span>Reconnecting…</span><span class="url"> · 127.0.0.1:4040</span>'
+        : `<i></i><span>Live · <span id="tick">${c === 'quiet' ? '4m 12s' : '2s'}</span></span><span class="url"> · 127.0.0.1:4040</span>`;
+    }
+    return c === 'quiet' ? '<i></i><span>Quiet for 4m</span><span class="url"> · 127.0.0.1:4040</span>' : c === 'dropped' ? '<i></i><span>Reconnecting…</span><span class="url"> · 127.0.0.1:4040</span>' : '<i></i><span>Live</span><span class="url"> · 127.0.0.1:4040</span>';
+  }
+
+  /* ---------- The tokens-per-day chart and tables (Totals) ---------- */
+  const roundedTop = (x, y, w, h, r) => `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+  /** One bar as stacked segments, bottom to top; each above the first loses 2 px at its foot, so a line of the surface colour separates the colours. */
+  function stack(parts, y, x, bw) {
+    const live = parts.filter((p) => p.value > 0);
+    let acc = 0;
+    return live.map((p, i) => {
+      const top = y(acc + p.value), h = Math.max(1, y(acc) - top - (i ? 2 : 0));
+      acc += p.value;
+      return i === live.length - 1 ? `<path d="${roundedTop(x, top, bw, h, Math.min(4, h, bw / 2))}" fill="${p.color}"/>` : `<rect x="${x}" y="${top}" width="${bw}" height="${h}" fill="${p.color}"/>`;
+    }).join('');
+  }
+  const monday = (key) => { const d = new Date(`${key}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+  function buckets(unit) {
+    if (unit === 'day') return D.series.map((b) => ({ ...b, label: `${dow(b.k)} ${+b.k.slice(8)}` }));
+    const m = new Map();
+    for (const b of D.series) {
+      const k = unit === 'week' ? monday(b.k) : b.k.slice(0, 7);
+      const o = m.get(k) ?? { k, tokens: 0, cost: 0, opus: 0, sonnet: 0, haiku: 0, other: 0, label: unit === 'week' ? `wk ${dayName(k)}` : 'Oct 2026' };
+      for (const f of ['tokens', 'cost', ...FAMS]) o[f] += b[f];
+      m.set(k, o);
+    }
+    return [...m.values()];
+  }
+  function totalsChart(ver) {
+    const today = ver === 'today', unit = state.totals.unit, B = buckets(unit);
+    const W = 1000, H = 250, L = 56, R = 12, T = 24, Bm = 30, bw = Math.min(30, ((W - L - R) / B.length) * 0.56);
+    const max = niceMax(Math.max(...B.map((b) => b.tokens))), y = (v) => H - Bm - (v / max) * (H - Bm - T), slot = (W - L - R) / B.length;
+    const star = B.reduce((a, b, i) => (b.tokens > B[a].tokens ? i : a), 0);
+    const fmt = (v) => (today ? tokOld(v).replace('.0M', 'M') : tokR(v));
+    const shown = ['opus', 'sonnet', 'haiku', 'other'].filter((f) => f !== 'other' || B.some((b) => b.other > 0));
+    const ticks = [0, 0.2, 0.4, 0.6, 0.8, 1];
+    let g = `<g class="grid">${ticks.map((f) => `<line x1="${L}" x2="${W - R}" y1="${y(max * f)}" y2="${y(max * f)}"/>`).join('')}</g>`;
+    g += `<g class="axis">${ticks.map((f) => `<text x="${L - 8}" y="${y(max * f) + 4}" text-anchor="end">${f ? fmt(max * f) : '0'}</text>`).join('')}${B.map((b, i) => `<text x="${L + slot * i + slot / 2}" y="${H - 8}" text-anchor="middle">${b.label}</text>`).join('')}</g>`;
+    B.forEach((b, i) => {
+      const x = L + slot * i + (slot - bw) / 2;
+      const parts = ['haiku', 'sonnet', 'opus', 'other'].map((f) => ({ value: b[f], color: FAMC[f] }));
+      g += `<g class="bar" role="img" aria-label="${b.label}: ${fmt(b.tokens)} tokens, ${usdOld(b.cost)}"><title>${b.label} · ${fmt(b.tokens)} tokens · ${today ? usdOld(b.cost) : money(b.cost)} at API prices</title><rect class="hit" x="${L + slot * i}" y="${T}" width="${slot}" height="${H - Bm - T}" fill="transparent"/>${stack(parts, y, x, bw)}${i === star ? `<text class="tot" x="${x + bw / 2}" y="${y(b.tokens) - 8}" text-anchor="middle">${fmt(b.tokens)}</text>` : ''}</g>`;
+    });
+    const maxT = B[star].tokens;
+    const rows = `<ul class="daybars" style="list-style:none;margin:0" aria-label="Tokens per ${unit} by model">${B.map((b) => `<li class="dayrow"><span class="dl">${b.label}</span><span class="stk" style="width:${(b.tokens / maxT) * 100}%">${shown.filter((f) => b[f] > 0).map((f) => `<i style="flex:${b[f]};background:${FAMC[f]}"></i>`).join('')}</span><span class="num">${fmt(b.tokens)}</span></li>`).join('')}</ul>`;
+    const tot = (f) => B.reduce((a, b) => a + b[f], 0);
+    const table = `<details class="tableview"><summary>Show as a table</summary><div class="p-tablewrap"><table class="p-table"><thead><tr><th>${{ day: 'Day', week: 'Week', month: 'Month' }[unit]}</th>${shown.map((f) => `<th class="r">${FAMN[f]}</th>`).join('')}<th class="r">Total</th><th class="r">${today ? 'API-equivalent' : 'At API prices'}</th></tr></thead><tbody>
+      ${B.map((b) => `<tr><td>${b.label}</td>${shown.map((f) => `<td class="r num">${fmt(b[f])}</td>`).join('')}<td class="r num">${fmt(b.tokens)}</td><td class="r num">${today ? usdOld(b.cost) : money(b.cost)}</td></tr>`).join('')}
+      <tr><td><b>Total</b></td>${shown.map((f) => `<td class="r num"><b>${fmt(tot(f))}</b></td>`).join('')}<td class="r num"><b>${fmt(tot('tokens'))}</b></td><td class="r num"><b>${today ? usdOld(tot('cost')) : money(tot('cost'))}</b></td></tr></tbody></table></div></details>`;
+    const unitSeg = seg('Group by', [['day', 'Day'], ['week', 'Week'], ['month', 'Month']], unit, 'data-act="unit"');
+    return `<section class="p-card" aria-label="Tokens per ${unit}">
+      ${today ? `<div class="p-card-h"><h3>Tokens per ${unit}, by model</h3><span class="p-hint">point at a ${unit}, or tab to it, for its split and cost</span></div>`
+        : `<div class="chead"><h3>Tokens per ${unit}, by model</h3>${unitSeg}</div>`}
+      ${rows}<div class="chartbox"><svg viewBox="0 0 ${W} ${H}" role="group" aria-label="Stacked bars of tokens per ${unit} by model">${g}</svg></div>
+      <div style="padding:0 20px 14px"><div class="p-legend">${shown.map((f) => `<span style="--m:${FAMC[f]}">${FAMN[f]}</span>`).join('')}</div></div>${table}</section>`;
+  }
+  function ranked(title, rows, ver) {
+    const today = ver === 'today', max = Math.max(...rows.map((r) => r.tokens));
+    return `<section class="p-card"><div class="p-card-h"><h3>${title}</h3><span class="p-hint">tokens · ${today ? 'API-equivalent' : 'at API prices'}</span></div><div class="p-tablewrap"><table class="p-table"><tbody>
+      ${rows.map((r) => `<tr><td class="rk">${r.name}<span class="sub">${r.sub}</span><div class="p-track${r.tone ? ` m-${r.tone}` : ''}"><i style="width:${(r.tokens / max) * 100}%"></i></div></td><td class="r num">${today ? tokOld(r.tokens) : tokR(r.tokens)}</td><td class="r num">${today ? usdOld(r.cost) : money(r.cost)}</td></tr>`).join('')}
+      ${r_more(rows)}</tbody></table></div></section>`;
+  }
+  const r_more = (rows) => (rows.more ? `<tr><td colspan="3" style="color:var(--muted);font-size:13px">${rows.more}</td></tr>` : '');
+  const modelLabel = (id) => { const m = /claude-(opus|sonnet|haiku|fable)-(\d+)-?(\d+)?/.exec(id); return m ? { text: `${m[1][0].toUpperCase()}${m[1].slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ''}`, tone: ['opus', 'sonnet', 'haiku'].includes(m[1]) ? m[1] : '' } : { text: id, tone: '' }; };
+  function rankedSet(ver) {
+    const P = D.projects.slice(0, 4).map((p) => ({ name: `<b style="font-weight:600">${esc(p.name)}</b>`, sub: `${plural(p.sessions, 'session')} · ${plural(p.agents, 'agent')}`, tokens: p.tokens, cost: p.cost }));
+    P.more = `and ${D.projects.length - 4} more projects`;
+    const M = D.models.map((m) => { const l = modelLabel(m.model); return { name: l.tone ? `<span class="p-model m-${l.tone}">${l.text}</span>` : `<b style="font-weight:600">${l.text}</b>`, sub: plural(m.agents, 'agent'), tokens: m.tokens, cost: m.cost, tone: l.tone }; });
+    const R = D.roles.slice(0, 4).map((r) => ({ name: `<b style="font-weight:600">${esc(r.role)}</b>`, sub: `${esc(r.types.slice(0, 2).join(', '))}${r.types.length > 2 ? ` +${r.types.length - 2}` : ''} · ${r.agents}`, tokens: r.tokens, cost: r.cost }));
+    R.more = `and ${D.roles.length - 4} more roles`;
+    return `<div class="grid3">${ranked('By project', P, ver)}${ranked('By model', M, ver)}${ranked('By role', R, ver)}</div>`;
+  }
+  function effCard(ver) {
+    const today = ver === 'today', rows = D.eff.slice(0, 4);
+    const tr = rows.map((e) => {
+      const perFile = e.files ? e.tokens / e.files : null, failed = e.calls ? e.failed / e.calls : null;
+      if (today) return `<tr><td><b style="font-weight:600">${esc(e.project)}</b></td><td class="r num${perFile !== null && perFile >= 500000 ? ' badnum' : ''}">${perFile === null ? '—' : tokOld(perFile)} <span style="color:var(--muted)">· ${plural(e.files, 'file')}</span></td><td class="r num${failed >= 0.04 ? ' warnnum' : ''}">${(failed * 100).toFixed(1)}%</td><td class="r num">${(e.cache * 100).toFixed(1)}%</td><td class="r num hide-phone">${durOld(e.waitMs)}</td><td class="r num hide-phone">${n0(e.requests)}</td></tr>`;
+      return `<tr><td><b style="font-weight:600">${esc(e.project)}</b></td><td class="r num">${perFile === null ? '—' : tokR(perFile)}<span class="sub">${plural(e.files, 'file')} changed</span></td><td class="r num">${(failed * 100).toFixed(1)}%<span class="sub">${n0(e.failed)} of ${n0(e.calls)}</span></td><td class="r num">${Math.round(e.cache * 100)}%</td><td class="r num hide-phone">${e.waitMs ? `${D.waits.cappedH.toFixed(1)} h` : '0 h'}</td><td class="r num hide-phone">${n0(e.requests)}</td></tr>`;
+    }).join('');
+    const th = today ? ['Project', 'Tokens per file changed', 'Failed tool calls', 'Cache share', 'Waiting on you', 'Requests'] : ['Project', 'Tokens per file changed', 'Calls that failed', 'Read from cache', 'Agents waiting for you', 'Requests to the model'];
+    return card('Efficiency by project', today ? 'lower is better, except cache share' : 'lower is better, except Read from cache', `<div class="p-tablewrap"><table class="p-table"><thead><tr>${th.map((h, i) => `<th class="${i ? 'r' : ''}${i > 3 ? ' hide-phone' : ''}">${h}</th>`).join('')}</tr></thead><tbody>${tr}</tbody></table></div>`);
+  }
+
+  /* ---------- Board 3: Ledger · Totals ---------- */
+  const prevPct = (cur, prev) => pctChange(cur, prev);
+  function totalsToday() {
+    const t = T, p = prevPct(t.tokens, t.prev.tokens);
+    const delta = `<span style="color:var(--ink)">${p >= 0 ? '▲' : '▼'} ${Math.abs(p)}%</span>`;
+    return `${head('today', 'ledger', 'totals')}
+      <section class="p-card"><div class="p-card-b" style="display:flex;flex-wrap:wrap;gap:20px 44px">
+        ${stat('Tokens', tokOld(t.tokens), `${delta} on the previous period`)}
+        ${stat('API-equivalent', usdOld(t.cost), 'at list prices, not a bill')}
+        ${stat('Cache share', `${(t.cacheShare * 100).toFixed(1)}%`, 'of input read from cache')}
+        ${stat('Failed tool calls', `${((t.failedCalls / t.toolCalls) * 100).toFixed(1)}%`, `${t.failedCalls} of ${n0(t.toolCalls)}`)}
+        ${stat('Waiting on you', durOld(t.waitMs), `${t.waits} permission prompts`)}
+        ${stat('On a pricier model', usdOld(PRICIER_NOW.cost), 'none in this period')}
+      </div></section>
+      ${totalsChart('today')}${rankedSet('today')}${effCard('today')}
+      <section class="p-card">${explain('How these numbers are counted', 'Cost is <b>API-equivalent</b>: what these tokens would cost at API list prices (<span class="num">pricing.json</span>), not what a plan bills. Cache writes are priced as 5-minute writes; Claude Code\'s 1-hour writes cost more, so cost reads a little low. “Waiting on you” is the run time of tool calls that went through a permission prompt.')}</section>
+      ${foot(`Real: the studio's Ledger for the last 7 days, all projects, as it read at ${hhmm(NOW)} on 26 Oct. By project, By role and Efficiency show their first rows only.`)}`;
+  }
+  function cacheRange() {
+    const c = D.eff.filter((e) => e.tokens >= 1e8).map((e) => e.cache * 100);
+    return [Math.round(Math.min(...c)), Math.round(Math.max(...c))];
+  }
+  function totalsNew() {
+    const t = T, w = D.waits, tokP = prevPct(t.tokens, t.prev.tokens), costP = prevPct(t.cost, t.prev.cost);
+    const [lo, hi] = cacheRange(), failedPct = (t.failedCalls / t.toolCalls) * 100;
+    const less = (p) => `${Math.abs(p)}% ${p < 0 ? 'less' : 'more'}`;
+    const read = `In the last 7 days, <b>${plural(t.sessions, 'session')}</b> and <b>${plural(t.agents, 'agent')}</b> used <b>${(t.tokens / 1e9).toFixed(1)} billion tokens</b>, ${Math.abs(tokP)}% ${tokP < 0 ? 'fewer' : 'more'} than in the 7 days before. That is <b>${money(t.cost)}</b> at API prices. <b>${Math.round(t.cacheShare * 100)}%</b> of what they read came from cache, which costs a tenth as much. <b>${failedPct.toFixed(1)}%</b> of tool calls failed.`;
+    const f = [
+      fig('tokens', 'totals', 'Tokens used', tokR(t.tokens), `About usual: ${Math.abs(tokP)}% ${tokP < 0 ? 'fewer' : 'more'} than the 7 days before (${tokR(t.prev.tokens)}).`,
+        'Every token the models read or wrote: your prompts, the files they opened, their answers, and the cached text they re-read on every turn. Most of it is cached text read again, so the number is large and cheap.'),
+      fig('cost', 'totals', 'What it would cost at API prices', money(t.cost), `${less(costP)} than the 7 days before (${money(t.prev.cost)}). Your plan is a flat fee, not this.`,
+        'What these tokens would cost at the API\'s list prices (<span class="num">pricing.json</span>). It is not what you pay. Cache writes are priced as 5-minute writes and Claude Code\'s 1-hour writes cost more, so this reads a little low.'),
+      fig('cache', 'totals', 'Read from cache', `${Math.round(t.cacheShare * 100)}%`, `Usual: every project reads ${lo}% to ${hi}% from cache.`,
+        'Of all the input the models read, the share that came from cache instead of being sent fresh. A cache read costs a tenth as much per token, so a high share keeps the cost down. A low one means the models re-read text at full price.'),
+      fig('failed', 'totals', 'Tool calls that failed', `${failedPct.toFixed(1)}%`, `${n0(t.failedCalls)} of ${n0(t.toolCalls)} calls. Usual: under 4% is normal.`,
+        'A tool call that came back with an error: a command that exited non-zero, a file that was not there, a call that was refused. Some failure is normal (a failing test is a call that did its job). Analysis → Patterns shows which ones repeat.'),
+      fig('waiting', 'totals', 'Agents waiting for you', `${w.cappedH.toFixed(1)} h`, `${n0(w.calls)} permission prompts, each counted up to 10 minutes (${w.uncappedH.toFixed(1)} h counted in full). ${w.over1h} stayed open over an hour.`,
+        `The time tool calls sat at a permission prompt, waiting for you. A dialog left open overnight would read as hours, so each wait counts at most 10 minutes, as Worth counts it. Counted in full it would read <b>${w.uncappedH.toFixed(1)} h</b>.`),
+      fig('pricier', 'totals', 'Spent above the model set', '$0', 'None: no agent ran on a pricier model than it should.',
+        'Spend by agents that ran on a pricier model than their agent file allows (or than your ceiling, Sonnet by default, for agents with no file). The main session is never counted. Live flags these agents while they run.'),
+    ];
+    return `${head('new', 'ledger', 'totals', '')}${reading(read, 'Written from the figures below; it changes with them.')}
+      <section class="p-card"><div class="p-card-b"><div class="figgrid">${f.join('')}</div></div></section>
+      ${totalsChart('new')}${rankedSet('new')}${effCard('new')}
+      ${foot(`Real: the studio's Ledger for the last 7 days, all projects, at ${hhmm(NOW)} on 26 Oct. The wait is counted once per prompt and capped at 10 minutes. By project, By role and Efficiency show their first rows only.`)}`;
+  }
+
+  /* ---------- Board 4: Ledger · Trends (docs-site, 12 weeks) ---------- */
+  const WK = D.weeks, CH = D.changes;
+  const PARTS = {
+    who: [['main', 'Main session', 'var(--data)'], ['typed', 'Agents on their own model', 'var(--ok-dot)'], ['generic', 'Generic agents, no model of their own', 'var(--wait-dot)']],
+    model: [['opus', 'Opus', 'var(--opus)'], ['sonnet', 'Sonnet', 'var(--sonnet)'], ['haiku', 'Haiku', 'var(--haiku)'], ['other', 'Other', 'var(--faint)']],
+  };
+  const wtot = (w, split) => PARTS[split].reduce((a, [k]) => a + w[k], 0);
+  const ratio = (n, d) => (d ? n / d : null);
+  function trendFigures() {
+    const cur = WK.at(-1), prv = WK.at(-2), T1 = wtot(cur, 'who'), T0 = wtot(prv, 'who');
+    const perDay = (w) => ratio(wtot(w, 'who'), w.activeDays), perPrompt = (w) => ratio(wtot(w, 'who'), w.prompts), gen = (w) => ratio(w.generic, wtot(w, 'who')), cache = (w) => ratio(w.cacheRead, w.inputSide);
+    const against = (a, b, show) => { const p = pctChange(a, b); return p !== null ? `${signed(p)} on last week's ${show(b)}` : `last week's ${show(b)}`; };
+    return { cur, T1, perDay: [perDay(cur), perDay(prv)], perPrompt: [perPrompt(cur), perPrompt(prv)], gen: [gen(cur), gen(prv)], cache: [cache(cur), cache(prv)], against };
+  }
+  const whole = (r) => `${Math.round(r * 100)}%`, tenth = (r) => `${(r * 100).toFixed(1)}%`;
+  function trendChart(split, ver) {
+    const today = ver === 'today', parts = PARTS[split];
+    const shown = parts.filter(([k]) => k !== 'other' || WK.some((w) => w.other > 0));
+    const totals = WK.map((w) => wtot(w, split)), W = 1000, H = 300, L = 56, R = 12, T = 48, Bm = 30;
+    const max = niceMax(Math.max(...totals)), y = (v) => H - Bm - (v / max) * (H - Bm - T), slot = (W - L - R) / WK.length, bw = Math.min(44, slot * 0.56);
+    const chgByWeek = new Map();
+    for (const c of CH) { const k = monday(c.day); chgByWeek.set(k, [...(chgByWeek.get(k) ?? []), c]); }
+    const picked = today ? state.trends.picked : state.trends.open;
+    let g = `<g class="grid">${[0, 0.2, 0.4, 0.6, 0.8, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${y(max * f)}" y2="${y(max * f)}"/>`).join('')}</g>`;
+    g += `<g class="axis">${[0, 0.2, 0.4, 0.6, 0.8, 1].map((f) => `<text x="${L - 8}" y="${y(max * f) + 4}" text-anchor="end">${axisMoney(max * f)}</text>`).join('')}${WK.map((w, i) => `<text x="${L + slot * i + slot / 2}" y="${H - 6}" text-anchor="middle">${dayName(w.k)}</text>`).join('')}</g>`;
+    chgByWeek.forEach((cs, k) => {
+      const i = WK.findIndex((w) => w.k === k); if (i < 0) return;
+      const label = cs.length === 1 ? String(cs[0].n) : `${cs[0].n}–${cs.at(-1).n}`, w = Math.max(22, Math.round(label.length * 7.2 + 14)), x = L + slot * i + slot / 2;
+      const px = Math.min(Math.max(x, w / 2 + 1), W - w / 2 - 1), latest = cs.at(-1).n;
+      g += `<g class="mk" role="button" tabindex="0" data-act="mark" data-n="${latest}" aria-pressed="${cs.some((c) => c.n === picked)}" aria-label="${cs.length === 1 ? `Change ${cs[0].n}` : `Changes ${cs[0].n} to ${latest}`}, week of ${dayName(k)}"><line x1="${x}" x2="${x}" y1="25" y2="${H - Bm}"/><rect x="${px - w / 2}" y="3" width="${w}" height="22" rx="11"/><text x="${px}" y="18" text-anchor="middle">${label}</text></g>`;
+    });
+    WK.forEach((w, i) => {
+      const x = L + slot * i + (slot - bw) / 2, tt = totals[i];
+      g += `<g class="bar" role="img" aria-label="Week of ${dayName(w.k)}: ${money(tt)}"><title>Week of ${dayName(w.k)} · ${money(tt)}${w.prompts ? ` · ${money(tt / w.prompts)} a prompt` : ''}</title><rect class="hit" x="${L + slot * i}" y="${T}" width="${slot}" height="${H - Bm - T}" fill="transparent"/>${stack(shown.map(([k, , c]) => ({ value: w[k], color: c })), y, x, bw)}${tt > 0 ? `<text class="tot" x="${x + bw / 2}" y="${y(tt) - 8}" text-anchor="middle">${money(tt)}</text>` : ''}</g>`;
+    });
+    const maxT = Math.max(...totals), marks = (k) => (chgByWeek.get(k) ?? []).slice(-1).map((c) => c);
+    const rows = WK.map((w, i) => {
+      const cs = chgByWeek.get(w.k) ?? [];
+      const label = cs.length ? (cs.length === 1 ? String(cs[0].n) : `${cs[0].n}–${cs.at(-1).n}`) : '';
+      return `${cs.length ? `<li class="mkrow"><span class="mkdot">${label}</span><span>${cs.length === 1 ? dayName(cs[0].day) : `${plural(cs.length, 'change')}, week of ${dayName(w.k)}`}</span></li>` : ''}<li class="dayrow"><span class="dl">${dayName(w.k)}</span><span class="stk" style="width:${(totals[i] / maxT) * 100}%">${shown.filter(([k]) => w[k] > 0).map(([k, , c]) => `<i style="flex:${w[k]};background:${c}"></i>`).join('')}</span><span class="num">${money(totals[i])}</span></li>`;
+    }).join('');
+    return { svg: `<ul class="daybars" style="list-style:none;margin:0" aria-label="API-equivalent per week">${rows}</ul><div class="chartbox"><svg viewBox="0 0 ${W} ${H}" role="group" aria-label="Stacked bars of API-equivalent cost per week with ${plural(CH.length, 'change')} marked">${g}</svg></div>
+      <div style="padding:0 20px 14px"><div class="p-legend">${shown.map(([, l, c]) => `<span style="--m:${c}">${l}</span>`).join('')}</div></div>`, shown, totals };
+  }
+  // The before and after of a change, per active day, as the app compares them.
+  function compareOf(c) {
+    const rowsDef = [
+      ['API-equivalent a day', (s) => ratio(s.cost, s.days), money, true], ['Generic agents a day', (s) => ratio(s.generic, s.days), money, true],
+      ['Agents on their own model a day', (s) => ratio(s.typed, s.days), money, true], ['Opus share of cost', (s) => ratio(s.opus, s.cost), whole, false],
+    ];
+    const dash = (v, f) => (v === null ? '—' : f(v));
+    return {
+      head: [`${plural(c.before?.days ?? 0, 'day')} before`, `${plural(c.after?.days ?? 0, 'day')} after`],
+      rows: rowsDef.map(([label, of, show, delta]) => {
+        const a = c.before && of(c.before), b = c.after && of(c.after), p = delta ? pctChange(b, a) : null;
+        return { label, before: dash(a, show), after: dash(b, show), delta: p === null ? '' : signed(p), down: p !== null && p < 0 };
+      }),
+    };
+  }
+  function sentenceOf(c) {
+    const b = c.before, a = c.after;
+    if (!a && !b) return 'No day was recorded on either side of this change, so there is nothing to compare.';
+    if (!a) return 'This change is too recent to compare: no day has passed since it.';
+    const perA = a.cost / a.days;
+    if (!b) return `In the ${plural(a.days, 'day')} after this change a day cost <b>${money(perA)}</b>. There are no earlier days to compare it with.`;
+    const perB = b.cost / b.days, p = pctChange(perA, perB), tA = a.typed / a.days, tB = b.typed / b.days;
+    const how = p === 0 ? 'the same as' : `${Math.abs(p)}% ${p < 0 ? 'less' : 'more'} than`;
+    const typed = tA > 0.005 || tB > 0.005 ? ` Agents on their own model went from ${money(tB)} to ${money(tA)} a day.` : '';
+    return `In the ${plural(a.days, 'day')} after this change a day cost <b>${money(perA)}</b>, ${how} the ${plural(b.days, 'day')} before (<b>${money(perB)}</b>).${typed}`;
+  }
+  const commitsHTML = (c) => `<ul class="commits">${c.commits.map((x) => `<li><code>${x.sha}</code><span>${esc(x.subject)}</span></li>`).join('')}</ul>${c.files.length ? `<ul class="files">${c.files.slice(0, 8).map((f) => `<li><code>${esc(f)}</code></li>`).join('')}${c.files.length > 8 ? `<li style="color:var(--muted);font-size:13px">and ${c.files.length - 8} more</li>` : ''}</ul>` : ''}`;
+  const baHTML = (c) => { const m = compareOf(c); return `<div class="p-tablewrap"><table class="ba"><thead><tr><th aria-label="Per active day"></th><th class="num">${m.head[0]}</th><th class="num">${m.head[1]}</th><th aria-label="Change"></th></tr></thead><tbody>${m.rows.map((r) => `<tr><td>${r.label}</td><td class="num">${r.before}</td><td class="num">${r.after}</td><td class="num${r.down ? ' down' : ''}">${r.delta}</td></tr>`).join('')}</tbody></table></div>`; };
+  const listLine = (c) => ({ head: `${dayName(c.day)} · ${plural(c.commits.length, 'commit')}`, sub: c.commits.at(-1)?.subject ?? '' });
+  const chgTitle = (c) => (c.commits.length > 1 ? `${dayName(c.day)} · ${plural(c.commits.length, 'commit')}` : c.commits[0]?.subject ?? '');
+
+  function trendsToday() {
+    const F = trendFigures(), pick = state.trends.picked, split = state.trends.split;
+    const ch = trendChart(split, 'today'), listed = [...CH].reverse(), rows = state.trends.all ? listed : listed.slice(0, 5), c = CH.find((x) => x.n === pick);
+    const k = [
+      ['A day, this week', money(F.perDay[0]), `${money(F.T1)} over ${plural(F.cur.activeDays, 'active day')} · ${F.against(F.perDay[0], F.perDay[1], money)}`],
+      ['A prompt', `$${F.perPrompt[0].toFixed(2)}`, F.against(F.perPrompt[0], F.perPrompt[1], (n) => `$${n.toFixed(2)}`)],
+      ['Generic agents', whole(F.gen[0]), `of cost; ${whole(F.gen[1])} last week`], ['Cache share', tenth(F.cache[0]), `${tenth(F.cache[1])} last week`],
+    ];
+    return `${head('today', 'ledger', 'trends')}
+      <section class="p-card"><div class="p-card-b" style="display:flex;flex-wrap:wrap;gap:20px 44px">${k.map(([a, b, d]) => stat(a, b, d)).join('')}</div></section>
+      <section class="p-card" aria-label="API-equivalent per week"><div class="chead"><h3>API-equivalent per week</h3>${seg('Split by', [['who', 'By who spent'], ['model', 'By model']], split, 'data-act="split"')}</div>${ch.svg}
+        <ul class="mklist" aria-label="Changes">${rows.map((x) => { const l = listLine(x); return `<li><button type="button" class="mkbtn" data-act="pick" data-n="${x.n}" aria-pressed="${pick === x.n}"><span class="mkdot">${x.n}</span><span class="mkt"><span>${l.head}</span><small>${esc(l.sub)}</small></span><small>Compare</small></button></li>`; }).join('')}</ul>
+        ${state.trends.all ? '' : `<div class="mkmore"><button type="button" class="p-btn" data-act="all">Show All ${CH.length}</button></div>`}
+        <div style="padding:0 20px 14px"><span class="mocknote" id="gap">Mock note: the panel this fills sits far below the list.</span></div></section>
+      <div class="grid2"><section class="p-card" id="changecard" aria-label="Change ${c.n}"><div class="p-card-h"><h3>Change ${c.n} · ${c.commits.length > 1 ? chgTitle(c) : `${dayName(c.day)} · ${esc(chgTitle(c))}`}</h3>${c.commits.length > 1 ? '' : `<span class="p-hint">${dayName(c.day)}</span>`}</div>
+        <div class="cbody">${commitsHTML(c)}${baHTML(c)}</div>
+        ${explain('How a change is found and compared', 'A change is a day the project\'s agents, skills or CLAUDE.md changed in git: the plugin sends the last 90 days of those commits, from every branch, each change on the day it first appeared. Before and after compare up to 7 whole days on each side, per active day, so a quiet weekend doesn\'t read as a saving.')}</section>
+        ${goalCard()}</div>
+      ${foot(`Cost is API-equivalent: what these tokens would cost at API list prices, not what a plan bills. The current week runs to today. Real: one project's Trends, shown as docs-site, for the last 12 weeks, as it read on 26 Oct. ${ex.replace('example', 'mock')} marks a note that is not part of the app.`)}`;
+  }
+  function goalCard() {
+    return card('No goal for October', 'docs-site · API-equivalent', `<div class="p-card-b goal"><p style="margin:0;font-size:14px;color:var(--muted)">A monthly goal in API-equivalent dollars for this project; the status line warns from 80%, and nothing is ever stopped.</p><div><button type="button" class="p-btn">Set Goal</button></div></div>`);
+  }
+  function trendsNew() {
+    const F = trendFigures(), split = state.trends.split, open = state.trends.open;
+    const ch = trendChart(split, 'new'), listed = [...CH].reverse(), rows = state.trends.all ? listed : listed.slice(0, 5);
+    const pd = pctChange(F.perDay[0], F.perDay[1]), pp = pctChange(F.perPrompt[0], F.perPrompt[1]);
+    const read = `This week a working day costs <b>${money(F.perDay[0])}</b>, ${Math.abs(pd)}% ${pd < 0 ? 'less' : 'more'} than last week; a prompt costs <b>$${F.perPrompt[0].toFixed(2)}</b>, ${Math.abs(pp)}% ${pp < 0 ? 'less' : 'more'}.`;
+    const f = [
+      fig('day', 'trends', 'What a working day costs', money(F.perDay[0]), `${money(F.T1)} so far over ${plural(F.cur.activeDays, 'working day')}, so it can still move. ${F.against(F.perDay[0], F.perDay[1], money)}.`,
+        'The week\'s cost at API prices divided by the days you worked in it (a day with at least one prompt), so a quiet weekend does not read as a saving. Early in the week there is only one day to divide by.'),
+      fig('prompt', 'trends', 'What one prompt costs', `$${F.perPrompt[0].toFixed(2)}`, `${F.against(F.perPrompt[0], F.perPrompt[1], (n) => `$${n.toFixed(2)}`)}.`,
+        'The week\'s cost at API prices divided by the prompts you typed in it. A prompt that sends several agents to work costs more than one that gets a quick answer.'),
+      fig('generic', 'trends', 'Spent by generic agents', whole(F.gen[0]), `of this week's cost; ${whole(F.gen[1])} last week.`,
+        'Generic agents are agents with no file or model of their own (general-purpose, workflow agents): they inherit the main session\'s model, usually the priciest. A high share means work that a cheaper, named agent could have done.'),
+      fig('cache', 'trends', 'Read from cache', tenth(F.cache[0]), `${tenth(F.cache[1])} last week.`,
+        'Of all the input the models read, the share that came from cache instead of being sent fresh. A cache read costs a tenth as much per token.'),
+    ];
+    const list = rows.map((x) => {
+      const l = listLine(x), isOpen = open === x.n, c = x;
+      return `<li><button type="button" class="mkbtn" data-act="open" data-n="${x.n}" aria-expanded="${isOpen}" aria-controls="chg-${x.n}"><span class="mkdot">${x.n}</span><span class="mkt"><span>${l.head}</span><small>${esc(l.sub)}</small></span><span class="act">${isOpen ? 'Hide before and after' : 'Show before and after'}</span></button>
+        ${isOpen ? `<div class="cbody" id="chg-${x.n}" style="border:1px solid var(--line);border-top:0;border-radius:0 0 10px 10px;margin-top:-4px;background:var(--surface)"><p style="margin:0;font-size:16px;line-height:1.55;max-width:72ch">${sentenceOf(c)}</p>${baHTML(c)}<div style="display:grid;gap:8px"><span style="font-size:13px;font-weight:600;color:var(--muted)">What changed</span>${commitsHTML(c)}</div></div>` : ''}</li>`;
+    }).join('');
+    return `${head('new', 'ledger', 'trends', 'docs-site')}${reading(read, 'Written from the figures below; it changes with them.')}
+      <section class="p-card"><div class="p-card-b"><div class="figgrid four">${f.join('')}</div></div></section>
+      <section class="p-card" aria-label="API-equivalent per week"><div class="chead"><h3>What the agents cost per week, at API prices</h3>${seg('Split by', [['who', 'By who spent'], ['model', 'By model']], split, 'data-act="split"')}</div>${ch.svg}
+        <div style="padding:2px 20px 10px;font-size:14px;color:var(--muted)">The numbered markers are changes to the project's agents, skills or CLAUDE.md. Open one to see what it did to the cost.</div>
+        <ul class="mklist" aria-label="Changes">${list}</ul>
+        ${state.trends.all ? '' : `<div class="mkmore"><button type="button" class="p-btn" data-act="all">Show All ${CH.length}</button></div>`}</section>
+      ${goalCard()}
+      ${foot('Cost is API-equivalent: what these tokens would cost at API list prices, not what a plan bills. The current week runs to today. Real: one project\'s Trends, shown as docs-site, for the last 12 weeks, as it read on 26 Oct.')}`;
+  }
+
+  /* ---------- Board 5: Ledger · Worth (mobile-app, October) ---------- */
+  const score = (r) => r.lines * (1 + Math.log2(Math.max(r.files, 1)));
+  const sizeOf = (s, cuts) => (s < cuts[0] ? 'S' : s < cuts[1] ? 'M' : s < cuts[2] ? 'L' : 'XL');
+  function worthCalc() {
+    const S = state.worth, rows = W.prs.map((r) => {
+      const sc = score(r), auto = sizeOf(sc, S.cuts), mine = S.over[r.n], size = mine ?? auto;
+      return { ...r, sc, auto, size, mine: mine !== undefined, hrs: size === 'skip' ? 0 : S.hours[size] };
+    });
+    const count = { S: 0, M: 0, L: 0, XL: 0 }, hrs = { S: 0, M: 0, L: 0, XL: 0 };
+    rows.forEach((r) => { if (r.size !== 'skip') { count[r.size]++; hrs[r.size] += r.hrs; } });
+    const byHand = rows.reduce((a, r) => a + r.hrs, 0), net = byHand - W.attention, value = net * S.rate;
+    return { rows, count, hrs, byHand, net, value, ret: value - S.plan, yours: rows.filter((r) => r.mine).length, skipped: rows.filter((r) => r.size === 'skip').length };
+  }
+  const aboutUsd = (v) => `$${n0(Math.abs(v) >= 10000 ? Math.round(v / 100) * 100 : Math.round(v / 10) * 10)}`;
+  function worthRead(c) {
+    const S = state.worth, n = c.rows.length - c.skipped, steer = Math.round(W.attention);
+    const good = c.net >= 0;
+    return `${MONTH_AT.soFar}: the <b>${n} PRs</b> merged in mobile-app would have taken you about <b>${n0(c.byHand)} hours</b> by hand. You spent about <b>${steer} hours</b> steering the agents, so ${good
+      ? `they saved you about <b>${n0(c.net)} hours</b>, worth <b>${aboutUsd(c.value)}</b> at your ${money(S.rate)} an hour`
+      : `steering them took about <b>${n0(-c.net)} hours</b> more than the work would have by hand, a loss of <b>${aboutUsd(-c.value)}</b> at your ${money(S.rate)} an hour`}. The plan cost <b>${money(S.plan)}</b>.`;
+  }
+  function worthFigures(c) {
+    const S = state.worth;
+    const f = [
+      fig('hand', 'worth', 'Time it would have taken you', hoursOf(c.byHand), `${c.rows.length - c.skipped} PRs sized: ${c.rows.length - c.yours} automatic, ${c.yours} yours.`,
+        'The sum of the hours behind each merged PR\'s size, release merges left out. The sizes are estimates: automatic ones from the PR\'s own diff, yours where you tapped another. Edit Sizes changes the hours and the cut points, and every figure here follows.'),
+      fig('attn', 'worth', 'Time you spent steering', hoursOf(W.attention), `${n0(W.prompts)} prompts on ${W.days} days, plus permission waits (up to 10 minutes each).`,
+        'From the gaps between your prompts: a gap under 10 minutes counts as working, plus 2 minutes per prompt, plus your permission waits. It is a floor: reading a diff afterwards leaves no trace.'),
+      fig('net', 'worth', 'Hours saved', hoursOf(c.net), 'by hand minus steering.', 'The hours it would have taken by hand, less the hours you spent steering. Below zero, the agents cost you time.', c.net < 0),
+      fig('value', 'worth', 'Value of those hours', dollars(c.value), `at your ${money(S.rate)} an hour.`, 'Hours saved times your hourly rate. Your rate is yours to set; it stays on this machine.', c.value < 0),
+      fig('paid', 'worth', 'What you paid', money(S.plan), `your plan · ${money(W.apiCost)} at API prices.`, 'Your plan\'s price for the month. The API-equivalent beside it is what the same tokens would have cost at list prices: a plan is cheaper when you use it heavily.'),
+      fig('ret', 'worth', 'Return on your plan', dollars(c.ret), 'value minus what you paid.', 'The value of the hours saved, less what you paid for the plan. Below zero, the plan cost more than the time it saved.', c.ret < 0),
+    ];
+    return `<div class="figgrid">${f.join('')}</div>`;
+  }
+  function distHTML(c) {
+    const max = Math.max(...Object.values(c.hrs), 1), S = state.worth;
+    return `<div class="dist">${['S', 'M', 'L', 'XL'].map((k) => `<div><span>${k} · ${plural(c.count[k], 'PR')}</span><b>${hoursOf(c.hrs[k])}</b><span class="p-track"><i style="width:${(c.hrs[k] / max) * 100}%"></i></span><span>${S.hours[k]} h each</span></div>`).join('')}</div>`;
+  }
+  function worthRows(c) {
+    const shown = state.worth.all ? c.rows : c.rows.slice(0, 8);
+    const lines = (r) => `${n0(r.lines)} line${r.lines === 1 ? '' : 's'} in ${plural(r.files, 'file')}`;
+    const share = (r) => (r.cost === null ? 'no session linked' : `part of 1 session · ${plural(r.agents, 'agent')} · ${money(r.cost)}`);
+    return shown.map((r) => `<div class="pr2"><span class="n">#${r.n}</span><span class="t"><b>${esc(r.title)}</b><small>merged ${dShort(r.merged)} · ${lines(r)} · ${share(r)}</small></span>
+      <span class="pz"><span class="szchip${r.mine ? ' mine' : ''}" title="score ${n0(r.sc)} = ${r.lines} lines × (1 + log₂ ${r.files} files)">${r.mine ? 'yours' : 'auto'} · ${r.size === 'skip' ? 'skip' : r.size}</span>${r.mine ? `<button type="button" class="back" data-act="auto" data-n="${r.n}">Back to Auto</button>` : ''}
+      <span class="p-seg" role="group" aria-label="Size of #${r.n}">${['S', 'M', 'L', 'XL', 'skip'].map((k) => `<button type="button" data-act="size" data-n="${r.n}" data-v="${k}" aria-pressed="${r.size === k}">${k === 'skip' ? 'Skip' : k}</button>`).join('')}</span></span></div>`).join('')
+      + (state.worth.all ? '' : `<div class="mkmore" style="padding-top:12px"><button type="button" class="p-btn" data-act="wall">Show All ${c.rows.length}</button></div>`);
+  }
+  function worthOut() {
+    const c = worthCalc();
+    return `${reading(worthRead(c), 'Written from the figures below; it changes with them.')}
+      <section class="p-card" aria-label="October so far"><div class="p-card-h"><h3>${MONTH_AT.soFar}</h3><span class="p-hint">a losing month shows negative</span></div><div class="p-card-b" style="display:grid;gap:18px">
+        ${worthFigures(c)}${distHTML(c)}
+        <pre class="formula">value  = (hours by hand − hours of your attention) × your rate\nreturn = value − what you paid</pre></div></section>
+      <section class="p-card" aria-label="Merged PRs"><div class="p-card-h"><h3>Merged PRs, sized</h3><span class="p-hint">${plural(c.rows.length, 'PR')} · ${c.yours ? `${c.yours} sized by you · ` : ''}newest first · release merges left out</span></div>
+        ${worthRows(c)}
+        <p class="rowsnote">Each PR's cost, agents and sessions are its share of the session that opened it: the slice between the previous PR link and its own. PRs linked minutes apart get thin slices. Before, every PR was shown the whole session.</p>
+        ${explain('How a size is chosen', `Score = changed lines × (1 + log₂ of the files changed), counting only files that are not lockfiles, generated rules, images or build output. S is below ${n0(state.worth.cuts[0])}, M below ${n0(state.worth.cuts[1])}, L below ${n0(state.worth.cuts[2])}, XL from there. Release merges (<code>chore(release)…</code>, <code>chore: merge …</code>, <code>Merge …</code>) are left out: ${W.releases} in October. Tap another size on a row and it becomes yours; Back to Auto takes it back. A session that served several PRs is split by its PR links in time: each PR gets the session's cost and agents from the previous link up to its own, so the rows add up to at most the session. Self-estimates run optimistic: in METR's 2025 trial, developers were 19% slower with AI and believed they were 20% faster.`)}</section>`;
+  }
+  function worthEdit() {
+    const S = state.worth, h = S.hours, cu = S.cuts;
+    const inp = (id, label, v, cls = '') => `<label>${label}<input class="p-input ${cls}" inputmode="decimal" autocomplete="off" data-in="${id}" value="${esc(v)}"></label>`;
+    return S.edit
+      ? `<div class="cuts" role="group" aria-label="Hours behind each size">${['S', 'M', 'L', 'XL'].map((k) => inp(`h-${k}`, `${k}, in hours`, h[k])).join('')}</div>
+         <div class="cuts" role="group" aria-label="Where each size starts">${inp('c-0', 'S is below (score)', n0(cu[0]))}${inp('c-1', 'M is below (score)', n0(cu[1]))}${inp('c-2', 'L is below (score)', n0(cu[2]))}<label>XL is from<input class="p-input" value="${n0(cu[2])}" disabled></label></div>
+         <p class="werr" id="werr" role="alert" hidden></p>
+         <div class="actions"><button type="button" class="p-btn primary" data-act="done">Done</button><button type="button" class="p-btn" data-act="reset">Reset Sizes</button><span class="p-hint" style="font-size:13px;color:var(--muted)">Every figure and row follows as you type.</span></div>`
+      : `<div class="sizes">Every merged PR is sized from its own diff: ${['S', 'M', 'L', 'XL'].map((k, i) => `<span><b>${k}</b> ${h[k]} h${i < 3 ? ',' : ''}</span>`).join(' ')} <button type="button" class="p-btn" style="margin-left:6px" data-act="edit">Edit Sizes</button></div>`;
+  }
+  function worthNew() {
+    const S = state.worth;
+    return `${head('new', 'ledger', 'worth', 'mobile-app')}
+      <section class="p-card"><div class="p-card-h"><h3>Your numbers</h3><span class="p-hint">only you know these; they stay on this machine</span></div><div class="p-card-b" style="display:grid;gap:14px">
+        <div class="settings"><label for="rate">Your hourly rate<input id="rate" class="p-input" data-in="rate" inputmode="decimal" value="$${S.rate}"></label><label for="planp">Your plan, a month<input id="planp" class="p-input" data-in="plan" inputmode="decimal" value="$${S.plan}"></label><button type="button" class="p-btn">Save</button></div>
+        <div id="w-edit" style="display:grid;gap:14px">${worthEdit()}</div></div></section>
+      <div id="w-out" style="display:grid;gap:20px">${worthOut()}</div>
+      ${foot(`Real: one project's 120 October PRs (titles invented), their lines and files from GitHub, and their sessions from Claude Code's own PR links. Your attention (${hoursOf(W.attention)}), rate and plan are as the studio reads them. The sizes are computed from the diffs, not chosen.`)}`;
+  }
+  function worthToday() {
+    const w = W, net = 0.5 - w.attention;
+    const f = [
+      ['Hours by hand', '0.5 h', '1 of 128 merged PRs sized', ' <span class="tag">your estimate</span>'], ['Your attention', hoursOf(w.attention), `${w.prompts} prompts on ${w.days} days, plus permission waits`, ''],
+      ['Net hours', hoursOf(net), 'by hand minus attention', ''], ['Value', dollars(net * 100), 'at your $100 an hour', ''],
+      ['You paid', '$200', `your plan · ${money(w.apiCost)} API-equivalent`, ''], ['Return', dollars(net * 100 - 200), 'value minus what you paid', ''],
+    ];
+    const lines = (r) => `+${n0(r.add)} −${n0(r.dele)}`;
+    return `${head('today', 'ledger', 'worth')}
+      <section class="p-card"><div class="p-card-h"><h3>Your numbers</h3><span class="p-hint">only you know these; they stay on this machine</span></div><div class="p-card-b" style="display:grid;gap:14px">
+        <div class="settings"><label for="rate">Your hourly rate<input id="rate" class="p-input" value="$100"></label><label for="planp">Your plan, a month<input id="planp" class="p-input" value="$200"></label><button type="button" class="p-btn primary">Save</button></div>
+        <div class="sizes">One tap per merged PR: ${['S 0.5 h', 'M 2 h', 'L 6 h', 'XL 16 h'].map((s) => `<span><b>${s.split(' ')[0]}</b> ${s.split(' ').slice(1).join(' ')}</span>`).join('')} <button type="button" class="p-btn" style="margin-left:6px">Edit Sizes</button></div></div></section>
+      <section class="p-card"><div class="p-card-h"><h3>October so far</h3><span class="p-hint">a losing month shows negative</span></div><div class="p-card-b" style="display:grid;gap:14px">
+        <div class="stats6">${f.map(([k, v, d, tg]) => `<div class="p-stat"><span class="k">${k}${tg}</span><span class="v${v.startsWith('−') ? ' neg' : ''}">${v}</span><span class="d">${d}</span></div>`).join('')}</div>
+        <pre class="formula">value  = (hours by hand − hours of your attention) × your rate\nreturn = value − what you paid</pre></div></section>
+      <section class="p-card"><div class="p-card-h"><h3>Merged PRs to size</h3><span class="p-hint">127 of 128 not sized yet · newest first</span></div><div class="prs">
+        ${w.today.map((r) => `<div class="pr"><span class="n">#${r.n}</span><span class="t"><b>${esc(r.title)}</b><small>merged ${dShort(r.merged)} · ${lines(r)} · ${plural(r.sessions, 'session')} · ${plural(r.agents, 'agent')} · ${usdOld(r.cost)}</small></span><span class="p-seg" role="group" aria-label="Size of #${r.n}">${['S', 'M', 'L', 'XL', 'Skip'].map((k) => `<button type="button" aria-pressed="${r.size === k}">${k}</button>`).join('')}</span></div>`).join('')}</div>
+        <div class="mkmore" style="padding-top:12px"><button type="button" class="p-btn">Show All 128</button></div>
+        ${explain('How Worth is counted', 'Hours by hand are yours: a size per merged PR, which you can change at any time. Your attention comes from the gaps between your prompts (under 10 minutes counts as working, plus 2 minutes per prompt) and your permission waits (each at most 10 minutes), so it\'s a floor: reading a diff afterwards leaves no trace. A PR finds its sessions through the PR links Claude Code records, and a session that served several PRs counts in each, whole, so the sessions, agents and costs on the rows can add up to more than the month\'s. Nothing asks you for a size when a session ends. Self-estimates run optimistic: in METR\'s 2025 trial, developers were 19% slower with AI and believed they were 20% faster.')}</section>
+      ${foot(`Real: the studio's Worth for mobile-app, October, as it read at ${hhmm(NOW)} on 26 Oct. The 128 rows add up to ${usdOld(128 * w.today[0].cost).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} on a month that cost ${money(w.apiCost)}.`)}`;
+  }
+
+  /* ---------- Board 6: Analysis · Patterns (mobile-app, the preview's numbers) ---------- */
+  const own = (t, k) => (Object.hasOwn(t, k) ? t[k] : undefined);
+  const NAMED = {
+    sleep_blocked: ['Waiting with sleep, blocked', 'Agents waited with `sleep`, then read a log or a status; Claude Code blocks it.', 'Tell agents to run long jobs in the background and wait for the notification.'],
+    hook_blocked: ['Stopped by a hook', 'A hook in the project refused the call.', 'Tell agents which files and branches the hook protects, before they start.'],
+    wrong_tool_name: ['A tool called by the wrong name', "An agent called a tool that doesn't exist, such as `bash` for `Bash`.", 'Check the tool names in the agent files and briefs.'],
+    gh_projects_classic: ['gh edit on a Projects (classic) repo', '`gh issue edit` and `gh pr edit` fail with a GraphQL deprecation error.', 'Use `gh api -X PATCH` instead, and put it in the briefs.'],
+    classifier_denied: ['Refused by the auto-mode classifier', "Auto mode's classifier stopped the call.", 'Allow the commands you approve every time, or run them yourself.'],
+    outside_worktree: ['Refused inside a worktree', "An agent isolated in a worktree ran a command Claude Code couldn't verify stays inside it, most often a chained or computed `git` call.", 'Tell agents to run commands from the worktree itself, as plain separate commands.'],
+  };
+  const withCode = (t) => t.split('`').map((p, i) => (i % 2 ? `<code>${esc(p)}</code>` : esc(p))).join('');
+  const KINDS = { exit_code: 'A command failed', not_found: "A path that doesn't exist", timeout: 'A timeout', refused: 'Refused (permission, a hook or the classifier)', no_match: "An edit whose text wasn't in the file", read_first: 'Written before it was read', invalid_input: 'Invalid input', unknown_command: "A command that doesn't exist", other: 'Other' };
+  const CMDS = { test: 'tests', build: 'builds', lint: 'lint', git: 'git', gh: 'gh', docker: 'docker', install: 'installs', other: 'other commands' };
+  function patternRepeats(ver) {
+    const named = PT.repeats.filter((r) => own(NAMED, r.shape)), folded = PT.repeats.filter((r) => !own(NAMED, r.shape));
+    const list = folded.map((r) => n0(r.count)), join = list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0];
+    const today = ver === 'today';
+    return `<section class="p-card" aria-label="Repeated failures"><div class="p-card-h"><h3>The same failure, again and again</h3><span class="p-hint">${today ? 'grouped across sessions; a Try line is a rule worth changing' : 'grouped across sessions; each Try line is a rule you can change'}</span></div>
+      ${named.map((r) => { const [t, what, fix] = NAMED[r.shape]; return `<div class="repeat"><div><b>${t}</b><p>${withCode(what)}</p></div><span class="num">${today ? `${n0(r.count)} · ${plural(r.sessions, 'session')}` : `${n0(r.count)} times in ${plural(r.sessions, 'session')}`}</span><span class="try">Try: ${withCode(fix)}</span></div>`; }).join('')}
+      <p class="repeat-more">${plural(folded.length, 'more failure')} repeat with no name (${join} times). With Content on full, their first line shows here.</p></section>`;
+  }
+  function patternKinds(ver) {
+    const max = Math.max(...PT.kinds.map((k) => k.count));
+    const row = (label, n, sub) => `<tr class="${sub ? 'sub' : ''}"><td>${label}</td><td class="r">${n0(n)}</td><td style="width:40%"><span class="bar" style="width:${Math.max(2, (n / max) * 100)}%"></span></td></tr>`;
+    return `<section class="p-card" aria-label="Failed calls by kind"><div class="p-card-h"><h3>Failed calls by kind</h3><span class="p-hint">the error and command classes from the plugin</span></div><div class="p-tablewrap"><table class="kinds"><thead><tr><th>Kind</th><th class="r">Calls</th><th aria-label="Share of the biggest kind"></th></tr></thead><tbody>
+      ${PT.kinds.map((k) => row(own(KINDS, k.errorClass) ?? k.errorClass, k.count) + (k.commands ?? []).map((c) => row(own(CMDS, c.commandClass) ?? c.commandClass, c.count, true)).join('')).join('')}</tbody></table></div>
+      ${explain('How patterns are found', 'Each failed call gets a short class from the plugin (a path not found, an edit that missed, a command that failed, and the kind of command), so no output text has to leave the machine. Repeats are failures of the same shape across sessions, with paths and numbers set aside. With Content on full, the group can also show the failing text.')}</section>`;
+  }
+  const kindOf = (e) => PT.kinds.find((k) => k.errorClass === e)?.count ?? 0;
+  function patternsToday() {
+    const pct = ((PT.failed / PT.calls) * 100).toFixed(1);
+    return `${head('today', 'analysis', 'patterns')}
+      <section class="p-card"><div class="p-card-b"><div class="stats6">
+        ${stat('Failed calls', n0(PT.failed), `of ${n0(PT.calls)} (${pct}%)`)}${stat("Paths that didn't exist", n0(kindOf('not_found')), 'invented or stale')}
+        ${stat('Missed edits', n0(kindOf('no_match')), "the text wasn't in the file")}${stat('Tests edited after a failure', n0(PT.tests.count), 'worth a look, often fine')}</div></div></section>
+      ${patternRepeats('today')}${patternKinds('today')}
+      ${foot("Real: one project's whole history, the figures the preview shows (46,473 tool calls).")}`;
+  }
+  function patternsNew() {
+    const pct = ((PT.failed / PT.calls) * 100).toFixed(1), one = (n) => `1 in ${n0(Math.round(PT.calls / n))}`;
+    const read = `<b>${pct}%</b> of mobile-app's tool calls failed, which on its own is normal. The repeats below are worth your time: each happens again and again, and each has a rule you can change.`;
+    const f = [
+      fig('failed', 'patterns', 'Calls that failed', n0(PT.failed), `of ${n0(PT.calls)} tool calls (${pct}%). Usual: under 4% is normal.`,
+        'A tool call that came back with an error: a command that exited non-zero, a file that was not there, a call that was refused. Some failure is normal (a failing test is a call that did its job); what matters is what repeats.'),
+      fig('paths', 'patterns', "Paths that weren't there", n0(kindOf('not_found')), `Rare: ${one(kindOf('not_found'))} calls.`,
+        'An agent asked for a file or folder that does not exist: a name it invented, or one that was renamed or removed. A handful is normal; many in one session means the agent did not look before it guessed.'),
+      fig('misses', 'patterns', 'Edits that missed', n0(kindOf('no_match')), `Rare: ${one(kindOf('no_match'))} calls.`,
+        'An agent tried to replace text that was not in the file, usually because the file had changed since it last read it.'),
+      fig('tests', 'patterns', 'Test files changed right after a failing run', n0(PT.tests.count), `In ${plural(PT.tests.sessions, 'session')}. Worth a look, not a worry.`,
+        'A test file edited right after a test run failed. Often that is the right fix (the test was wrong); sometimes it is an agent bending a test to pass. Look at the diff to tell which.'),
+    ];
+    return `${head('new', 'analysis', 'patterns', 'mobile-app')}${reading(read, 'Written from the figures below; it changes with them.')}
+      <section class="p-card"><div class="p-card-b"><div class="figgrid four">${f.join('')}</div></div></section>
+      ${patternRepeats('new')}${patternKinds('new')}
+      ${foot("Real: one project's whole history, the figures the preview shows (46,473 tool calls).")}`;
+  }
+
+  /* ---------- What each board decides ---------- */
+  const DECIDE = {
+    header: [
+      '<b>One header shape on every page with views</b> (Ledger, Analysis, Pipeline). Row 1 is the title and a one-line sub-line that says what the view answers; row 2 has the view switch on the left and the pickers on the right, project then period, at fixed widths. The first card starts at the same height on every view, and the measured table shows it. <i>Recommended: it is what stops the layout jumping.</i>',
+      '<b>One project picker per page, and the choice carries across views.</b> Trends, Worth, Patterns and Reports need one project, so there “All projects” is not offered and the last single project stays; going back to Totals brings “All projects” back if that is what you had. <i>Recommended.</i>',
+      '<b>Analysis → Reports gets its project and period in the header</b>, like every other view, instead of in the “New analysis” card. The card keeps the model and the estimate. <i>Recommended.</i>',
+      '<b>Ledger → Totals: Day, Week, Month moves into the chart’s own card</b>, because it only groups that chart. The header keeps project and period. <i>Recommended.</i>',
+    ],
+    live: [
+      '<b>Freshness in words, never a running count.</b> “● Live” while connected; after 60 s with no event, “● Quiet for 4m” with a grey dot; “Reconnecting…” in amber when the stream drops. Today’s “Live · 2s” is the time since the studio’s last message, so it resets every 2–3 s while a session works. <i>Recommended.</i>',
+      '<b>A sentence on top</b> says how many sessions run, which are working, which wait for you and whether anything is stalled; the page title becomes “Live”, like the other pages. <i>Recommended.</i>',
+      '<b>Figures read as words with units</b>: “4.9 M tokens so far · $1.34 at API prices”, “Context 41% full” with its bar. <i>Recommended.</i>',
+      '<b>A session shows its own start</b>, “started 19 Oct · running 6 days”, not the server’s restart. <i>Recommended; it needs the server to keep the session’s own start, which the logs already hold.</i>',
+    ],
+    totals: [
+      '<b>A reading on top, written from the numbers</b>: what the agents used, what it would cost at API prices, how much came from cache, how many calls failed. <i>Recommended.</i>',
+      '<b>Every figure has the same shape</b>: a plain label, a readable value (8.1 B, $2,615, 97%), one line that says whether it is usual, and an ⓘ. <i>Recommended.</i>',
+      '<b>The ⓘ opens its explanation in place</b>, and the explainers at the page bottom go. <i>Recommended.</i>',
+      '<b>A permission wait counts at most 10 minutes</b>, as Worth does: 5.5 h for these 7 days instead of 47.5 h, and the figure says 8 dialogs were left open over an hour. <i>Recommended.</i>',
+      '<b>Found while building this, not a design question:</b> Totals counts a tool call once for every session that shows it. Over these 7 days the Ledger reads 947 permission prompts, 30,060 tool calls and $2,615; counted once there are 499 prompts, about 18,800 calls and about $1,820 (checked in the graph: about 11,300 of those calls and 8,100 requests are reached from two sessions, which a resumed session replays). The figures here follow the studio as it reads today, except the wait, which is counted once. <i>To file apart; the reading and the figures below are only as right as those counts.</i>',
+    ],
+    trends: [
+      '<b>A reading on top</b>, and plain labels: What a working day costs, What one prompt costs, Spent by generic agents, Read from cache. <i>Recommended.</i>',
+      '<b>Compare opens right under the change you click</b>, as an expanding row, with a sentence first and then the table; its action reads “Show before and after”. Today the panel it fills sits below the whole list, off screen. <i>Recommended.</i>',
+      '<b>The sentence</b>: “In the 3 days after this change a day cost $68, 86% more than the 7 days before ($37). Agents on their own model went from $13 to $26 a day.” <i>Recommended.</i>',
+    ],
+    worth: [
+      '<b>Sizes are automatic.</b> Score = changed lines × (1 + log₂ files changed), counting only files that are not lockfiles, generated rules, images or build output. S below 300, M below 1,500, L below 6,000, XL from there. On mobile-app’s 120 October PRs that gives 12 S, 33 M, 38 L and 37 XL. <i>Recommended.</i>',
+      '<b>Each row says whose size it is</b>: “auto · L” with the lines and files behind it; one tap on another size makes it “yours · M”, and Back to Auto takes it back. Edit Sizes holds the hours and the three cut points. <i>Recommended.</i>',
+      '<b>A PR gets its share of a session</b>, split by the session’s PR links in time: the cost and agents from the previous link up to its own. Today every row shows the whole session (1,406 agents, $2,882.01). <i>Recommended.</i>',
+      '<b>Release merges are left out</b> of the rows and the hours: <code>chore(release)…</code>, <code>chore: merge …</code>, <code>Merge …</code>. <i>Recommended.</i>',
+      '<b>Record: this replaces the approved “one estimate per merged PR, as one tap on a size, by hand”</b> (design/v0.3-worth-truth.html, 25 Oct). You size nothing unless you want to.',
+      '<b>Look at the hours before the cut points.</b> The sizes’ hours are yours (S 0.5, M 2, L 6, XL 16), and they carry the result: 892 h by hand against about 50 h of steering is 7.4 h a PR. Edit Sizes shows how every figure moves.',
+    ],
+    patterns: [
+      '<b>A reading on top</b>: the failure rate on its own is normal; the repeats below are the part worth your time. <i>Recommended.</i>',
+      '<b>Plain labels</b>: Calls that failed, Paths that weren’t there, Edits that missed, Test files changed right after a failing run. Each has a usual-or-not line and an ⓘ. <i>Recommended.</i>',
+    ],
+  };
+  const TITLES = { header: 'Header', live: 'Live', totals: 'Ledger · Totals', trends: 'Ledger · Trends', worth: 'Ledger · Worth', patterns: 'Analysis · Patterns' };
+  const NOTES = {
+    header: { today: 'Today: each view draws its own header, with the app’s own copy. Click through the views and compare the measured table.', proposed: 'Proposed: one header shape; the table shows the switch, the project picker and the first card in the same place on every view.' },
+    live: { today: 'Today: the page as it is, with the two sessions the studio showed on 26 Oct, 16:52. The top-right counter is live: watch it reset.', proposed: 'Proposed: a sentence on top, figures as words, the session’s real start, and a connection that says Live, Quiet or Reconnecting.' },
+    totals: { today: 'Today: Totals as it reads now, last 7 days, all projects.', proposed: 'Proposed: a reading, plain figures with an ⓘ each, the wait capped at 10 minutes.' },
+    trends: { today: 'Today: Trends for docs-site. Pick a change and look for the panel it fills.', proposed: 'Proposed: a reading, plain labels, and Compare opening right under the change.' },
+    worth: { today: 'Today: Worth for mobile-app, October, with 1 of 128 PRs sized by hand.', proposed: 'Proposed: automatic sizes, a share of each session per PR, and a month that follows. Tap a size, or open Edit Sizes.' },
+    patterns: { today: 'Today: Patterns for mobile-app, as the preview shows it.', proposed: 'Proposed: a reading, plain labels, a usual-or-not line and an ⓘ on each figure.' },
+  };
+  const BOARDS = { header: headerBoard, live: liveBoard, totals: () => (state.ver.totals === 'today' ? totalsToday() : totalsNew()), trends: () => (state.ver.trends === 'today' ? trendsToday() : trendsNew()), worth: () => (state.ver.worth === 'today' ? worthToday() : worthNew()), patterns: () => (state.ver.patterns === 'today' ? patternsToday() : patternsNew()) };
+  const NAV_OF = { header: () => state.hpage, live: () => 'live', totals: () => 'ledger', trends: () => 'ledger', worth: () => 'ledger', patterns: () => 'analysis' };
+
+  /* ---------- Render ---------- */
+  function render() {
+    const b = state.board, ver = state.ver[b];
+    $('#page').innerHTML = BOARDS[b]();
+    const cur = NAV_OF[b]();
+    $$('.p-nav a').forEach((a) => (a.dataset.go === cur ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
+    $$('#rv-page button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.v === b)));
+    $$('#rv-ver button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.v === ver)));
+    $$('#rv-conn button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.v === state.conn)));
+    $('#rv-connwrap').hidden = b !== 'live';
+    $('#rv-note').textContent = NOTES[b][ver];
+    $('#conn').className = `p-conn${ver === 'today' ? '' : state.conn === 'quiet' ? ' q' : state.conn === 'dropped' ? ' r' : ''}${ver === 'today' && state.conn === 'dropped' ? ' r' : ''}`;
+    $('#conn').innerHTML = connHTML();
+    $('#decide').innerHTML = `<h2>What the ${TITLES[b]} board decides</h2><ol>${DECIDE[b].map((d) => `<li>${d}</li>`).join('')}</ol>`;
+    if (b === 'header') measure();
+    if (b === 'trends' && ver === 'today') gap();
+    history.replaceState(null, '', `#${b}${ver === 'today' ? ':today' : ''}`);
+  }
+  /** Mock only: how far under the change list the panel that Compare fills starts. */
+  function gap() {
+    const list = $('.mklist'), panel = $('#changecard'), out = $('#gap');
+    if (!list || !panel || !out) return;
+    const d = Math.round(panel.getBoundingClientRect().top - (list.getBoundingClientRect().top + $$('.mkbtn', list)[0].getBoundingClientRect().height));
+    out.textContent = `Mock note: picking a change fills a panel that starts ${d} px below the first row of the list, under Show All.`;
+  }
+  const rerender = () => { const y = scrollY; render(); scrollTo(0, y); };
+
+  /* ---------- Events ---------- */
+  const NAV_GO = { live: 'live', ledger: 'totals', pipeline: 'header', analysis: 'patterns' };
+  const VIEW_BOARD = { totals: 'totals', trends: 'trends', worth: 'worth', patterns: 'patterns' };
+  function go(board, carry) { if (carry) state.ver[board] = state.ver[state.board]; state.board = board; render(); scrollTo(0, 0); }
+  const acts = {
+    view(el) {
+      const v = el.dataset.v;
+      if (state.board === 'header') { state.hview[state.hpage] = v; return rerender(); }
+      if (VIEW_BOARD[v]) return go(VIEW_BOARD[v], true);
+      state.hpage = pageOf(v); state.hview[state.hpage] = v; go('header', true);
+    },
+    'pick-today'(el) { state.today[el.dataset.view] = el.value; rerender(); },
+    'pick-new'(el) { if (el.value === '') state.all = true; else { state.single = el.value; state.all = false; } rerender(); },
+    period(el) { const v = state.board === 'header' ? state.hview[state.hpage] : { totals: 'totals', trends: 'trends', worth: 'worth', patterns: 'patterns' }[state.board]; state.period[v] = el.value; },
+    tog(el) { $$('button', el.parentElement).forEach((b) => b.setAttribute('aria-pressed', String(b === el))); },
+    unit(el) { state.totals.unit = el.dataset.v; rerender(); },
+    split(el) { state.trends.split = el.dataset.v; rerender(); },
+    all() { state.trends.all = true; rerender(); },
+    pick(el) { state.trends.picked = +el.dataset.n; rerender(); },
+    mark(el) { const n = +el.dataset.n; if (state.ver.trends === 'today') state.trends.picked = n; else state.trends.open = n; rerender(); },
+    open(el) { const n = +el.dataset.n; state.trends.open = state.trends.open === n ? null : n; rerender(); },
+    info(el) {
+      const open = el.getAttribute('aria-expanded') !== 'true', p = document.getElementById(el.getAttribute('aria-controls'));
+      el.setAttribute('aria-expanded', String(open)); p.hidden = !open; state[el.dataset.boardK].info[el.dataset.id] = open;
+    },
+    size(el) { state.worth.over[el.dataset.n] = el.dataset.v; worthRefresh(); },
+    auto(el) { delete state.worth.over[el.dataset.n]; worthRefresh(); },
+    wall() { state.worth.all = true; worthRefresh(); },
+    edit() { state.worth.edit = true; $('#w-edit').innerHTML = worthEdit(); },
+    done() { state.worth.edit = false; $('#w-edit').innerHTML = worthEdit(); },
+    reset() { Object.assign(state.worth, { hours: { S: 0.5, M: 2, L: 6, XL: 16 }, cuts: [300, 1500, 6000] }); $('#w-edit').innerHTML = worthEdit(); worthRefresh(); },
+  };
+  const worthRefresh = () => { const out = $('#w-out'), y = scrollY; if (out) out.innerHTML = worthOut(); scrollTo(0, y); };
+  document.addEventListener('click', (e) => {
+    const go_ = e.target.closest('.p-nav [data-go]');
+    if (go_) { e.preventDefault(); const k = go_.dataset.go; if (state.board === 'header' && ['ledger', 'analysis', 'pipeline'].includes(k)) { state.hpage = k; return rerender(); } if (k === 'pipeline') { state.hpage = 'pipeline'; return go('header', true); } return NAV_GO[k] ? go(NAV_GO[k], true) : undefined; }
+    const el = e.target.closest('[data-act]');
+    if (!el || el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
+    acts[el.dataset.act]?.(el, e);
+  });
+  document.addEventListener('keydown', (e) => { const mk = e.target.closest && e.target.closest('.mk'); if (mk && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); acts.mark(mk); } });
+  document.addEventListener('change', (e) => { const el = e.target.closest('select[data-act]'); if (el) acts[el.dataset.act]?.(el, e); });
+  // Typing in Edit Sizes: every figure and row follows as soon as the number is valid.
+  document.addEventListener('input', (e) => {
+    const el = e.target.closest('[data-in]');
+    if (!el) return;
+    const S = state.worth, id = el.dataset.in, raw = el.value.replace(/[$,\s]/g, ''), n = Number(raw), ok = raw !== '' && Number.isFinite(n) && n > 0;
+    const err = $('#werr');
+    if (id === 'rate' || id === 'plan') { if (ok || (id === 'plan' && raw !== '' && n === 0)) { S[id] = n; el.removeAttribute('aria-invalid'); worthRefresh(); } else el.setAttribute('aria-invalid', 'true'); return; }
+    const next = { hours: { ...S.hours }, cuts: [...S.cuts] };
+    if (id.startsWith('h-')) next.hours[id.slice(2)] = n; else next.cuts[+id.slice(2)] = n;
+    const good = ok && (id.startsWith('h-') ? n <= 1000 : true) && next.cuts[0] < next.cuts[1] && next.cuts[1] < next.cuts[2];
+    $$('[data-in]').forEach((i) => i.removeAttribute('aria-invalid'));
+    if (!good) {
+      el.setAttribute('aria-invalid', 'true');
+      err.hidden = false; err.textContent = id.startsWith('h-') ? 'Give hours above 0 and at most 1,000, like 0.5 or 16.' : 'The cut points go up: S is below M, and M is below L.';
+      return;
+    }
+    err.hidden = true; Object.assign(S, next); worthRefresh();
+  });
+  const seg_ = (id, f) => $(id).addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; $$('button', b.parentElement).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); f(b.dataset.v); });
+  seg_('#rv-page', (v) => go(v, false));
+  seg_('#rv-ver', (v) => { state.ver[state.board] = v; render(); });
+  seg_('#rv-conn', (v) => { state.conn = v; render(); });
+  seg_('#rv-theme', (v) => (v === 'system' ? document.documentElement.removeAttribute('data-theme') : document.documentElement.setAttribute('data-theme', v)));
+  seg_('#rv-width', (v) => { $('#stage').classList.toggle('phone', v === 'phone'); if (state.board === 'header') measure(); if (state.board === 'trends') gap(); });
+  addEventListener('resize', () => { if (state.board === 'header') measure(); if (state.board === 'trends') gap(); });
+
+  // Today's counter: the seconds since the studio's last message, which a working session resets every 2 to 3 s.
+  let tick = 0, lim = 2;
+  setInterval(() => {
+    if (state.conn !== 'live') return;
+    tick++; if (tick >= lim) { tick = 0; lim = 2 + Math.round(Math.random()); }
+    const t = $('#tick'); if (t) t.textContent = `${tick}s`;
+  }, 1000);
+
+  const hash = location.hash.slice(1).split(':');
+  if (BOARDS[hash[0]]) { state.board = hash[0]; if (hash[1] === 'today') state.ver[hash[0]] = 'today'; }
+  render();
+})();
+</script>

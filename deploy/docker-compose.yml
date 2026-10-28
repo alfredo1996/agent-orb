@@ -1,0 +1,32 @@
+# Local agent-orb stack (PROJECT.md §10). Everything listens on 127.0.0.1 only.
+#   cp deploy/.env.example deploy/.env   # then set ORB_TOKEN
+#   docker compose -f deploy/docker-compose.yml up -d
+# orb-server uses the release image when it is on this machine and builds it from the clone otherwise;
+# `up -d --build` rebuilds it from your checkout.
+name: agent-orb
+
+services:
+  orb-server:
+    build:
+      context: ..
+      dockerfile: packages/server/Dockerfile
+    # The release tag; .github/workflows/release.yml publishes it. 0.3.0 since Neo4j left: a machine that still has the Neo4j-era 0.2.0 image
+    # would otherwise start it and fail looking for Neo4j. Until 0.3.0 is published, `up -d` finds no such image and builds from the clone.
+    image: ghcr.io/alfredo1996/agent-orb-server:0.3.0
+    environment:
+      ORB_TOKEN: ${ORB_TOKEN:?set ORB_TOKEN in deploy/.env}
+      # Only if you reach the studio under another name than 127.0.0.1, localhost or [::1]: comma-separated names (any port).
+      ORB_ALLOWED_HOSTS: ${ORB_ALLOWED_HOSTS:-}
+      # Slice 7, optional: analyses with Claude, billed to this key's API credits; they run only when you confirm one.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Only for a key that is not scoped to a workspace: the workspace its requests are billed to (Console → Workspaces).
+      ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}
+    volumes:
+      - orb-content-data:/var/lib/agent-orb # everything the server keeps: history.db (the history) and content.db (captured text and reports), two SQLite files
+    ports:
+      - 127.0.0.1:4040:4040
+    restart: unless-stopped
+
+volumes:
+  orb-content-data:
+    name: orb-content-data # the name from before history.db moved in beside content.db: renaming it would leave the captured text behind

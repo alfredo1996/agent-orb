@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-orb · Ledger (mockup)</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --surface: #ffffff; --surface-2: #f0f2f5; --border: #e2e5ea; --border-strong: #cdd2da;
+    --text: #13161b; --muted: #59626e; --faint: #8b939e;
+    --accent: #5b5bd6; --accent-soft: #ececfb;
+    --ok: #17804a; --ok-bg: #e5f4eb;
+    --wait: #8f5a00; --wait-bg: #fff2d6; --wait-line: #f0b440;
+    --bad: #c22a2a; --bad-bg: #fdeaea; --bad-row: #fff6f6; --bad-line: #e5484d;
+    --done: #6b7380; --done-bg: #eef0f3;
+    --opus: #7240d6; --opus-bg: #f1ebfd; --sonnet: #1f5fd1; --sonnet-bg: #e8f0fd; --haiku: #0b7f75; --haiku-bg: #e2f5f2;
+    --term-bg: #fbfbfc; --term-text: #1d2128; --term-dim: #7a828d;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .04);
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d0f13; --surface: #15181e; --surface-2: #1b1f26; --border: #262c35; --border-strong: #353d48;
+      --text: #e6e9ed; --muted: #9ba3ad; --faint: #6c747f;
+      --accent: #8b8cf0; --accent-soft: #23243f;
+      --ok: #4ccf86; --ok-bg: #11301f;
+      --wait: #f5bd45; --wait-bg: #36290c; --wait-line: #c9911f;
+      --bad: #ff7a7a; --bad-bg: #3d1717; --bad-row: #22141a; --bad-line: #e5484d;
+      --done: #8a929d; --done-bg: #22272f;
+      --opus: #b598ff; --opus-bg: #2a2142; --sonnet: #84adff; --sonnet-bg: #1b2842; --haiku: #5fd3c6; --haiku-bg: #13312e;
+      --term-bg: #0a0c0f; --term-text: #d9dde2; --term-dim: #737b86;
+      --shadow: none;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d0f13; --surface: #15181e; --surface-2: #1b1f26; --border: #262c35; --border-strong: #353d48;
+    --text: #e6e9ed; --muted: #9ba3ad; --faint: #6c747f;
+    --accent: #8b8cf0; --accent-soft: #23243f;
+    --ok: #4ccf86; --ok-bg: #11301f;
+    --wait: #f5bd45; --wait-bg: #36290c; --wait-line: #c9911f;
+    --bad: #ff7a7a; --bad-bg: #3d1717; --bad-row: #22141a; --bad-line: #e5484d;
+    --done: #8a929d; --done-bg: #22272f;
+    --opus: #b598ff; --opus-bg: #2a2142; --sonnet: #84adff; --sonnet-bg: #1b2842; --haiku: #5fd3c6; --haiku-bg: #13312e;
+    --term-bg: #0a0c0f; --term-text: #d9dde2; --term-dim: #737b86;
+    --shadow: none;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+  .num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .num { font-size: 13px; }
+
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+  .num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .num { font-size: 13px; }
+
+  /* Mockup chrome: not part of the product */
+  .mock-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 8px 16px; background: var(--surface-2); border-bottom: 1px dashed var(--border-strong); font-size: 12px; color: var(--muted); }
+  .mock-bar b { color: var(--text); font-weight: 600; }
+  .seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 6px; overflow: hidden; }
+  .seg button { font: inherit; border: 0; background: var(--surface); color: var(--muted); padding: 3px 10px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border-strong); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  .stage.phone { padding: 24px 16px 48px; display: flex; justify-content: center; }
+  .frame { container-type: inline-size; background: var(--bg); }
+  .stage.phone .frame { width: 390px; border: 1px solid var(--border-strong); border-radius: 28px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.12); min-height: 780px; }
+
+  /* App shell, as in live.html */
+  .topbar { display: flex; align-items: center; gap: 20px; padding: 0 20px; height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; letter-spacing: -.01em; }
+  .orb { width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 32% 30%, #c7cbff 0, #7b7cf0 38%, #3c3aa8 78%, #26246e 100%); box-shadow: 0 0 0 3px var(--accent-soft); }
+  nav { display: flex; gap: 2px; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; font-weight: 500; }
+  nav a[aria-current="page"] { color: var(--text); background: var(--surface-2); }
+  nav a[aria-disabled="true"] { opacity: .55; }
+  .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); }
+
+  main { padding: 20px; display: grid; gap: 20px; max-width: 1360px; margin: 0 auto; }
+  main > * { min-width: 0; } /* a wide table scrolls inside its card instead of widening the page */
+  .pagehead { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+  .pagehead h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+  .pagehead .sub { color: var(--muted); font-size: 13px; }
+  .filters { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .filters .seg button { padding: 5px 10px; }
+  .filters select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 8px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+  .card h2 { font-size: 13px; margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .card h2 .hint { font-weight: 400; color: var(--muted); font-size: 12px; }
+
+  .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+  .kpi { padding: 14px 16px; display: grid; gap: 4px; }
+  .kpi .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .kpi .value { font: 600 22px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+  .kpi .value small { font-size: 13px; color: var(--muted); font-weight: 500; }
+  .kpi .note { font-size: 12px; color: var(--muted); }
+  .up { color: var(--wait); } .down { color: var(--ok); }
+  .kpi.headline { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+  .chart { padding: 8px 16px 12px; }
+  .chart svg { display: block; width: 100%; height: 240px; overflow: visible; }
+  .chart .axis text { font: 11px var(--mono); fill: var(--faint); }
+  .chart .grid line { stroke: var(--border); }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 0 16px 12px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .tip { font: 12px/1.5 var(--sans); }
+  .tip rect { fill: var(--surface); stroke: var(--border-strong); }
+  .tip text { fill: var(--text); font: 12px var(--sans); }
+  .tip text.dim { fill: var(--muted); }
+
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th.r, td.r { text-align: right; }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  .tw { overflow-x: auto; }
+  .name { font-weight: 600; }
+  .name .sub2 { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .share { display: grid; gap: 4px; min-width: 90px; }
+  .share .bar { height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+  .share .bar > i { display: block; height: 100%; background: var(--accent); }
+  .model { display: inline-block; font: 600 12px/1 var(--sans); padding: 4px 7px; border-radius: 5px; }
+  .model.opus { color: var(--opus); background: var(--opus-bg); }
+  .model.sonnet { color: var(--sonnet); background: var(--sonnet-bg); }
+  .model.haiku { color: var(--haiku); background: var(--haiku-bg); }
+  .warn { color: var(--wait); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  .foot { font-size: 12px; color: var(--muted); }
+
+  @container (max-width: 700px) {
+    .topbar { padding: 0 16px; gap: 12px; height: auto; flex-wrap: wrap; padding-top: 10px; }
+    nav { order: 3; width: 100%; overflow-x: auto; padding-bottom: 6px; }
+    .conn .addr { display: none; }
+    main { padding: 16px; gap: 16px; }
+    .filters { margin-left: 0; width: 100%; }
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpi.headline { grid-column: 1 / -1; }
+    .kpi .value { font-size: 19px; }
+    .grid3 { grid-template-columns: minmax(0, 1fr); }
+    .grid3 td { white-space: normal; padding: 9px 10px; }
+    .share { min-width: 64px; }
+    .chart svg { height: 200px; }
+    .d-only { display: none; }
+  }
+  @container (min-width: 701px) { .p-only { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="mock-bar" role="region" aria-label="Mockup controls">
+  <span><b>Mockup</b> · Ledger view (PROJECT.md §8.2) · sample data shaped on a week of work</span>
+  <span>Theme <span class="seg" data-group="theme"><button data-v="auto" aria-pressed="true">Auto</button><button data-v="light" aria-pressed="false">Light</button><button data-v="dark" aria-pressed="false">Dark</button></span></span>
+  <span>Width <span class="seg" data-group="width"><button data-v="desktop" aria-pressed="true">Desktop</button><button data-v="phone" aria-pressed="false">Phone</button></span></span>
+</div>
+
+<div class="stage" id="stage">
+<div class="frame">
+
+  <header class="topbar">
+    <div class="brand"><span class="orb" aria-hidden="true"></span>agent-orb</div>
+    <nav aria-label="Views">
+      <a href="#">Live</a><a href="#" aria-current="page">Ledger</a><a href="#" aria-disabled="true">Pipeline</a><a href="#" aria-disabled="true">Office</a>
+    </nav>
+    <div class="conn"><span class="pulse"></span>Live<span class="addr"> · 127.0.0.1:4040</span></div>
+  </header>
+
+  <main>
+    <div class="pagehead">
+      <h1>Ledger</h1>
+      <span class="sub">Last 7 days · all projects · 23 sessions · 214 agents</span>
+      <div class="filters">
+        <span class="seg"><button aria-pressed="false">Today</button><button aria-pressed="true">7 days</button><button aria-pressed="false">30 days</button></span>
+        <span class="seg"><button aria-pressed="true">Day</button><button aria-pressed="false">Week</button><button aria-pressed="false">Month</button></span>
+        <select aria-label="Project"><option>All projects</option><option>mobile-app</option><option>agent-orb</option><option>neodash-v2</option><option>order-manager</option></select>
+      </div>
+    </div>
+
+    <section class="kpis" aria-label="Totals">
+      <div class="card kpi headline"><span class="label">Tokens</span><span class="value">48.2M</span><span class="note"><span class="up">▲ 12%</span> on the previous 7 days</span></div>
+      <div class="card kpi"><span class="label">API-equivalent</span><span class="value">$61.40</span><span class="note">at list prices, not a bill</span></div>
+      <div class="card kpi"><span class="label">Cache share</span><span class="value">94.1<small>%</small></span><span class="note">of input read from cache</span></div>
+      <div class="card kpi"><span class="label">Failed tool calls</span><span class="value">2.8<small>%</small></span><span class="note">31 of 1,104</span></div>
+      <div class="card kpi"><span class="label">Waiting on you</span><span class="value">1h 12m</span><span class="note">42 permission prompts</span></div>
+    </section>
+
+    <section class="card" aria-label="Tokens per day">
+      <h2>Tokens per day, by model <span class="hint">hover a day for its split and cost</span></h2>
+      <div class="chart"><svg id="chart" viewBox="0 0 1000 240" preserveAspectRatio="none" role="img" aria-label="Stacked bars of tokens per day by model">
+<g class="grid">
+<line x1="44" x2="1000" y1="216.0" y2="216.0"/>
+<line x1="44" x2="1000" y1="164.5" y2="164.5"/>
+<line x1="44" x2="1000" y1="113.0" y2="113.0"/>
+<line x1="44" x2="1000" y1="61.5" y2="61.5"/>
+<line x1="44" x2="1000" y1="10.0" y2="10.0"/>
+</g>
+<g class="axis">
+<text x="36" y="220.0" text-anchor="end">0</text>
+<text x="36" y="168.5" text-anchor="end">3M</text>
+<text x="36" y="117.0" text-anchor="end">6M</text>
+<text x="36" y="65.5" text-anchor="end">9M</text>
+<text x="36" y="14.0" text-anchor="end">12M</text>
+<text x="112.3" y="234" text-anchor="middle">Mon 13</text>
+<text x="248.9" y="234" text-anchor="middle">Tue 14</text>
+<text x="385.4" y="234" text-anchor="middle">Wed 15</text>
+<text x="522.0" y="234" text-anchor="middle">Thu 16</text>
+<text x="658.6" y="234" text-anchor="middle">Fri 17</text>
+<text x="795.1" y="234" text-anchor="middle">Sat 18</text>
+<text x="931.7" y="234" text-anchor="middle">Sun 19</text>
+</g>
+<rect x="80.3" y="205.7" width="64.0" height="9.3" rx="3" fill="var(--haiku)" opacity="0.85"/>
+<rect x="80.3" y="164.5" width="64.0" height="40.2" rx="3" fill="var(--sonnet)" opacity="0.85"/>
+<rect x="80.3" y="131.9" width="64.0" height="31.6" rx="3" fill="var(--opus)" opacity="0.85"/>
+<rect x="216.9" y="197.1" width="64.0" height="17.9" rx="3" fill="var(--haiku)" opacity="0.85"/>
+<rect x="216.9" y="143.9" width="64.0" height="52.2" rx="3" fill="var(--sonnet)" opacity="0.85"/>
+<rect x="216.9" y="89.0" width="64.0" height="53.9" rx="3" fill="var(--opus)" opacity="0.85"/>
+<rect x="353.4" y="200.6" width="64.0" height="14.4" rx="3" fill="var(--haiku)" opacity="0.85"/>
+<rect x="353.4" y="150.8" width="64.0" height="48.8" rx="3" fill="var(--sonnet)" opacity="0.85"/>
+<rect x="353.4" y="106.1" width="64.0" height="43.6" rx="3" fill="var(--opus)" opacity="0.85"/>
+<rect x="490.0" y="207.4" width="64.0" height="7.6" rx="3" fill="var(--haiku)" opacity="1"/>
+<rect x="490.0" y="152.5" width="64.0" height="53.9" rx="3" fill="var(--sonnet)" opacity="1"/>
+<rect x="490.0" y="13.4" width="64.0" height="138.1" rx="3" fill="var(--opus)" opacity="1"/>
+<rect x="626.6" y="188.5" width="64.0" height="26.5" rx="3" fill="var(--haiku)" opacity="0.85"/>
+<rect x="626.6" y="116.4" width="64.0" height="71.1" rx="3" fill="var(--sonnet)" opacity="0.85"/>
+<rect x="626.6" y="58.1" width="64.0" height="57.4" rx="3" fill="var(--opus)" opacity="0.85"/>
+<rect x="763.1" y="210.8" width="64.0" height="4.2" rx="3" fill="var(--haiku)" opacity="0.85"/>
+<rect x="763.1" y="197.1" width="64.0" height="12.7" rx="3" fill="var(--sonnet)" opacity="0.85"/>
+<rect x="763.1" y="190.2" width="64.0" height="5.9" rx="3" fill="var(--opus)" opacity="0.85"/>
+<rect x="899.7" y="186.8" width="64.0" height="28.2" rx="3" fill="var(--haiku)" opacity="0.85"/>
+<rect x="899.7" y="131.9" width="64.0" height="53.9" rx="3" fill="var(--sonnet)" opacity="0.85"/>
+<rect x="899.7" y="95.8" width="64.0" height="35.0" rx="3" fill="var(--opus)" opacity="0.85"/>
+<g class="tip"><rect x="564.0" y="18" width="190" height="98" rx="8"/><text x="576.0" y="38">Thu 16 Oct · 11.8M tok</text><text x="576.0" y="55" class="dim">Opus 5.5 · 8.1M</text><text x="576.0" y="72" class="dim">Sonnet 5.5 · 3.2M</text><text x="576.0" y="89" class="dim">Haiku 5.5 · 0.5M</text><text x="576.0" y="106">$17.20 API-equivalent</text></g>
+</svg></div>
+      <div class="legend"><span><i style="background:var(--opus)"></i>Opus 5.5</span><span><i style="background:var(--sonnet)"></i>Sonnet 5.5</span><span><i style="background:var(--haiku)"></i>Haiku 5.5</span></div>
+    </section>
+
+    <section class="grid3">
+      <div class="card">
+        <h2>By project <span class="hint">tokens · API-eq.</span></h2>
+        <div class="tw"><table>
+          <tbody>
+            <tr><td class="name">mobile-app<span class="sub2">11 sessions · 132 agents</span></td><td><div class="share"><span class="num">27.4M</span><div class="bar"><i style="width:57%"></i></div></div></td><td class="r num">$36.90</td></tr>
+            <tr><td class="name">agent-orb<span class="sub2">6 sessions · 48 agents</span></td><td><div class="share"><span class="num">12.1M</span><div class="bar"><i style="width:25%"></i></div></div></td><td class="r num">$14.10</td></tr>
+            <tr><td class="name">neodash-v2<span class="sub2">4 sessions · 25 agents</span></td><td><div class="share"><span class="num">6.3M</span><div class="bar"><i style="width:13%"></i></div></div></td><td class="r num">$7.80</td></tr>
+            <tr><td class="name">order-manager<span class="sub2">2 sessions · 9 agents</span></td><td><div class="share"><span class="num">2.4M</span><div class="bar"><i style="width:5%"></i></div></div></td><td class="r num">$2.60</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h2>By model <span class="hint">tokens · API-eq.</span></h2>
+        <div class="tw"><table>
+          <tbody>
+            <tr><td><span class="model opus">Opus 5.5</span><span class="sub2 num" style="display:block;color:var(--muted);font-size:12px;margin-top:4px">61 agents</span></td><td><div class="share"><span class="num">21.7M</span><div class="bar"><i style="width:45%;background:var(--opus)"></i></div></div></td><td class="r num">$44.20</td></tr>
+            <tr><td><span class="model sonnet">Sonnet 5.5</span><span class="sub2 num" style="display:block;color:var(--muted);font-size:12px;margin-top:4px">97 agents</span></td><td><div class="share"><span class="num">19.8M</span><div class="bar"><i style="width:41%;background:var(--sonnet)"></i></div></div></td><td class="r num">$15.60</td></tr>
+            <tr><td><span class="model haiku">Haiku 5.5</span><span class="sub2 num" style="display:block;color:var(--muted);font-size:12px;margin-top:4px">56 agents</span></td><td><div class="share"><span class="num">6.7M</span><div class="bar"><i style="width:14%;background:var(--haiku)"></i></div></div></td><td class="r num">$1.60</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <h2>By role <span class="hint">tokens · API-eq.</span></h2>
+        <div class="tw"><table>
+          <tbody>
+            <tr><td class="name">developer<span class="sub2">implementer, general-purpose · 74</span></td><td><div class="share"><span class="num">17.9M</span><div class="bar"><i style="width:37%"></i></div></div></td><td class="r num">$16.30</td></tr>
+            <tr><td class="name">orchestrator<span class="sub2">main · 23</span></td><td><div class="share"><span class="num">12.6M</span><div class="bar"><i style="width:26%"></i></div></div></td><td class="r num">$24.80</td></tr>
+            <tr><td class="name">reviewer<span class="sub2">adversarial-reviewer · 38</span></td><td><div class="share"><span class="num">9.4M</span><div class="bar"><i style="width:20%"></i></div></div></td><td class="r num">$15.90</td></tr>
+            <tr><td class="name">researcher<span class="sub2">Explore · 51</span></td><td><div class="share"><span class="num">5.1M</span><div class="bar"><i style="width:11%"></i></div></div></td><td class="r num">$1.20</td></tr>
+            <tr><td class="name">tester<span class="sub2">test-runner · 28</span></td><td><div class="share"><span class="num">3.2M</span><div class="bar"><i style="width:7%"></i></div></div></td><td class="r num">$3.20</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <section class="card" aria-label="Efficiency by project">
+      <h2>Efficiency by project <span class="hint">lower is better, except cache share</span></h2>
+      <div class="tw"><table>
+        <thead><tr><th>Project</th><th class="r">Tokens per file changed</th><th class="r">Failed tool calls</th><th class="r">Cache share</th><th class="r d-only">Waiting on you</th><th class="r d-only">Requests</th></tr></thead>
+        <tbody>
+          <tr><td class="name">mobile-app</td><td class="r num">212k <span style="color:var(--muted)">· 129 files</span></td><td class="r num">2.1%</td><td class="r num">95.7%</td><td class="r num d-only">41m</td><td class="r num d-only">1,812</td></tr>
+          <tr><td class="name">agent-orb</td><td class="r num">146k <span style="color:var(--muted)">· 83 files</span></td><td class="r num warn">4.6%</td><td class="r num">93.2%</td><td class="r num d-only">22m</td><td class="r num d-only">904</td></tr>
+          <tr><td class="name">neodash-v2</td><td class="r num">310k <span style="color:var(--muted)">· 20 files</span></td><td class="r num">1.9%</td><td class="r num">91.0%</td><td class="r num d-only">6m</td><td class="r num d-only">388</td></tr>
+          <tr><td class="name">order-manager</td><td class="r num bad">800k <span style="color:var(--muted)">· 3 files</span></td><td class="r num">0.8%</td><td class="r num">88.4%</td><td class="r num d-only">3m</td><td class="r num d-only">131</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <p class="foot">Cost is <b>API-equivalent</b>: what these tokens would cost at API list prices (<span class="mono">pricing.json</span>), not what a plan bills. Cache writes are priced as 5-minute writes; Claude Code's 1-hour writes cost more, so cost reads a little low. “Waiting on you” is the run time of tool calls that went through a permission prompt.</p>
+  </main>
+
+</div>
+</div>
+
+<script>
+  // Mockup controls only.
+  const root = document.documentElement, stage = document.getElementById('stage');
+  document.querySelectorAll('.mock-bar .seg').forEach(seg => seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    if (seg.dataset.group === 'theme') b.dataset.v === 'auto' ? root.removeAttribute('data-theme') : root.setAttribute('data-theme', b.dataset.v);
+    else stage.classList.toggle('phone', b.dataset.v === 'phone');
+  }));
+
+</script>
+</body>
+</html>

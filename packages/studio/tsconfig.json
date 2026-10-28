@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": [
+      "es2023",
+      "dom",
+      "dom.iterable"
+    ],
+    "types": [
+      "vite/client"
+    ]
+  },
+  "include": [
+    "src",
+    "test"
+  ],
+  "exclude": [
+    "dist"
+  ]
+}
