@@ -94,7 +94,7 @@ describe('the Host check', () => {
 });
 
 // #21: the studio-only rule for writes is the app's, not each route's, so a write route added later is covered without anyone adding it.
-describe('writes under /api/ from another site are refused before routing', () => {
+describe('writes from another site are refused before any route runs, /ingest aside', () => {
   const STUDIO_ONLY = 'writes are accepted from the studio only';
   const evil = { origin: 'https://evil.example' };
   const writes: ['PUT' | 'POST', string, object][] = [
@@ -126,6 +126,44 @@ describe('writes under /api/ from another site are refused before routing', () =
     expect(res.statusCode).toBe(200);
     expect(get(store, "SELECT goal_usd FROM projects WHERE id = 'p'")?.goal_usd).toBe(5);
     store.close();
+  });
+
+  it('any write method counts: DELETE to an /api/ path is refused the same way', async () => {
+    const res = await make().inject({ method: 'DELETE', url: '/api/no-such-route', headers: { host: '127.0.0.1:4040', ...evil } });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: STUDIO_ONLY });
+  });
+
+  // The router decodes the path and takes a full URL in the request line down to its path; the rule must see what the router sees.
+  it('an encoded path reaches no write route: PUT /%61pi/goal is refused, and the goal stays unset', async () => {
+    const store = openStore(':memory:');
+    run(store, "INSERT INTO projects (id, name) VALUES ('p', 'mobile-app')");
+    const res = await send(make(undefined, store), '127.0.0.1:4040', { method: 'PUT', url: '/%61pi/goal', headers: evil, payload: { project: 'mobile-app', usd: 7 } });
+    expect(res.statusCode).toBe(403);
+    expect(get(store, "SELECT goal_usd FROM projects WHERE id = 'p'")?.goal_usd).toBeNull();
+    store.close();
+  });
+
+  it('a full URL in the request line reaches no write route: PUT http://evil.example/api/goal is refused, and the goal stays unset', async () => {
+    const store = openStore(':memory:');
+    run(store, "INSERT INTO projects (id, name) VALUES ('p', 'mobile-app')");
+    const app = make(undefined, store);
+    const address = new URL(await app.listen({ host: '127.0.0.1', port: 0 }));
+    const body = JSON.stringify({ project: 'mobile-app', usd: 9 });
+    const reply = await new Promise<string>((resolve, reject) => {
+      const socket = connect({ host: address.hostname, port: Number(address.port) }, () => socket.write(
+        `PUT http://evil.example/api/goal HTTP/1.1\r\nHost: 127.0.0.1:${address.port}\r\nOrigin: https://evil.example\r\nContent-Type: application/json\r\nContent-Length: ${body.length}\r\nConnection: close\r\n\r\n${body}`));
+      let got = '';
+      socket.on('data', (d) => (got += d)).on('end', () => resolve(got)).on('error', reject);
+    });
+    expect(reply).toMatch(/^HTTP\/1\.1 403 /);
+    expect(get(store, "SELECT goal_usd FROM projects WHERE id = 'p'")?.goal_usd).toBeNull();
+    store.close();
+  });
+
+  it('/ingest is the one write outside the rule, however its path is spelled: POST /%69ngest with the token is taken', async () => {
+    const res = await send(make(), '127.0.0.1:4040', { method: 'POST', url: '/%69ngest', payload: { events: [] }, headers: { ...evil, authorization: `Bearer ${TOKEN}` } });
+    expect(res.statusCode).toBe(200);
   });
 
   it('a read is not a write: GET /api/projects with another site\'s Origin answers', async () => {

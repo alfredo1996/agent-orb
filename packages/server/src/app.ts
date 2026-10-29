@@ -27,7 +27,9 @@ const hostName = (host: string) => host.trim().toLowerCase().replace(/:\d*$/, ''
 
 /**
  * The studio is served from this origin, and a browser sends a page's Origin with every write. So a write that carries another Origin
- * comes from another site's page, and is refused (#21: here, for every write under /api/, so a route added later can't forget it).
+ * comes from another site's page, and is refused (#21: here, once, so a route added later can't forget it). The rule reads the route the
+ * router matched, never the raw URL: the router decodes the path (/%61pi/goal is /api/goal) and takes a full URL in the request line down
+ * to its path. Every write is covered but POST /ingest, which the plugin's token decides.
  * A request with no Origin, any other process on this machine, passes: #13 decides that one.
  */
 const foreign = (req: FastifyRequest) => {
@@ -46,7 +48,7 @@ export function buildApp({ store = openStore(':memory:'), token, logger = false,
     reply.raw.setHeader('content-security-policy', "frame-ancestors 'none'");
     reply.raw.setHeader('x-content-type-options', 'nosniff');
     if (!hosts.has(hostName(req.headers.host ?? ''))) return reply.code(403).send({ error: 'this server answers to 127.0.0.1, localhost and [::1] only; add a name to ORB_ALLOWED_HOSTS to serve it under another' });
-    if (!READS.has(req.method) && req.url.startsWith('/api/') && foreign(req)) return reply.code(403).send({ error: 'writes are accepted from the studio only' });
+    if (!READS.has(req.method) && req.routeOptions.url !== '/ingest' && foreign(req)) return reply.code(403).send({ error: 'writes are accepted from the studio only' });
   });
 
   // Healthy while the history store answers a query (one that reads a table, so a closed or unreadable file fails it).
