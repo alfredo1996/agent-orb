@@ -159,6 +159,15 @@ describe('analysis, with a key (a stand-in Claude)', () => {
     expect(calls).toEqual({ count: [], run: [] });
   });
 
+  it('another site\'s page cannot run an estimate the studio made: nothing is sent (#21)', async () => {
+    fresh(standIn(calls));
+    const e = await send('POST', '/api/analysis/estimate', { ...week, model: 'claude-opus-5-5' });
+    expect(e.body).toMatchObject({ allowed: true });
+    const r = await send('POST', '/api/analysis/run', { estimate: e.body.id }, { origin: 'https://evil.example' });
+    expect(r.status).toBe(403);
+    expect(calls.run).toEqual([]);
+  });
+
   it('an API refusal (a real one, 2026-10-21: a key with no workspace) is a clear message, and nothing is recorded or spent', async () => {
     const workspace = 'This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header.';
     fresh({ count: async () => { throw new ClaudeError(400, workspace); }, run: async () => { throw new ClaudeError(400, workspace); } });
