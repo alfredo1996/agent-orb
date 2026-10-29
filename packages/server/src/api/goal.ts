@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { all, get, run, type Store } from '../store/store.ts';
 import { zone } from './ledger.ts';
 import { dayOf, monthBounds } from './local-time.ts';
-import { foreign } from './pipeline.ts';
 
 // v0.2 slice 3 (PROJECT.md §15, 2026-10-24): the monthly goal, in API-equivalent dollars per project. Nothing is ever stopped.
 //   GET /api/goal?project=<name>&tz=<IANA>  the goal (null when none), what the month has spent so far in that zone, and whether that is a floor
@@ -31,7 +30,6 @@ export function goal(app: FastifyInstance, { store, now = Date.now }: { store: S
   });
 
   app.put('/api/goal', async (req, reply) => {
-    if (foreign(req)) return reply.code(403).send({ error: 'the goal is changed from the studio only' });
     const b = Put.safeParse(req.body);
     if (!b.success) return reply.code(400).send({ error: 'give a project, and usd: a number of dollars above 0 and at most 1,000,000, or null to clear it', issues: b.error.issues });
     const { changes } = run(store, 'UPDATE projects SET goal_usd = :usd WHERE name = :project', b.data);

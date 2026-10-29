@@ -4,7 +4,6 @@ import type { AnalysisStore, Cuts, Sizes } from '../analysis-store.ts';
 import { all, run, type Store } from '../store/store.ts';
 import { WINDOW_MS, zone } from './ledger.ts';
 import { localDate, monthBounds } from './local-time.ts';
-import { foreign } from './pipeline.ts';
 
 // Worth (v0.3 slice 2, #42; PROJECT.md §15, 2026-10-25): is it paying off? The owner's rate, plan price and PR sizes against what the logs measured.
 //   GET /api/worth?project=<name>&month=YYYY-MM&tz=<IANA>  the month's attention, hours by hand, value and return (§6, "Worth")
@@ -133,7 +132,6 @@ export function worth(app: FastifyInstance, { store, reports }: { store: Store; 
   });
 
   app.put('/api/worth/settings', async (req, reply) => {
-    if (foreign(req)) return reply.code(403).send({ error: 'Worth is set from the studio only' });
     const b = Settings.safeParse(req.body);
     if (!b.success) return reply.code(400).send({ error: 'rate: dollars an hour above 0; plan: dollars a month, 0 or more; sizes: hours above 0 for S, M, L or XL; cuts: the score each of S, M and L is below, going up; null clears a rate or a plan', issues: b.error.issues });
     // The cut points must go up, judged on the result (moving M alone below S is as wrong as sending both): a refused body changes nothing.
@@ -143,7 +141,6 @@ export function worth(app: FastifyInstance, { store, reports }: { store: Store; 
   });
 
   app.put('/api/worth/size', async (req, reply) => {
-    if (foreign(req)) return reply.code(403).send({ error: 'a size is set from the studio only' });
     const b = Size.safeParse(req.body);
     if (!b.success) return reply.code(400).send({ error: 'give a project, a PR number, and size: S, M, L, XL, skip, or null to take it back', issues: b.error.issues });
     // On the project's merged PR (a PR only a session mentioned is not one): every project row with the name, like a goal.
