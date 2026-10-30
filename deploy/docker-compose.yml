@@ -10,9 +10,9 @@ services:
     build:
       context: ..
       dockerfile: packages/server/Dockerfile
-    # The release tag; .github/workflows/release.yml publishes it. 0.3.0 since Neo4j left: a machine that still has the Neo4j-era 0.2.0 image
-    # would otherwise start it and fail looking for Neo4j. Until 0.3.0 is published, `up -d` finds no such image and builds from the clone.
-    image: ghcr.io/alfredo1996/agent-orb-server:0.3.0
+    # The release tag; .github/workflows/release.yml publishes it. At least 0.3.0 since Neo4j left: a machine that still has the Neo4j-era 0.2.0 image
+    # would otherwise start it and fail looking for Neo4j. Until this tag is published, `up -d` finds no such image and builds from the clone.
+    image: ghcr.io/alfredo1996/agent-orb-server:0.3.1
     environment:
       ORB_TOKEN: ${ORB_TOKEN:?set ORB_TOKEN in deploy/.env}
       # Only if you reach the studio under another name than 127.0.0.1, localhost or [::1]: comma-separated names (any port).
