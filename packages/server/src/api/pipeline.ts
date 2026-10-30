@@ -1,5 +1,5 @@
 import { ROLE_INFO, ROLES, types, type Role } from '@agent-orb/shared';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { all, each, get, run, type Store } from '../store/store.ts';
 import { Range, SCOPE, spend, TOKENS } from './skills.ts';
@@ -13,15 +13,6 @@ const Fix = z.discriminatedUnion('scope', [
   z.object({ scope: z.literal('type'), project: z.string().min(1), agent_type: z.string().min(1), role: ROLE }),
   z.object({ scope: z.literal('agent'), agent_id: z.string().min(1), role: ROLE }),
 ]);
-
-/**
- * The studio is served from this origin, and the server listens on 127.0.0.1 only (§9). A write coming from any
- * other site's page (a browser sends its Origin) is refused, so a page elsewhere cannot rewrite roles.
- */
-export const foreign = (req: FastifyRequest) => {
-  const origin = req.headers.origin;
-  return origin !== undefined && origin !== `http://${req.headers.host}`;
-};
 
 // The agents in scope (the session, or those that started in the period; skills.ts's SCOPE), each with its parent's role: one row per agent, the parent
 // by key. `spend` is what each one's own requests came to.
@@ -98,7 +89,6 @@ export function pipeline(app: FastifyInstance, { store }: { store: Store }) {
   });
 
   app.put('/api/roles', async (req, reply) => {
-    if (foreign(req)) return reply.code(403).send({ error: 'role changes are accepted from the studio only' });
     const f = Fix.safeParse(req.body);
     if (!f.success) return reply.code(400).send({ error: 'scope "type" needs project, agent_type and role; scope "agent" needs agent_id and role', issues: f.error.issues });
     if (f.data.scope === 'agent') {

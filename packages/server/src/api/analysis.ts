@@ -7,7 +7,6 @@ import type { AnalysisStore } from '../analysis-store.ts';
 import type { ContentStore } from '../content-store.ts';
 import { costUsd } from '../cost.ts';
 import { all, type Store } from '../store/store.ts';
-import { foreign } from './pipeline.ts';
 import { loadSkills, SCOPE } from './skills.ts';
 
 // Slice 7 (PROJECT.md §15, 2026-10-21): Claude reads a project's week and suggests changes, run by hand only.
@@ -124,7 +123,6 @@ export function analysis(app: FastifyInstance, { store: history, content, report
   });
 
   app.post('/api/analysis/estimate', async (req, reply) => {
-    if (foreign(req)) return reply.code(403).send({ error: 'analyses are started from the studio only' });
     const body = Scope.and(z.object({ model: ModelParam })).safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'give a project, a model, and a session or from and to' });
     if (!claude) return reply.code(409).send(noKey);
@@ -146,7 +144,6 @@ export function analysis(app: FastifyInstance, { store: history, content, report
   });
 
   app.post('/api/analysis/run', async (req, reply) => {
-    if (foreign(req)) return reply.code(403).send({ error: 'analyses are started from the studio only' });
     const body = z.object({ estimate: z.string().min(1) }).safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'give the estimate to run' });
     if (!claude) return reply.code(409).send(noKey);
@@ -175,7 +172,6 @@ export function analysis(app: FastifyInstance, { store: history, content, report
   });
 
   app.put('/api/analysis/cap', async (req, reply) => {
-    if (foreign(req)) return reply.code(403).send({ error: 'the cap is changed from the studio only' });
     const b = z.object({ usd: z.number().positive().max(1000) }).safeParse(req.body);
     if (!b.success) return reply.code(400).send({ error: 'the cap is a number of dollars, above 0 and at most 1000' });
     store.setCap(b.data.usd);
