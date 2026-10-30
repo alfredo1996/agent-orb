@@ -11,7 +11,7 @@
       "name": "agent-orb",
       "source": "./packages/mod",
       "description": "Records what your Claude Code agents do (tools, tokens, models, delegations) and sends it to your own agent-orb server",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "license": "MIT"
     }
   ]
