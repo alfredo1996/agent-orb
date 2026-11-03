@@ -12,7 +12,7 @@ const HEAD = 'e4f5a6b'.padEnd(40, '1');
 const NEW_HEAD = '9c8d7e6'.padEnd(40, '2');
 
 const pr = (over: Partial<PrState> = {}): PrState => ({
-  headOid: HEAD, mergeState: 'CLEAN', lastCommitAt: T0, checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: T0 - MIN }], ...over,
+  headOid: HEAD, mergeState: 'CLEAN', lastCommitAt: T0, checks: [{ name: 'Unit tests', state: 'pass', ci: true }], bots: [{ author: 'coderabbitai', at: T0 - MIN }], ...over,
 });
 const none = { findings: [{ severity: 'major', fate: 'fixed' as const }, { severity: 'minor', fate: 'dismissed' as const }], dropped: 0 };
 
@@ -46,6 +46,17 @@ describe('ready(): all four conditions, and nothing less', () => {
   it('2. a failed check: not ready, whatever the orb-gate says', () => {
     const r = ready(pr({ checks: [{ name: 'Unit tests', state: 'pass' }, { name: 'Lint', state: 'fail' }, { name: 'E2E', state: 'fail' }] }), none, { result: 'pass' });
     expect([r.ready, r.conditions.gate]).toEqual([false, { ok: false, note: 'Lint and 1 more failed' }]);
+  });
+
+  it('2. a tester\'s fail on this head is a no, even with CI green', () => {
+    expect(ready(pr(), none, { result: 'fail' }).conditions.gate).toEqual({ ok: false, note: 'orb-gate failed on e4f5a6b' });
+  });
+
+  it('2. checks that are no CI workflow\'s (CodeRabbit, Sonar) do not stand for the gate: the orb-gate is still asked', () => {
+    const bots = pr({ checks: [{ name: 'CodeRabbit', state: 'pass' }, { name: 'SonarCloud Code Analysis', state: 'pass' }] });
+    expect(ready(bots, none, undefined)).toMatchObject({ ready: false, conditions: { gate: { ok: null, note: 'No gate report on e4f5a6b' } } });
+    expect(ready(bots, none, { result: 'pass' }).ready).toBe(true);
+    expect(ready(pr({ checks: [{ name: 'SonarCloud Code Analysis', state: 'fail' }] }), none, { result: 'pass' }).conditions.gate).toEqual({ ok: false, note: 'SonarCloud Code Analysis failed' }); // a failed quality gate
   });
 
   it('2. a check still running is unknown', () => {
@@ -92,8 +103,10 @@ const read = (ts: number, prs: object[]) => ev(ts, 'project.open_prs', { prs });
 const open416 = (over: object = {}) => ({ number: 416, head: 'fix/409-token-retry', head_oid: HEAD, merge_state: 'CLEAN', last_commit_at: T0, checks: [], bots: [], ...over });
 
 let app: ReturnType<typeof buildApp>;
+let NOW = T0 + 8 * MIN; // the server's clock, moved by a test
 beforeEach(() => {
-  app = buildApp({ token: TOKEN });
+  NOW = T0 + 8 * MIN;
+  app = buildApp({ token: TOKEN, now: () => NOW });
 });
 const send = async (...events: Event[]) => {
   const r = await app.inject({ method: 'POST', url: '/ingest', headers: { authorization: `Bearer ${TOKEN}` }, payload: { events } });
@@ -136,6 +149,25 @@ describe('GET /api/factory', () => {
     expect(await the416()).toMatchObject({ ready: false, headOid: NEW_HEAD, reason: 'No gate report on 9c8d7e6' });
     await send(gate(T0 + 7 * MIN, 'pass', NEW_HEAD));
     expect((await the416()).ready).toBe(true);
+  });
+
+  it('a line a report dropped keeps the findings not known until a reviewer reports again with none dropped: a developer\'s clean report is not enough', async () => {
+    const spawn = (agent: string, role: string) => ev(T0, 'agent.spawn', { tool_use_id: `toolu_${agent}`, agent_type: role, model: 'claude-sonnet-5-5', prompt_length: 1, declared_role: role }, { agent_id: agent });
+    const by = (agent: string, ts: number, dropped: number) => ev(ts, 'findings.report', { branch: 'fix/409-token-retry', findings: [], dropped }, { agent_id: agent, turn_id: `t-${agent}-${ts}` });
+    await send(read(T0 + MIN, [open416()]), gate(T0 + MIN, 'pass', HEAD), spawn('a-rev', 'reviewer'), spawn('a-dev', 'developer'), by('a-rev', T0 + 2 * MIN, 1));
+    expect((await the416()).conditions.findings).toEqual({ ok: null, note: '1 line of the last report didn\'t parse' });
+    await send(by('a-dev', T0 + 3 * MIN, 0));
+    expect((await the416()).conditions.findings.ok).toBe(null);
+    await send(by('a-rev', T0 + 4 * MIN, 0));
+    expect((await the416()).ready).toBe(true);
+  });
+
+  it('data older than 10 minutes is never ready: it says when it was', async () => {
+    await send(read(T0 + MIN, [open416()]), findings(T0 + MIN, []), gate(T0 + MIN, 'pass', HEAD));
+    NOW = T0 + 11 * MIN;
+    expect((await the416()).ready).toBe(true);
+    NOW = T0 + 12 * MIN;
+    expect(await the416()).toMatchObject({ ready: false, reason: 'Was ready when GitHub was last read, 11 min ago' });
   });
 
   it('a gate on another project\'s commit, or another branch\'s findings, count for nothing here', async () => {

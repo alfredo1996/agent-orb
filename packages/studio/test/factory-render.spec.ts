@@ -53,6 +53,12 @@ describe('Needs you', () => {
     expect(rows(needs([p]))[0]).toBe('Blocked PR #414 feat/407-compress UNSTABLE: a check is not passing c0d1e2f See checks');
   });
 
+  it('a PR that was ready when GitHub was last read, and is old now, is Not known, with the server\'s reason', () => {
+    const was = { ...P418, ready: false, reason: 'Was ready when GitHub was last read, 47 min ago' };
+    expect(rows(needs([was]))[0]).toBe('Not known PR #418 feat/412-queue Was ready when GitHub was last read, 47 min ago · 1 dismissed: read it before merging a1b2c3d See checks');
+    expect(plain(sheet(was))).toContain('PR #418 Not known');
+  });
+
   it('nothing open says "Nothing needs you." and the card stays', () => {
     expect(plain(needs([]))).toBe('Needs you Nothing needs you.');
   });

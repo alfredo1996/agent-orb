@@ -52,6 +52,24 @@ describe('parseFindings', () => {
     expect(parseFindings('```orb-gate\npass a1b2c3d\n```')).toBeUndefined();
   });
 
+  it('a block left open runs to the end of the report, and an indented one counts: a missed block would read as no report at all', () => {
+    expect(parseFindings('Done.\n```orb-findings\nF20 major a.ts open\nF21 minor b.ts fixed\n')).toEqual({ dropped: 0, findings: [
+      { id: 'F20', severity: 'major', file: 'a.ts', fate: 'open' }, { id: 'F21', severity: 'minor', file: 'b.ts', fate: 'fixed' }] });
+    expect(parseFindings('1. Report:\n   ```orb-findings\n   F20 major a.ts open\n   ```\n')!.findings).toEqual([{ id: 'F20', severity: 'major', file: 'a.ts', fate: 'open' }]);
+    expect(parseFindings('Say `orb-findings` here, but no block')).toBeUndefined();
+  });
+
+  it('a file is masked like content, since it is the agent\'s own text', () => {
+    expect(parseFindings('```orb-findings\nF1 major https://x:hunter2secret@host/a.ts open\n```')!.findings[0]!.file).toBe('https://x:[REDACTED]@host/a.ts');
+  });
+
+  it('an unclosed opener repeated many times stays linear', () => {
+    const big = `${'```orb-findings\nnot a finding\n'.repeat(20_000)}`;
+    const t = performance.now();
+    expect(parseFindings(big)).toEqual({ dropped: 1, findings: [] });
+    expect(performance.now() - t).toBeLessThan(1_000);
+  });
+
   it('the last block counts: a report that quotes an earlier one ends with its own', () => {
     const r = parseFindings('Round 1 said:\n```orb-findings\nF1 major a.ts open\n```\nNow:\n```orb-findings\nF1 major a.ts fixed\n```\n');
     expect(r!.findings).toEqual([{ id: 'F1', severity: 'major', file: 'a.ts', fate: 'fixed' }]);
@@ -83,7 +101,7 @@ const OPEN = JSON.stringify([
   {
     number: 416, headRefName: 'fix/409-token-retry', headRefOid: HEAD, mergeStateStatus: 'UNSTABLE', mergeable: 'MERGEABLE', title: 'Retry after an expired token', body: 'Closes #409',
     statusCheckRollup: [
-      { __typename: 'CheckRun', name: 'Unit tests', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: 'https://ci/1' },
+      { __typename: 'CheckRun', name: 'Unit tests', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: 'https://ci/1', workflowName: 'CI' },
       { __typename: 'CheckRun', name: 'E2E', status: 'IN_PROGRESS', conclusion: '' },
       { __typename: 'CheckRun', name: 'Lint', status: 'COMPLETED', conclusion: 'FAILURE' },
       { __typename: 'CheckRun', name: 'Docs', status: 'COMPLETED', conclusion: 'SKIPPED' },
@@ -106,8 +124,8 @@ const OPEN = JSON.stringify([
 ]);
 
 describe('the open-PR read', () => {
-  it('asks gh for the open PRs with the fields ready() needs, and the commits for the head\'s time', () => {
-    expect(openPrsArgv).toEqual(['gh', 'pr', 'list', '--state', 'open', '--limit', '100', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits']);
+  it('asks gh for at most 40 open PRs with the fields ready() needs, and the commits for the head\'s time: 50 passes GitHub\'s 500,000-node limit, and gh fails', () => {
+    expect(openPrsArgv).toEqual(['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits']);
   });
 
   it('keeps numbers, the branch, the head, the merge state, each check\'s name and result, and each bot\'s latest comment time: never a comment\'s text', () => {
@@ -115,7 +133,7 @@ describe('the open-PR read', () => {
     expect(prs).toEqual([
       {
         number: 416, head: 'fix/409-token-retry', head_oid: HEAD, merge_state: 'UNSTABLE', last_commit_at: Date.parse('2026-11-01T15:04:42Z'),
-        checks: [{ name: 'Unit tests', state: 'pass' }, { name: 'E2E', state: 'pending' }, { name: 'Lint', state: 'fail' }, { name: 'Docs', state: 'pass' }, { name: 'SonarCloud Code Analysis', state: 'pass' }, { name: 'coverage', state: 'pending' }],
+        checks: [{ name: 'Unit tests', state: 'pass', ci: true }, { name: 'E2E', state: 'pending' }, { name: 'Lint', state: 'fail' }, { name: 'Docs', state: 'pass' }, { name: 'SonarCloud Code Analysis', state: 'pass' }, { name: 'coverage', state: 'pending' }],
         bots: [{ author: 'coderabbitai', at: Date.parse('2026-11-01T15:40:00Z') }, { author: 'sonarqubecloud', at: Date.parse('2026-11-01T15:23:10Z') }, { author: 'dependabot[bot]', at: Date.parse('2026-11-01T15:30:00Z') }],
       },
       { number: 405, head: 'feat/403-banner', head_oid: 'c0d1e2f'.padEnd(40, '2'), merge_state: 'CLEAN', checks: [], bots: [] }, // no commit listed for the head: its time is unknown
@@ -126,13 +144,13 @@ describe('the open-PR read', () => {
   });
 
   it('a read fits one request: at most 250,000 characters of JSON, the PRs past it left out (gh lists the newest first)', () => {
-    const many = Array.from({ length: 100 }, (_, i) => ({
+    const many = Array.from({ length: 40 }, (_, i) => ({
       number: 1000 - i, headRefName: `feat/${'b'.repeat(190)}`, headRefOid: 'a'.repeat(40), mergeStateStatus: 'CLEAN', comments: [], reviews: [], commits: [],
       statusCheckRollup: Array.from({ length: 200 }, (_, k) => ({ __typename: 'CheckRun', name: `${'c'.repeat(190)}${k}`, status: 'COMPLETED', conclusion: 'SUCCESS' })),
     }));
     const prs = parseOpenPrs(JSON.stringify(many))!;
     expect(prs.length).toBeGreaterThan(0);
-    expect(prs.length).toBeLessThan(100);
+    expect(prs.length).toBeLessThan(40);
     expect(prs.map((p) => p.number)).toEqual(Array.from({ length: prs.length }, (_, i) => 1000 - i));
     expect(JSON.stringify(prs).length).toBeLessThanOrEqual(250_000);
     expect(JSON.stringify(build.projectOpenPrs(ctx, prs)).length).toBeLessThan(1_000_000 / 3); // UTF-8 at most 3 bytes a character: under the server's 1 MB
@@ -150,7 +168,8 @@ describe('the open-PR read', () => {
   });
 
   it('a bot is a login ending in [bot] or -bot, or one of the review and quality bots gh names bare', () => {
-    expect(['coderabbitai', 'sonarqubecloud', 'github-actions', 'renovate[bot]', 'dependabot', 'CodeRabbitAI', 'release-bot'].map(isBot)).toEqual([true, true, true, true, true, true, true]);
+    expect(['coderabbitai', 'sonarqubecloud', 'github-actions', 'renovate[bot]', 'dependabot', 'CodeRabbitAI', 'release-bot', 'gemini-code-assist', 'greptile-apps', 'chatgpt-codex-connector'].map(isBot))
+      .toEqual([true, true, true, true, true, true, true, true, true, true]);
     expect(['owner-person', 'robotics-fan', 'talbot', 'alfredo1996'].map(isBot)).toEqual([false, false, false, false]);
   });
 });

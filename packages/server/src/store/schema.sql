@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS open_prs (
 ) WITHOUT ROWID;
 -- One finding per project, branch and id, as reviewers and developers reported it (findings.report): the latest report wins, across rounds, and a finding no later
 -- report names keeps its fate. A title and a dismissal's reason are text: the text store holds them (node 'finding', id `project|branch|id`), with Content on full only.
--- finding_reports is the last report a branch had (an empty one says "nothing found") and how many of its lines did not parse.
+-- finding_reports is the last report a branch had (an empty one says "nothing found") and how many lines did not parse, kept until a reviewer's report drops none.
 CREATE TABLE IF NOT EXISTS findings (
   project_id TEXT NOT NULL, branch TEXT NOT NULL, id TEXT NOT NULL, severity TEXT NOT NULL, file TEXT NOT NULL, fate TEXT NOT NULL, ts INTEGER NOT NULL,
   PRIMARY KEY (project_id, branch, id)

@@ -207,7 +207,8 @@ export const Event = z.discriminatedUnion('kind', [
       head_oid: BLOB,
       merge_state: z.string().regex(/^[A-Z_]{1,40}$/),
       last_commit_at: z.number().int().positive().optional(),
-      checks: z.array(z.object({ name: id.max(200), state: z.enum(['pass', 'fail', 'pending']) })).max(200),
+      // ci: a GitHub Actions workflow's check (it names its workflow); an app's check (CodeRabbit, Sonar) has none
+      checks: z.array(z.object({ name: id.max(200), state: z.enum(['pass', 'fail', 'pending']), ci: z.literal(true).optional() })).max(200),
       bots: z.array(z.object({ author: id.max(100), at: z.number().int().positive() })).max(50),
     })).max(100),
   }) }),

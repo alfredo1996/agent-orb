@@ -23,12 +23,12 @@ const short = (oid: string) => oid.slice(0, 7);
 const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 const CONDITIONS = [['findings', 'No finding is open'], ['gate', 'The gate passed on this head'], ['bots', 'No bot comment is newer than the last commit'], ['clean', 'Merge state is CLEAN']] as const;
 
-/** The state a PR shows: from the first condition that does not hold, as its reason is. */
+/** The state a PR shows: from the first condition that does not hold, as its reason is. All four holding on data too old to trust (the server's call) is not known. */
 function stateOf(p: FactoryPr): { tone: 'working' | 'stalled' | 'waiting'; label: string } {
   if (p.ready) return { tone: 'working', label: 'Ready' };
-  const [key, c] = Object.entries(p.conditions).find(([, c]) => c.ok !== true)!;
-  if (c.ok === null) return { tone: 'waiting', label: 'Not known' };
-  return { tone: 'stalled', label: key === 'findings' ? 'Open findings' : 'Blocked' };
+  const first = Object.entries(p.conditions).find(([, c]) => c.ok !== true);
+  if (!first || first[1].ok === null) return { tone: 'waiting', label: 'Not known' };
+  return { tone: 'stalled', label: first[0] === 'findings' ? 'Open findings' : 'Blocked' };
 }
 
 export const ageText = (readAt: number, now: number) => {
@@ -179,6 +179,9 @@ export function Factory({ now }: { now: number }) {
     setPicked(undefined);
     opener.current?.focus();
   };
+  useEffect(() => {
+    if (picked !== undefined && shown && !pr) close(); // the PR left with a fresh read (merged, closed): focus goes back, not to the body
+  }, [shown, picked]);
   return (
     <main className="factory">
       <PageHeader title="Factory" sub="What's blocked, and what's ready for your ok" views={shown ? <Asof readAt={shown.readAt} now={now} /> : <span />} project={<ProjectSelect one />} />

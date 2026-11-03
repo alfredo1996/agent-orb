@@ -230,10 +230,15 @@ function writeRows(db: Store, ev: Event[], source: Source) {
       { project, number: p.number, head: p.head, oid: p.head_oid, state: p.merge_state, at: p.last_commit_at, checks: JSON.stringify(p.checks), bots: JSON.stringify(p.bots) });
     }
   }
+  // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it
+  // handled, not what the review found. The role is the reporting agent's, from its spawn.
   for (const e of only(ev, 'findings.report')) {
     const key = { project: projectId(e), branch: e.data.branch, ts: e.ts };
+    const reviewer = get(db, 'SELECT role FROM agents WHERE id = :id', { id: agentKey(e) })?.role === 'reviewer';
     run(db, `INSERT INTO finding_reports (project_id, branch, ts, dropped) VALUES (:project, :branch, :ts, :dropped)
-             ON CONFLICT (project_id, branch) DO UPDATE SET ts = excluded.ts, dropped = excluded.dropped WHERE excluded.ts >= finding_reports.ts`, { ...key, dropped: e.data.dropped });
+             ON CONFLICT (project_id, branch) DO UPDATE SET ts = excluded.ts,
+               dropped = CASE WHEN :reviewer THEN excluded.dropped ELSE max(finding_reports.dropped, excluded.dropped) END WHERE excluded.ts >= finding_reports.ts`,
+    { ...key, dropped: e.data.dropped, reviewer });
     for (const f of e.data.findings) {
       run(db, `INSERT INTO findings (project_id, branch, id, severity, file, fate, ts) VALUES (:project, :branch, :id, :severity, :file, :fate, :ts)
                ON CONFLICT (project_id, branch, id) DO UPDATE SET severity = excluded.severity, file = excluded.file, fate = excluded.fate, ts = excluded.ts WHERE excluded.ts >= findings.ts`,

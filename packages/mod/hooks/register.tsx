@@ -40,7 +40,7 @@ let contentSetting = 'off'
 let excludeList = ''
 // off | full | excluded, decided at session start from the setting and the project (§15, 2026-10-20)
 let contentMode: ContentMode = 'off'
-let excluded = false // the project is in excludeProjects: it sends no findings or gate blocks (#27), whatever Content is set to
+let excluded = true // the project is in excludeProjects: it sends no findings or gate blocks (#27), whatever Content is set to; closed until start() has decided
 const text = (s: string | undefined) => (contentMode === 'full' && s ? capText(mask(s)) : undefined)
 
 let ctx: Ctx | undefined

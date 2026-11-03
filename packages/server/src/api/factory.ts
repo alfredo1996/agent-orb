@@ -8,7 +8,7 @@ import { all, get, type Store } from '../store/store.ts';
 //   GET /api/factory?project=<name>  the open PRs as last read, each with ready(), its four conditions and its findings (latest fate each), and when GitHub was read
 // Ready means ready for the owner's ok: nothing here merges, and nothing reaches the machine.
 
-export type Check = { name: string; state: 'pass' | 'fail' | 'pending' };
+export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };
 export type PrState = { headOid: string; mergeState: string; lastCommitAt?: number; checks: Check[]; bots: { author: string; at: number }[] };
 /** A branch's findings, the latest fate each, and how many lines its last report dropped; undefined when no report reached the branch. */
 export type Ledger = { findings: { severity: string; fate: Fate }[]; dropped: number } | undefined;
@@ -41,20 +41,19 @@ function findingsCond(l: Ledger): Cond {
 }
 
 /**
- * The gate on the head: GitHub's checks when CI runs (any check at all), otherwise the tester's orb-gate on that commit. A quality gate (Sonar) is a check, so a failing
- * one is a failed check here, which is condition 3's "every quality-gate check passed" too.
- * ponytail: a repo whose only checks are bots' (no CI) reads as CI, and its orb-gate is not asked; split checks by name if that is ever seen.
+ * The gate on the head: GitHub's checks when CI runs, otherwise the tester's orb-gate on that commit. CI is a check of a GitHub Actions workflow (`ci`); an app's check
+ * (CodeRabbit, Sonar) is no CI, so with only those the orb-gate is still asked. Any check that failed is a no, and a quality gate (Sonar) is a check, which is condition 3's
+ * "every quality-gate check passed" too; a tester's fail on this head is a no whatever CI says.
+ * ponytail: CI that is not Actions (a StatusContext from another service) is not CI here, so such a repo needs the orb-gate too: the safe way round.
  */
 function gateCond(pr: PrState, gate: { result: 'pass' | 'fail' } | undefined): Cond {
-  if (pr.checks.length) {
-    const failed = pr.checks.filter((c) => c.state === 'fail').map((c) => c.name);
-    if (failed.length) return { ok: false, note: `${andMore(failed)} failed` };
-    const running = pr.checks.filter((c) => c.state === 'pending').map((c) => c.name);
-    if (running.length) return { ok: null, note: `${andMore(running)} is running` };
-    return { ok: true, note: `${plural(pr.checks.length, 'check')} passed` };
-  }
-  if (!gate) return { ok: null, note: `No gate report on ${short(pr.headOid)}` };
-  return gate.result === 'pass' ? { ok: true, note: `orb-gate passed on ${short(pr.headOid)}` } : { ok: false, note: `orb-gate failed on ${short(pr.headOid)}` };
+  const failed = pr.checks.filter((c) => c.state === 'fail').map((c) => c.name);
+  if (failed.length) return { ok: false, note: `${andMore(failed)} failed` };
+  if (gate?.result === 'fail') return { ok: false, note: `orb-gate failed on ${short(pr.headOid)}` };
+  const running = pr.checks.filter((c) => c.state === 'pending').map((c) => c.name);
+  if (running.length) return { ok: null, note: `${andMore(running)} is running` };
+  if (pr.checks.some((c) => c.ci)) return { ok: true, note: `${plural(pr.checks.length, 'check')} passed` };
+  return gate ? { ok: true, note: `orb-gate passed on ${short(pr.headOid)}` } : { ok: null, note: `No gate report on ${short(pr.headOid)}` };
 }
 
 function botsCond(pr: PrState): Cond {
@@ -82,8 +81,9 @@ export function ready(pr: PrState, ledger: Ledger, gate: { result: 'pass' | 'fai
 
 const FATE_ORDER: Fate[] = ['open', 'dismissed', 'fixed']; // the sheet's order: what blocks, what you read before merging, what was done
 const Query = z.object({ project: z.string().min(1) });
+const STALE_MS = 10 * 60_000; // two reads missed (the plugin reads every 5 minutes): no session reads this repo now, and the merge refusal (#31) stops trusting it too
 
-export function factory(app: FastifyInstance, { store, content }: { store: Store; content: ContentStore }) {
+export function factory(app: FastifyInstance, { store, content, now = Date.now }: { store: Store; content: ContentStore; now?: () => number }) {
   app.get('/api/factory', async (req, reply) => {
     const q = Query.safeParse(req.query);
     if (!q.success) return reply.code(400).send({ error: 'give a project', issues: q.error.issues });
@@ -104,7 +104,10 @@ export function factory(app: FastifyInstance, { store, content }: { store: Store
           return { id: f.id, severity: f.severity, file: f.file, fate: f.fate, ...(t?.title ? { title: t.title } : {}), ...(f.fate === 'dismissed' && t?.why ? { why: t.why } : {}) };
         });
       const ledger: Ledger = report ? { findings: list as { severity: string; fate: Fate }[], dropped: report.dropped } : undefined;
-      return { number: r.number as number, head: (r.head ?? null) as string | null, headOid: r.head_oid as string, ...ready(pr, ledger, gate as { result: 'pass' | 'fail' } | undefined), findings, dropped: report?.dropped ?? 0 };
+      let verdict = ready(pr, ledger, gate as { result: 'pass' | 'fail' } | undefined);
+      // Old data is never "ready": a PR can have moved since. Its conditions still show as they were read.
+      if (verdict.ready && readAt !== null && now() - readAt > STALE_MS) verdict = { ...verdict, ready: false, reason: `Was ready when GitHub was last read, ${Math.floor((now() - readAt) / 60_000)} min ago` };
+      return { number: r.number as number, head: (r.head ?? null) as string | null, headOid: r.head_oid as string, ...verdict, findings, dropped: report?.dropped ?? 0 };
     });
     // Not ready first (they need you), then the newest PR.
     return { project, readAt, prs: prs.toSorted((a, b) => Number(a.ready) - Number(b.ready) || b.number - a.number) };

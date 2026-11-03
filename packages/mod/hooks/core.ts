@@ -572,11 +572,17 @@ const FINDINGS_MAX = 500;
 const FINDING = /^([A-Za-z0-9][\w.#-]{0,39}) ([a-z]{1,20}) (\S{1,300}) (fixed|dismissed|open)$/;
 const GATE = /^(pass|fail) ([0-9a-f]{7,64})$/;
 
-/** The body of the last ```name block in a report (its end is the report's own), or nothing when there is none. */
+/**
+ * The body of the last ```name block in a report, or nothing when there is none. A fence may be indented (a block in a list item), and a block left open runs to the
+ * report's end: a block the reader missed would read as no report at all, and the last report's word would stand. Linear: the openers, then one search for the close.
+ */
 function lastBlock(text: string, name: string): string | undefined {
-  let body: string | undefined;
-  for (const m of text.matchAll(new RegExp(`^\`\`\`${name}[ \\t]*\\r?\\n([\\s\\S]*?)^\`\`\`[ \\t]*$`, 'gm'))) body = m[1];
-  return body;
+  let start = -1;
+  for (const m of text.matchAll(new RegExp(`^[ \\t]*\`\`\`${name}[ \\t]*\\r?$`, 'gm'))) start = m.index + m[0].length;
+  if (start < 0) return undefined;
+  const rest = text.slice(start);
+  const end = /^[ \t]*```[ \t]*\r?$/m.exec(rest);
+  return end ? rest.slice(0, end.index) : rest;
 }
 
 /**
@@ -601,7 +607,8 @@ export function parseFindings(report: string, text: (s: string) => string | unde
     const fate = m[4] as Fate;
     const t = title ? text(title)?.slice(0, 200) : undefined;
     const w = fate === 'dismissed' && why.length ? text(why.join(' | '))?.slice(0, 300) : undefined;
-    findings.push({ id: m[1]!, severity: m[2]!, file: m[3]!, fate, ...(t ? { title: t } : {}), ...(w ? { why: w } : {}) });
+    // the file is the agent's own words too: a URL can carry a secret
+    findings.push({ id: m[1]!, severity: m[2]!, file: mask(m[3]!).slice(0, 300), fate, ...(t ? { title: t } : {}), ...(w ? { why: w } : {}) });
   }
   return { findings, dropped };
 }
@@ -615,9 +622,10 @@ export function parseGate(report: string): Gate | undefined {
   return undefined;
 }
 
-export type Check = { name: string; state: 'pass' | 'fail' | 'pending' };
+export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };
 export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; checks: Check[]; bots: { author: string; at: number }[] };
-const OPEN_PRS_MAX = 100;
+// gh's `commits` asks GitHub for 100 commits of 100 authors a PR, and GitHub refuses a query of more than 500,000 nodes before running it: 50 PRs fail, on every repo.
+const OPEN_PRS_MAX = 40;
 const OPEN_PRS_BUDGET = 250_000; // characters of JSON, as PRS_BUDGET: 100 PRs of 200 checks would pass the server's 1 MB request, and a refused event is lost
 
 /** The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time. */
@@ -625,7 +633,8 @@ export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', St
 
 // gh names a bot's author bare (`coderabbitai`, `sonarqubecloud`, measured on NeoBoard's PRs), with no mark that it is one.
 // ponytail: a name list. Upgrade path: `gh api graphql` with `author { __typename }`, which says Bot.
-const BOTS = new Set(['coderabbitai', 'sonarqubecloud', 'sonarcloud', 'github-actions', 'codecov', 'copilot-pull-request-reviewer', 'dependabot', 'renovate']);
+const BOTS = new Set(['coderabbitai', 'sonarqubecloud', 'sonarcloud', 'github-actions', 'codecov', 'copilot-pull-request-reviewer', 'dependabot', 'renovate',
+  'gemini-code-assist', 'greptile-apps', 'chatgpt-codex-connector']);
 export const isBot = (login: string) => /(?:\[bot\]|[-_]bot)$/i.test(login) || BOTS.has(login.toLowerCase());
 
 const checkOf = (c: Record<string, unknown>): Check | undefined => {
@@ -634,7 +643,8 @@ const checkOf = (c: Record<string, unknown>): Check | undefined => {
   const state = c.__typename === 'StatusContext'
     ? (c.state === 'SUCCESS' ? 'pass' : c.state === 'PENDING' || c.state === 'EXPECTED' ? 'pending' : 'fail')
     : c.status !== 'COMPLETED' ? 'pending' : ['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(String(c.conclusion)) ? 'pass' : 'fail';
-  return { name: name.slice(0, 200), state };
+  // A check run of a GitHub Actions workflow carries the workflow's name: that is CI. An app's run (CodeRabbit, Sonar) has none, so it is not.
+  return { name: name.slice(0, 200), state, ...(c.__typename !== 'StatusContext' && typeof c.workflowName === 'string' && c.workflowName ? { ci: true as const } : {}) };
 };
 
 /**
