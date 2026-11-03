@@ -68,6 +68,10 @@ export const ROLE_INFO: Record<Role, string> = {
 export const MODEL_FAMILIES = ['haiku', 'sonnet', 'opus', 'fable', 'mythos'] as const;
 export type ModelFamily = (typeof MODEL_FAMILIES)[number];
 
+// v0.4 slice 1 (#27): what became of a review finding.
+export const FATES = ['fixed', 'dismissed', 'open'] as const;
+export type Fate = (typeof FATES)[number];
+
 export const Event = z.discriminatedUnion('kind', [
   Base.extend({
     kind: z.literal('session.start'),
@@ -177,6 +181,39 @@ export const Event = z.discriminatedUnion('kind', [
   // v0.3 slice 2: the session opened, or worked on, this PR: seen in a tool's output on the machine, or in Claude Code's own `pr-link` log line (the import).
   // Only the number travels; the project is the event's.
   Base.extend({ kind: z.literal('session.pr'), data: z.object({ number: z.number().int().positive() }) }),
+  // v0.4 slice 1 (#27, Factory): a reviewer's or developer's `orb-findings` block, parsed on the machine (PROJECT.md §5). `branch` is the checkout's when the report ended,
+  // which the server joins to an open PR's head. With Content off only id, severity, file and fate travel: `title` and `why` (a dismissed finding's reason) are text,
+  // sent only with Content on full. `dropped` counts the lines that did not parse.
+  // `pr` is the PR the fence line named (```orb-findings #416, owner 2026-11-03): the report goes to it whatever the branch. One of the two at least.
+  Base.extend({ kind: z.literal('findings.report'), data: z.object({
+    branch: id.max(200).optional(),
+    pr: z.number().int().positive().optional(),
+    findings: z.array(z.object({
+      id: z.string().regex(/^[A-Za-z0-9][\w.#-]{0,39}$/),
+      severity: z.string().regex(/^[a-z]{1,20}$/),
+      file: id.max(300),
+      fate: z.enum(FATES),
+      title: z.string().transform((s) => s.slice(0, 200)).optional(),
+      why: z.string().transform((s) => s.slice(0, 300)).optional(),
+    })).max(500),
+    dropped: count,
+  }).refine((d) => d.branch !== undefined || d.pr !== undefined, 'a findings report names its branch or its PR') }),
+  // A tester's `orb-gate` block: the result and the commit it ran on, as the report wrote it (7 to 64 hex characters).
+  Base.extend({ kind: z.literal('gate.report'), data: z.object({ result: z.enum(['pass', 'fail']), commit: z.string().regex(/^[0-9a-f]{7,64}$/) }) }),
+  // The open PRs as gh lists them, every 5 minutes while a session runs: numbers, the branch (none for an excluded project), the head, the merge state, each check's name
+  // and result, each bot's latest comment time. Never a comment's text, a title or a body. `last_commit_at` is the head commit's time, when gh listed it.
+  Base.extend({ kind: z.literal('project.open_prs'), data: z.object({
+    prs: z.array(z.object({
+      number: z.number().int().positive(),
+      head: id.max(200).optional(),
+      head_oid: BLOB,
+      merge_state: z.string().regex(/^[A-Z_]{1,40}$/),
+      last_commit_at: z.number().int().positive().optional(),
+      // ci: a GitHub Actions workflow's check (it names its workflow); an app's check (CodeRabbit, Sonar) has none
+      checks: z.array(z.object({ name: id.max(200), state: z.enum(['pass', 'fail', 'pending']), ci: z.literal(true).optional() })).max(200),
+      bots: z.array(z.object({ author: id.max(100), at: z.number().int().positive() })).max(50),
+    })).max(100),
+  }) }),
   // Slice 5: every skill and custom agent the session lists, once per session; refs where the mod could read the text.
   Base.extend({ kind: z.literal('skills.catalog'), data: z.object({
     skills: z.array(z.object({ name: id, source: id, plugin: id.optional(), tokens: count, description: describe.optional(), refs: Refs.optional() })).max(1000),

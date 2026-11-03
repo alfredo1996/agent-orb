@@ -44,6 +44,10 @@ const built: Ev[] = [
   // v0.3 slice 2 (#42, Worth): the merged PRs (an excluded project's carry no title or branch) and a session's PR link, which is its number alone
   build.projectPrs(ctx, [{ number: 73, title: 'feat: v0.3 slice 1', merged_at: 1_792_400_000_000, additions: 1030, deletions: 24, head: 'feat/43-classes', counted_lines: 812, counted_files: 9 }, { number: 72, merged_at: 1_792_300_000_000, additions: 0, deletions: 0 }]),
   build.sessionPr(ctx, 73),
+  // v0.4 slice 1 (#27, Factory): findings with Content off (no title, no reason), a gate report, and an open-PR read
+  build.findingsReport(ctx, sub, 'fix/409-token-retry', { findings: [{ id: 'F12', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open' }], dropped: 1 }),
+  build.gateReport(ctx, sub, { result: 'pass', commit: 'a1b2c3d' }),
+  build.projectOpenPrs(ctx, [{ number: 416, head: 'fix/409-token-retry', head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: 1_792_400_000_000, checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: 1_792_400_100_000 }] }]),
   build.stall(ctx, 'start', stall),
   build.stall(ctx, 'end', { key: 'agent:main', agent: 'main', since: 1_792_400_000_000 }),
   build.dropped(ctx, 3, 1_792_400_000_000),

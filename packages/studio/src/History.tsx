@@ -25,7 +25,7 @@ export type Open = (session: string, agent: string, from: HTMLElement) => void;
 export const rowKey = (session: string, agent: string) => `${session}:${agent}`; // the data-row of the control that opens an agent's history
 
 /** Phones get the history as a bottom sheet instead of a side drawer. Keep the query equal to the CSS breakpoint (@container 700px). */
-function usePhone() {
+export function usePhone() {
   const query = '(max-width: 700px)';
   const [phone, setPhone] = useState(() => matchMedia(query).matches);
   useEffect(() => {
@@ -66,6 +66,20 @@ export function useHistory(all: Record<string, { project: string; agents: (LiveA
     document.body,
   );
   return { picked, open, drawer };
+}
+
+/**
+ * aria-modal tells a screen reader the page behind is inert; this keeps Tab from walking into it. The drawer itself counts as
+ * "before the first" (focus lands on it), so Shift+Tab from there wraps to the last control as well.
+ */
+export function trapTab(box: HTMLElement, e: ReactKey<HTMLElement>) {
+  if (e.key !== 'Tab') return;
+  const els = [...box.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')].filter((el) => !el.hasAttribute('disabled'));
+  const first = els[0], last = els[els.length - 1];
+  if (!first || !last) return e.preventDefault();
+  const at = document.activeElement;
+  if (e.shiftKey && (at === first || at === box)) last.focus(), e.preventDefault();
+  else if (!e.shiftKey && at === last) first.focus(), e.preventDefault();
 }
 
 const REFRESH_MS = 5_000;
@@ -112,18 +126,7 @@ export function History({ picked, project, live, label, now, sheet, onClose }: {
     return () => removeEventListener('keydown', on);
   }, [onClose]);
 
-  // aria-modal tells a screen reader the page behind is inert; this keeps Tab from walking into it. The drawer itself counts as
-  // "before the first" (focus lands on it), so Shift+Tab from there wraps to the last control as well.
-  const trap = (e: ReactKey<HTMLElement>) => {
-    if (e.key !== 'Tab') return;
-    const box = drawer.current!;
-    const els = [...box.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((el) => !el.hasAttribute('disabled'));
-    const first = els[0], last = els[els.length - 1];
-    if (!first || !last) return e.preventDefault();
-    const at = document.activeElement;
-    if (e.shiftKey && (at === first || at === box)) last.focus(), e.preventDefault();
-    else if (!e.shiftKey && at === last) first.focus(), e.preventDefault();
-  };
+  const trap = (e: ReactKey<HTMLElement>) => trapTab(drawer.current!, e);
 
   const model = modelLabel(live?.model ?? data?.agent.model);
   const items = data?.items ?? [];

@@ -1,5 +1,6 @@
 import type { Event, EventKind } from '@agent-orb/shared';
 import roles from '@agent-orb/shared/roles.json' with { type: 'json' };
+import { findingRef } from '../content-store.ts';
 import { costUsd } from '../cost.ts';
 import { all, get, run, type Store } from './store.ts';
 
@@ -215,6 +216,40 @@ function writeRows(db: Store, ev: Event[], source: Source) {
     // The link's time is the earliest the session was seen to name the PR (the import reads the first `pr-link` line; the plugin sees it again whenever a command prints it).
     run(db, `INSERT INTO session_prs (session_id, pr_id, ts) VALUES (:session, :id, :ts)
              ON CONFLICT (session_id, pr_id) DO UPDATE SET ts = ${earliest('session_prs.ts', 'ts')}`, { session: e.session_id, id, ts: e.ts });
+  }
+
+  // v0.4 slice 1 (#27, Factory): the open PRs replace the project's last read when they are newer than it (an older read arriving late changes nothing); a finding and a gate
+  // keep the latest report's word, whatever order the reports arrive in. A finding's title and reason go to the text store (content-store.ts), never here.
+  for (const e of only(ev, 'project.open_prs')) {
+    const project = projectId(e);
+    if (!Number(run(db, 'UPDATE projects SET prs_read_at = :ts WHERE id = :project AND (prs_read_at IS NULL OR prs_read_at < :ts)', { project, ts: e.ts }).changes)) continue;
+    run(db, 'DELETE FROM open_prs WHERE project_id = :project', { project });
+    for (const p of e.data.prs) {
+      run(db, `INSERT INTO open_prs (project_id, number, head, head_oid, merge_state, last_commit_at, checks, bots) VALUES (:project, :number, :head, :oid, :state, :at, :checks, :bots)
+               ON CONFLICT (project_id, number) DO UPDATE SET head = excluded.head, head_oid = excluded.head_oid, merge_state = excluded.merge_state, last_commit_at = excluded.last_commit_at,
+                 checks = excluded.checks, bots = excluded.bots`,
+      { project, number: p.number, head: p.head, oid: p.head_oid, state: p.merge_state, at: p.last_commit_at, checks: JSON.stringify(p.checks), bots: JSON.stringify(p.bots) });
+    }
+  }
+  // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it
+  // handled, not what the review found. The role is the reporting agent's, from its spawn.
+  for (const e of only(ev, 'findings.report')) {
+    const key = { project: projectId(e), ref: findingRef(e.data), ts: e.ts }; // its PR when the fence named one, else its branch
+    const reviewer = get(db, 'SELECT role FROM agents WHERE id = :id', { id: agentKey(e) })?.role === 'reviewer';
+    run(db, `INSERT INTO finding_reports (project_id, ref, ts, dropped) VALUES (:project, :ref, :ts, :dropped)
+             ON CONFLICT (project_id, ref) DO UPDATE SET ts = excluded.ts,
+               dropped = CASE WHEN :reviewer THEN excluded.dropped ELSE max(finding_reports.dropped, excluded.dropped) END WHERE excluded.ts >= finding_reports.ts`,
+    { ...key, dropped: e.data.dropped, reviewer });
+    for (const f of e.data.findings) {
+      run(db, `INSERT INTO findings (project_id, ref, id, severity, file, fate, ts) VALUES (:project, :ref, :id, :severity, :file, :fate, :ts)
+               ON CONFLICT (project_id, ref, id) DO UPDATE SET severity = excluded.severity, file = excluded.file, fate = excluded.fate, ts = excluded.ts WHERE excluded.ts >= findings.ts`,
+      { ...key, id: f.id, severity: f.severity, file: f.file, fate: f.fate });
+    }
+  }
+  for (const e of only(ev, 'gate.report')) {
+    run(db, `INSERT INTO gates (project_id, commit_sha, result, ts) VALUES (:project, :commit, :result, :ts)
+             ON CONFLICT (project_id, commit_sha) DO UPDATE SET result = excluded.result, ts = excluded.ts WHERE excluded.ts >= gates.ts`,
+    { project: projectId(e), commit: e.data.commit, result: e.data.result, ts: e.ts });
   }
 
   // Slice 5: the skills and custom agents a session lists, one SkillDef per project, kind, origin and name. A field a later event leaves out keeps

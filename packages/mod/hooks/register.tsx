@@ -4,7 +4,7 @@ import type { EngineInterface as $, Register } from 'claude-code'
 import type { OrbAgentRow, OrbEventRow, OrbView } from '../types'
 import {
   BATCH, build, capText, changesArgv, checkStalls, commandClass, enqueue, errorClass, errorShape, filesTouched, fingerprintFiles, fingerprintsFrom, fmtTokens, goalNotice, hostName, isExcluded, mask, modelLabel, newOutbox, newTracker,
-  normalizeRemote, parseChanges, parseGoal, parsePrs, prNumbersIn, prsArgv, toolContent, type ContentMode, type Goal, type GoalSent,
+  normalizeRemote, openPrsArgv, parseChanges, parseFindings, parseGate, parseGoal, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, toolContent, type ContentMode, type Goal, type GoalSent,
   familyOf, modelCheck, modelFromFrontmatter, pricierNotice, rejectedIn, roleFromFrontmatter, settle, statusText, takeBatch, tokensOf, usageOf,
   descriptionOf, preloadOf, refsIn, type CatalogAgent, type CatalogSkill, type Ctx, type Ev, type Refs, type Role, type SkillLoad,
 } from './core.ts'
@@ -16,6 +16,7 @@ const PANE = 'orb'
 const TICK_MS = 2_000
 const ORPHAN_MS = 60_000 // another session's outbox untouched this long is taken over
 const GOAL_MS = 60_000 // v0.2 slice 3: the goal is asked again this often
+const OPEN_PRS_MS = 5 * 60_000 // v0.4 slice 1 (#27): the open PRs are read from GitHub again this often
 const view = atom({ plugin: 'agent-orb', key: 'view' } as const, null as OrbView | null)
 
 type Usage = ReturnType<typeof usageOf>
@@ -39,6 +40,7 @@ let contentSetting = 'off'
 let excludeList = ''
 // off | full | excluded, decided at session start from the setting and the project (§15, 2026-10-20)
 let contentMode: ContentMode = 'off'
+let excluded = true // the project is in excludeProjects: it sends no findings or gate blocks (#27), whatever Content is set to; closed until start() has decided
 const text = (s: string | undefined) => (contentMode === 'full' && s ? capText(mask(s)) : undefined)
 
 let ctx: Ctx | undefined
@@ -57,6 +59,9 @@ let lastStatus = ''
 let goal: Goal | undefined
 let goalAt = 0
 let goalBusy = false
+// v0.4 slice 1 (#27): when the open PRs were last asked for, and whether a gh call is out.
+let openPrsAt = 0
+let openPrsBusy = false
 const t = newTracker()
 const ob = newOutbox()
 const recent: OrbEventRow[] = []
@@ -70,6 +75,7 @@ const parentOf = new Map<string, string>()
 // What an agent file says, read once per type: whether a file was found, its orb-role and its model.
 type AgentFile = { found: boolean; role?: Role; model?: string }
 const agentFiles = new Map<string, AgentFile>()
+const agentType = new Map<string, string>() // v0.4 slice 1: a subagent's type, whose file's orb-role says which block its final report carries
 const skillCalls: string[] = []
 // Slice 5: the session's skill and agent names (to match references against), a typed /name waiting for its turn,
 // and the newest subagent (a preload fires right after its first turn starts; docs/verified.md, Skills).
@@ -147,6 +153,7 @@ async function tick($: $) {
 
   if (ticks++ % 5 === 0) ctxPercent = (await $.session.usage().catch(() => undefined))?.context?.percent ?? ctxPercent
   if (now - goalAt >= GOAL_MS) void fetchGoal($).catch(() => {}) // off the tick's path: a slow server holds nothing up
+  if (now - openPrsAt >= OPEN_PRS_MS) void readOpenPrs($).catch(() => {}) // and a slow gh too
   const text = !token ? 'agent-orb: no token (see /orb)' : statusText(t, ctxPercent, now, goal)
   if (text !== lastStatus) $.ui.status((lastStatus = text))
 
@@ -310,6 +317,48 @@ async function sendPrs($: $, excluded: boolean) {
   if (prs.length && ctx) push($, build.projectPrs(ctx, prs))
 }
 
+/**
+ * v0.4 slice 1 (#27, Factory): the open PRs, from `gh` in the session's checkout, at session start and then every 5 minutes from the tick, never on a hook's path: what
+ * the server's ready() reads, sent as one event. Only numbers, the branch, the head, the merge state, check names and results and each bot's latest comment time leave;
+ * never a comment's text. An excluded project sends no branches. No gh, or a gh that fails or is not logged in, sends nothing, quietly; a call that hangs is not repeated.
+ * ponytail: every session in a repo reads it; three sessions in one repo ask three times in 5 minutes. Share the last read through `$.store` if GitHub's rate limit is ever met.
+ */
+async function readOpenPrs($: $) {
+  if (!ctx || !token || openPrsBusy) return
+  openPrsBusy = true
+  try {
+    openPrsAt = await $.clock.now()
+    const r = await $.process.run(openPrsArgv, { cwd: checkout, timeoutMs: 60_000 })
+    const prs = r.exitCode === 0 ? parseOpenPrs(r.stdout, !excluded) : undefined
+    if (prs && ctx) push($, build.projectOpenPrs(ctx, prs))
+  } finally {
+    openPrsBusy = false
+  }
+}
+
+/**
+ * v0.4 slice 1 (#27): a subagent's final report, read for its blocks by its declared role: a reviewer's or a developer's `orb-findings`, a tester's `orb-gate`. The
+ * findings go to the PR the fence names (```orb-findings #416), and with the branch the checkout is on now (a session moves from its worktree's branch to its
+ * issue's), which the server joins to an open PR's head when the fence names none; a detached head with no number sends nothing. A title and a dismissal's reason go only with Content on full, masked. An excluded project sends neither block.
+ * ponytail: the branch is the session's checkout's; a subagent isolated in a worktree of its own reports on the session's branch. Pass the agent's cwd if that is ever seen.
+ */
+async function sendReport($: $, w: { agentId: string; turnId: string }, answer: string) {
+  const type = agentType.get(w.agentId)
+  if (!ctx || excluded || !type) return
+  const role = (await agentFile($, type).catch((): AgentFile => ({ found: false }))).role // read once per type; a report can end before the spawn's own read did
+  if (role === 'tester') {
+    const g = parseGate(answer)
+    if (g) push($, build.gateReport(ctx, w, g), { agent: label(w.agentId), kind: 'gate.report', detail: `${g.result} ${g.commit.slice(0, 7)}` })
+    return
+  }
+  if (role !== 'reviewer' && role !== 'developer') return
+  const f = parseFindings(answer, text)
+  if (!f) return
+  const branch = await $.process.run(['git', '-C', checkout, 'branch', '--show-current']).then((r: { exitCode: number; stdout: string }) => (r.exitCode === 0 ? r.stdout.trim().slice(0, 200) : '')).catch(() => '') // cut as parseOpenPrs cuts a head, so the two still join
+  // A report that names its PR goes to it from anywhere; one that does not needs the branch to find its PR.
+  if ((branch || f.pr) && ctx) push($, build.findingsReport(ctx, w, branch || undefined, f), { agent: label(w.agentId), kind: 'findings.report', detail: `${f.findings.length} on ${f.pr ? `#${f.pr}` : branch}` })
+}
+
 const timeZone = () => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -381,7 +430,7 @@ async function start($: $, interactive: boolean, cwd: string) {
 
   const home = (await $.env.get('HOME')) ?? ''
   const list = excludeList.replace(/(^|,)\s*~(?=\/|,|$)/g, `$1${home}`)
-  const excluded = isExcluded(ctx.project, list)
+  excluded = isExcluded(ctx.project, list)
   contentMode = contentSetting !== 'full' ? 'off' : excluded ? 'excluded' : 'full'
   push($, build.sessionStart(ctx, model, version.version, interactive, contentMode))
   void flush($) // §12 A: a new session shows in Live at once, not at the next tick
@@ -390,6 +439,7 @@ async function start($: $, interactive: boolean, cwd: string) {
   void sendFingerprint($, home).catch(() => {}) // and this one lists the watched folders and hashes every file in them
   void sendPrs($, excluded).catch(() => {}) // and gh is a network call
   void fetchGoal($).catch(() => {}) // the goal is asked now, not at the first tick
+  void readOpenPrs($).catch(() => {}) // and the open PRs too
   if (interactive) await $.command.register({ name: 'orb', description: 'agent-orb: active agents, tokens and the last events' })
 }
 
@@ -479,6 +529,7 @@ export const register: Register = (on, options) => {
         a.done = true
         push($, build.agentComplete(ctx, e.agentId, stamp() - (agentStart.get(k) ?? stamp()), agentUsage.get(k) ?? zero, e.answer.length),
           { agent: a.label, kind: 'agent.complete', detail: `${fmtTokens(a.tokens)} tok · ${dur(stamp() - (agentStart.get(k) ?? stamp()))}`, tone: 'dim' })
+        void sendReport($, { agentId: e.agentId, turnId: e.turnId }, e.answer).catch(() => {}) // off the hook's path: it may ask git for the branch
       }
     }
     return r
@@ -491,6 +542,7 @@ export const register: Register = (on, options) => {
       const child = r.agentId
       const a = agent(child)
       a.label = e.subagentType
+      agentType.set(child, e.subagentType)
       agentModel.set(child, r.model)
       if (e.parentAgentId) parentOf.set(child, e.parentAgentId)
       else parentOf.set(child, 'main')

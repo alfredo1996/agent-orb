@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Analysis } from './Analysis.tsx';
+import { Factory } from './Factory.tsx';
 import { Connection, ProjectContext } from './kit.tsx';
 import { Ledger } from './Ledger.tsx';
 import { Live, type Session } from './Live.tsx';
@@ -32,7 +33,7 @@ function useStream() {
   return { sessions, isOpen };
 }
 
-const ROUTES = { '#/ledger': 'ledger', '#/pipeline': 'pipeline', '#/office': 'office', '#/analysis': 'analysis' } as const;
+const ROUTES = { '#/ledger': 'ledger', '#/pipeline': 'pipeline', '#/factory': 'factory', '#/office': 'office', '#/analysis': 'analysis' } as const;
 type View = 'live' | (typeof ROUTES)[keyof typeof ROUTES];
 
 /**
@@ -114,6 +115,7 @@ export function App() {
           <a href="#/" aria-current={view === 'live' ? 'page' : undefined}>Live{running.length > 0 && <span className="count" aria-label={`${running.length} running`}>{running.length}</span>}</a>
           <a href="#/ledger" aria-current={view === 'ledger' ? 'page' : undefined}>Ledger</a>
           <a href="#/pipeline" aria-current={view === 'pipeline' ? 'page' : undefined}>Pipeline</a>
+          <a href="#/factory" aria-current={view === 'factory' ? 'page' : undefined}>Factory</a>
           <a href="#/office" aria-current={view === 'office' ? 'page' : undefined}>Office</a>
           <a href="#/analysis" aria-current={view === 'analysis' ? 'page' : undefined}>Analysis</a>
         </nav>
@@ -122,7 +124,7 @@ export function App() {
       </header>
 
       <ProjectContext.Provider value={{ projects, choice, pick }}>
-        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'office' ? <Office sessions={running} all={sessions} now={now} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} />}
+        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} /> : view === 'office' ? <Office sessions={running} all={sessions} now={now} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} />}
       </ProjectContext.Provider>
     </div>
   );
