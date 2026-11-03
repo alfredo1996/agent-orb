@@ -1488,6 +1488,15 @@ test('v0.4 slice 1: a tester\'s gate block sends gate.report; a role that is nei
   expect(reportsSent(w)).toEqual([]) // the tester's findings block is not a tester's to send, and the scout's and Explore's are no one's
 })
 
+test('v0.4 slice 1: a branch past 200 characters is cut as the open-PR read cuts a head, so the two still join and the server takes the event', opts, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  await boot($)
+  await reportBy($, w, 'reviewer', FINDINGS, `feat/${'x'.repeat(250)}`)
+  expect(reportsSent(w).map((e) => e.data.branch)).toEqual([`feat/${'x'.repeat(195)}`])
+})
+
 test('v0.4 slice 1: a report on a detached head (no branch) sends no findings: there is no PR to join them to', opts, async ($: any, on: any) => {
   on('turn.complete', () => ({ text: 'done' }))
   const w = world(on)

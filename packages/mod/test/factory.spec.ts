@@ -125,6 +125,19 @@ describe('the open-PR read', () => {
     expect(sent).not.toContain('MERGEABLE"'); // UNSTABLE is what travels
   });
 
+  it('a read fits one request: at most 250,000 characters of JSON, the PRs past it left out (gh lists the newest first)', () => {
+    const many = Array.from({ length: 100 }, (_, i) => ({
+      number: 1000 - i, headRefName: `feat/${'b'.repeat(190)}`, headRefOid: 'a'.repeat(40), mergeStateStatus: 'CLEAN', comments: [], reviews: [], commits: [],
+      statusCheckRollup: Array.from({ length: 200 }, (_, k) => ({ __typename: 'CheckRun', name: `${'c'.repeat(190)}${k}`, status: 'COMPLETED', conclusion: 'SUCCESS' })),
+    }));
+    const prs = parseOpenPrs(JSON.stringify(many))!;
+    expect(prs.length).toBeGreaterThan(0);
+    expect(prs.length).toBeLessThan(100);
+    expect(prs.map((p) => p.number)).toEqual(Array.from({ length: prs.length }, (_, i) => 1000 - i));
+    expect(JSON.stringify(prs).length).toBeLessThanOrEqual(250_000);
+    expect(JSON.stringify(build.projectOpenPrs(ctx, prs)).length).toBeLessThan(1_000_000 / 3); // UTF-8 at most 3 bytes a character: under the server's 1 MB
+  });
+
   it('an excluded project sends no branch names', () => {
     expect(parseOpenPrs(OPEN, false)!.map((p) => 'head' in p)).toEqual([false, false]);
   });

@@ -354,7 +354,7 @@ async function sendReport($: $, w: { agentId: string; turnId: string }, answer: 
   if (role !== 'reviewer' && role !== 'developer') return
   const f = parseFindings(answer, text)
   if (!f) return
-  const branch = await $.process.run(['git', '-C', checkout, 'branch', '--show-current']).then((r: { exitCode: number; stdout: string }) => (r.exitCode === 0 ? r.stdout.trim() : '')).catch(() => '')
+  const branch = await $.process.run(['git', '-C', checkout, 'branch', '--show-current']).then((r: { exitCode: number; stdout: string }) => (r.exitCode === 0 ? r.stdout.trim().slice(0, 200) : '')).catch(() => '') // cut as parseOpenPrs cuts a head, so the two still join
   if (branch && ctx) push($, build.findingsReport(ctx, w, branch, f), { agent: label(w.agentId), kind: 'findings.report', detail: `${f.findings.length} on ${branch}` })
 }
 

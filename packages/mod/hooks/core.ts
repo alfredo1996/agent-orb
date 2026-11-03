@@ -618,6 +618,7 @@ export function parseGate(report: string): Gate | undefined {
 export type Check = { name: string; state: 'pass' | 'fail' | 'pending' };
 export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; checks: Check[]; bots: { author: string; at: number }[] };
 const OPEN_PRS_MAX = 100;
+const OPEN_PRS_BUDGET = 250_000; // characters of JSON, as PRS_BUDGET: 100 PRs of 200 checks would pass the server's 1 MB request, and a refused event is lost
 
 /** The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time. */
 export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', String(OPEN_PRS_MAX), '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits'];
@@ -640,6 +641,7 @@ const checkOf = (c: Record<string, unknown>): Check | undefined => {
  * The open PRs in `openPrsArgv`'s output. Only numbers, the branch (none for an excluded project), the head, the merge state, each check's name and result, and each bot's
  * latest comment or review time are kept: a comment's text, a title and a body are never read into the event. The head's time is its commit's in the list; a PR whose
  * head is not among them (gh lists at most 100 commits) has none. Nothing when the output is not gh's list; an empty list is a read of no open PRs.
+ * At most 250 KB of JSON: gh lists the newest first, and the PRs past it are left out.
  */
 export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined {
   let list: unknown;
@@ -669,7 +671,8 @@ export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined
       checks, bots: [...bots].slice(0, 50).map(([author, t]) => ({ author, at: t })),
     });
   }
-  return prs;
+  let size = 0;
+  return prs.filter((p) => (size += JSON.stringify(p).length + 1) <= OPEN_PRS_BUDGET);
 }
 
 // ── The monthly goal (v0.2 slice 3, PROJECT.md §15, 2026-10-24) ──────────────
