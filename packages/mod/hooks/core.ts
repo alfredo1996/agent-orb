@@ -565,7 +565,7 @@ export function prNumbersIn(text: string, remote: string | undefined): number[] 
 export const FATES = ['fixed', 'dismissed', 'open'] as const;
 export type Fate = (typeof FATES)[number];
 export type Finding = { id: string; severity: string; file: string; fate: Fate; title?: string; why?: string };
-export type Findings = { findings: Finding[]; dropped: number };
+export type Findings = { findings: Finding[]; dropped: number; pr?: number }; // pr: the PR the fence line named, ```orb-findings #416
 export type Gate = { result: 'pass' | 'fail'; commit: string };
 const FINDINGS_MAX = 500;
 // `id severity file fate`: an id of letters, digits and `._#-`, a lower-case severity, a path with no space, and one of the three fates. Anything else is dropped, not guessed.
@@ -573,16 +573,17 @@ const FINDING = /^([A-Za-z0-9][\w.#-]{0,39}) ([a-z]{1,20}) (\S{1,300}) (fixed|di
 const GATE = /^(pass|fail) ([0-9a-f]{7,64})$/;
 
 /**
- * The body of the last ```name block in a report, or nothing when there is none. A fence may be indented (a block in a list item), and a block left open runs to the
- * report's end: a block the reader missed would read as no report at all, and the last report's word would stand. Linear: the openers, then one search for the close.
+ * The last ```name block in a report: its body, and what its fence line says after the name, or nothing when there is none. A fence may be indented (a block in a
+ * list item) and carry more on its line, and a block left open runs to the report's end: a block the reader missed would read as no report at all, and the last
+ * report's word would stand. Linear: the openers, then one search for the close.
  */
-function lastBlock(text: string, name: string): string | undefined {
-  let start = -1;
-  for (const m of text.matchAll(new RegExp(`^[ \\t]*\`\`\`${name}[ \\t]*\\r?$`, 'gm'))) start = m.index + m[0].length;
-  if (start < 0) return undefined;
-  const rest = text.slice(start);
+function lastBlock(text: string, name: string): { body: string; info: string } | undefined {
+  let last: RegExpExecArray | undefined;
+  for (const m of text.matchAll(new RegExp(`^[ \\t]*\`\`\`${name}(?![\\w-])([^\\r\\n]*)\\r?$`, 'gm'))) last = m;
+  if (!last) return undefined;
+  const rest = text.slice(last.index + last[0].length);
   const end = /^[ \t]*```[ \t]*\r?$/m.exec(rest);
-  return end ? rest.slice(0, end.index) : rest;
+  return { body: end ? rest.slice(0, end.index) : rest, info: last[1]!.trim() };
 }
 
 /**
@@ -591,8 +592,11 @@ function lastBlock(text: string, name: string): string | undefined {
  * `text` decides what of the title and the reason travels: the plugin passes its Content helper (masked, and nothing unless Content is on full); without it, nothing does.
  */
 export function parseFindings(report: string, text: (s: string) => string | undefined = () => undefined): Findings | undefined {
-  const body = lastBlock(report, 'orb-findings');
-  if (body === undefined) return undefined;
+  const block = lastBlock(report, 'orb-findings');
+  if (!block) return undefined;
+  const { body, info } = block;
+  // The fence may name the PR (owner, 2026-11-03, #27): `#416` exactly. Anything else there is no number, and the block still counts.
+  const pr = /^#[1-9]\d{0,8}$/.test(info) ? Number(info.slice(1)) : undefined;
   const findings: Finding[] = [];
   let dropped = 0;
   for (const raw of body.split('\n')) {
@@ -610,12 +614,12 @@ export function parseFindings(report: string, text: (s: string) => string | unde
     // the file is the agent's own words too: a URL can carry a secret
     findings.push({ id: m[1]!, severity: m[2]!, file: mask(m[3]!).slice(0, 300), fate, ...(t ? { title: t } : {}), ...(w ? { why: w } : {}) });
   }
-  return { findings, dropped };
+  return { findings, dropped, ...(pr ? { pr } : {}) };
 }
 
 /** A tester's `orb-gate` block: `pass|fail <commit>`, the first line that parses. A commit is 7 to 64 lower-case hex characters, as git prints one. */
 export function parseGate(report: string): Gate | undefined {
-  for (const line of lastBlock(report, 'orb-gate')?.split('\n') ?? []) {
+  for (const line of lastBlock(report, 'orb-gate')?.body.split('\n') ?? []) {
     const m = GATE.exec(line.trim());
     if (m) return { result: m[1] as Gate['result'], commit: m[2]! };
   }
@@ -934,7 +938,8 @@ export const build = {
   projectFingerprint: (c: Ctx, files: Fingerprint[]) => makeEvent(c, 'project.fingerprint', { files }),
   projectPrs: (c: Ctx, prs: Pr[]) => makeEvent(c, 'project.prs', { prs }),
   sessionPr: (c: Ctx, number: number) => makeEvent(c, 'session.pr', { number }), // the session's, not an agent's: no agent_id, no turn_id
-  findingsReport: (c: Ctx, w: Who, branch: string, f: Findings) => makeEvent(c, 'findings.report', { branch, findings: f.findings, dropped: f.dropped }, who(w)),
+  findingsReport: (c: Ctx, w: Who, branch: string | undefined, f: Findings) =>
+    makeEvent(c, 'findings.report', { ...(branch ? { branch } : {}), ...(f.pr ? { pr: f.pr } : {}), findings: f.findings, dropped: f.dropped }, who(w)),
   gateReport: (c: Ctx, w: Who, g: Gate) => makeEvent(c, 'gate.report', { result: g.result, commit: g.commit }, who(w)),
   projectOpenPrs: (c: Ctx, prs: OpenPr[]) => makeEvent(c, 'project.open_prs', { prs }),
   skillsCatalog: (c: Ctx, skills: CatalogSkill[], agents: CatalogAgent[]) => makeEvent(c, 'skills.catalog', { skills, agents }),

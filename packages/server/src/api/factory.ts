@@ -2,7 +2,7 @@ import type { Fate } from '@agent-orb/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { findingId, type ContentStore } from '../content-store.ts';
-import { all, get, type Store } from '../store/store.ts';
+import { all, get, type Row, type Store } from '../store/store.ts';
 
 // v0.4 slice 1 (#27, Factory; PROJECT.md §15, 2026-11-03): whether each open PR is ready for the owner's ok, from what the plugin sent.
 //   GET /api/factory?project=<name>  the open PRs as last read, each with ready(), its four conditions and its findings (latest fate each), and when GitHub was read
@@ -102,15 +102,26 @@ export function factory(app: FastifyInstance, { store, content, now = Date.now }
     const rows = all(store, 'SELECT o.* FROM open_prs o JOIN projects p ON p.id = o.project_id WHERE p.name = :project', { project });
     const prs = rows.map((r) => {
       const pr: PrState = { headOid: r.head_oid, mergeState: r.merge_state, lastCommitAt: r.last_commit_at ?? undefined, checks: JSON.parse(r.checks), bots: JSON.parse(r.bots) };
-      const report = r.head ? get(store, 'SELECT dropped, ts FROM finding_reports WHERE project_id = :p AND branch = :b', { p: r.project_id, b: r.head }) : undefined;
-      const list = report ? all(store, 'SELECT id, severity, file, fate FROM findings WHERE project_id = :p AND branch = :b', { p: r.project_id, b: r.head }) : [];
+      // A PR's findings are the reports that named it (```orb-findings #416) and those made on its head branch, the latest fate of each id winning across both. Its
+      // dropped count is the named reports' when there are any: those are the ones written for this PR.
+      const refs = { p: r.project_id, pr: `pr:${r.number}`, b: r.head ?? `pr:${r.number}` };
+      const reports = all(store, 'SELECT ref, dropped, ts FROM finding_reports WHERE project_id = :p AND ref IN (:pr, :b)', refs);
+      const named = reports.find((x) => x.ref === refs.pr);
+      const report = reports.length ? { dropped: (named ?? reports[0]!).dropped as number, ts: Math.max(...reports.map((x) => x.ts as number)) } : undefined;
+      const latest = new Map<string, Row>();
+      for (const f of all(store, 'SELECT ref, id, severity, file, fate, ts FROM findings WHERE project_id = :p AND ref IN (:pr, :b)', refs)) {
+        if (!(latest.get(f.id)?.ts >= f.ts)) latest.set(f.id, f);
+      }
+      const list = [...latest.values()];
       const gate = get(store, 'SELECT result FROM gates WHERE project_id = :p AND substr(:oid, 1, length(commit_sha)) = commit_sha ORDER BY ts DESC LIMIT 1', { p: r.project_id, oid: r.head_oid });
-      const text = content.get(list.map((f) => ({ node: 'finding', id: findingId(r.project_id, r.head, f.id) })));
+      // A title may have come with either ref's report (a branch round with Content on, then a numbered one): the latest ref's first. A reason only with the latest fate.
+      const text = content.get(list.flatMap((f) => [refs.pr, refs.b].map((ref) => ({ node: 'finding' as const, id: findingId(r.project_id, ref, f.id) }))));
       const findings = list
         .toSorted((a, b) => FATE_ORDER.indexOf(a.fate) - FATE_ORDER.indexOf(b.fate) || rank(a.severity) - rank(b.severity) || (a.id < b.id ? -1 : 1))
         .map((f) => {
-          const t = text.get(`finding:${findingId(r.project_id, r.head, f.id)}`);
-          return { id: f.id, severity: f.severity, file: f.file, fate: f.fate, ...(t?.title ? { title: t.title } : {}), ...(f.fate === 'dismissed' && t?.why ? { why: t.why } : {}) };
+          const t = text.get(`finding:${findingId(r.project_id, f.ref, f.id)}`);
+          const title = t?.title ?? text.get(`finding:${findingId(r.project_id, f.ref === refs.pr ? refs.b : refs.pr, f.id)}`)?.title;
+          return { id: f.id, severity: f.severity, file: f.file, fate: f.fate, ...(title ? { title } : {}), ...(f.fate === 'dismissed' && t?.why ? { why: t.why } : {}) };
         });
       const ledger: Ledger = report ? { findings: list as { severity: string; fate: Fate }[], dropped: report.dropped, at: report.ts } : undefined;
       let verdict = ready(pr, ledger, gate as { result: 'pass' | 'fail' } | undefined);

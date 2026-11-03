@@ -338,8 +338,8 @@ async function readOpenPrs($: $) {
 
 /**
  * v0.4 slice 1 (#27): a subagent's final report, read for its blocks by its declared role: a reviewer's or a developer's `orb-findings`, a tester's `orb-gate`. The
- * findings go with the branch the checkout is on now (a session moves from its worktree's branch to its issue's), which the server joins to an open PR's head; a
- * detached head sends none. A title and a dismissal's reason go only with Content on full, masked. An excluded project sends neither block.
+ * findings go to the PR the fence names (```orb-findings #416), and with the branch the checkout is on now (a session moves from its worktree's branch to its
+ * issue's), which the server joins to an open PR's head when the fence names none; a detached head with no number sends nothing. A title and a dismissal's reason go only with Content on full, masked. An excluded project sends neither block.
  * ponytail: the branch is the session's checkout's; a subagent isolated in a worktree of its own reports on the session's branch. Pass the agent's cwd if that is ever seen.
  */
 async function sendReport($: $, w: { agentId: string; turnId: string }, answer: string) {
@@ -355,7 +355,8 @@ async function sendReport($: $, w: { agentId: string; turnId: string }, answer: 
   const f = parseFindings(answer, text)
   if (!f) return
   const branch = await $.process.run(['git', '-C', checkout, 'branch', '--show-current']).then((r: { exitCode: number; stdout: string }) => (r.exitCode === 0 ? r.stdout.trim().slice(0, 200) : '')).catch(() => '') // cut as parseOpenPrs cuts a head, so the two still join
-  if (branch && ctx) push($, build.findingsReport(ctx, w, branch, f), { agent: label(w.agentId), kind: 'findings.report', detail: `${f.findings.length} on ${branch}` })
+  // A report that names its PR goes to it from anywhere; one that does not needs the branch to find its PR.
+  if ((branch || f.pr) && ctx) push($, build.findingsReport(ctx, w, branch || undefined, f), { agent: label(w.agentId), kind: 'findings.report', detail: `${f.findings.length} on ${f.pr ? `#${f.pr}` : branch}` })
 }
 
 const timeZone = () => {

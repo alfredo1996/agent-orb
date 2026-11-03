@@ -1506,6 +1506,23 @@ test('v0.4 slice 1: a report on a detached head (no branch) sends no findings: t
   expect(reportsSent(w)).toEqual([])
 })
 
+test('v0.4 slice 1: a fence that names its PR (#416) sends the number, with the branch when there is one, and goes even from a detached head', opts, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  await boot($)
+  const named = FINDINGS.replace('```orb-findings', '```orb-findings #416')
+  await reportBy($, w, 'reviewer', named, 'feat/412-queue') // the checkout is on another PR's branch
+  w.engine.agentId = 'a-reviewer-2'
+  await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_r2', subagentType: 'reviewer' }))
+  await $.turn.start({ text: 'go', turnId: 't-r2', agentId: 'a-reviewer-2' })
+  w.tree.branches['/repo'] = ''
+  await $.turn.complete({ turnId: 't-r2', agentId: 'a-reviewer-2', answer: named, durationMs: 1, isAborted: false, reason: 'answer' })
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+  expect(reportsSent(w).map((e) => [e.data.pr, e.data.branch, e.data.findings.length])).toEqual([[416, 'feat/412-queue', 3], [416, undefined, 3]])
+})
+
 const OPEN_LIST = JSON.stringify([{
   number: 416, headRefName: 'fix/409-token-retry', headRefOid: 'e'.repeat(40), mergeStateStatus: 'UNSTABLE', mergeable: 'MERGEABLE', title: 'Retry after an expired token',
   statusCheckRollup: [{ __typename: 'CheckRun', name: 'Unit tests', status: 'COMPLETED', conclusion: 'SUCCESS' }],

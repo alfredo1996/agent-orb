@@ -156,6 +156,10 @@ describe('Event schema', () => {
 
   it('findings.report, gate.report, project.open_prs: a fate is one of three, a commit is hex, and a comment\'s text has no field to travel in (v0.4 slice 1)', () => {
     const f = (finding: object) => ev('findings.report', { branch: 'b', findings: [{ id: 'F1', severity: 'major', file: 'a.ts', fate: 'open', ...finding }], dropped: 0 });
+    // the PR the fence named, with or without a branch; one of the two at least
+    expect(Event.safeParse(ev('findings.report', { pr: 416, findings: [], dropped: 0 })).success).toBe(true);
+    expect(Event.safeParse(ev('findings.report', { branch: 'b', pr: 416, findings: [], dropped: 0 })).success).toBe(true);
+    for (const bad of [{}, { pr: 0 }, { pr: 4.5 }, { pr: '416' }]) expect(Event.safeParse(ev('findings.report', { ...bad, findings: [], dropped: 0 })).success, JSON.stringify(bad)).toBe(false);
     for (const bad of [{ fate: 'wontfix' }, { severity: 'Major' }, { id: 'F 1' }, { file: '' }]) expect(Event.safeParse(f(bad)).success, JSON.stringify(bad)).toBe(false);
     expect(Event.parse(f({ fate: 'dismissed', title: 't'.repeat(250), why: 'w'.repeat(400) })).data).toMatchObject({ findings: [{ title: 't'.repeat(200), why: 'w'.repeat(300) }] });
     for (const commit of ['a1b2c3', 'A1B2C3D', 'a1b2c3d '.trim() + 'g']) expect(Event.safeParse(ev('gate.report', { result: 'pass', commit })).success, commit).toBe(false);

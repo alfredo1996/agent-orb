@@ -1,5 +1,6 @@
 import type { Event, EventKind } from '@agent-orb/shared';
 import roles from '@agent-orb/shared/roles.json' with { type: 'json' };
+import { findingRef } from '../content-store.ts';
 import { costUsd } from '../cost.ts';
 import { all, get, run, type Store } from './store.ts';
 
@@ -233,15 +234,15 @@ function writeRows(db: Store, ev: Event[], source: Source) {
   // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it
   // handled, not what the review found. The role is the reporting agent's, from its spawn.
   for (const e of only(ev, 'findings.report')) {
-    const key = { project: projectId(e), branch: e.data.branch, ts: e.ts };
+    const key = { project: projectId(e), ref: findingRef(e.data), ts: e.ts }; // its PR when the fence named one, else its branch
     const reviewer = get(db, 'SELECT role FROM agents WHERE id = :id', { id: agentKey(e) })?.role === 'reviewer';
-    run(db, `INSERT INTO finding_reports (project_id, branch, ts, dropped) VALUES (:project, :branch, :ts, :dropped)
-             ON CONFLICT (project_id, branch) DO UPDATE SET ts = excluded.ts,
+    run(db, `INSERT INTO finding_reports (project_id, ref, ts, dropped) VALUES (:project, :ref, :ts, :dropped)
+             ON CONFLICT (project_id, ref) DO UPDATE SET ts = excluded.ts,
                dropped = CASE WHEN :reviewer THEN excluded.dropped ELSE max(finding_reports.dropped, excluded.dropped) END WHERE excluded.ts >= finding_reports.ts`,
     { ...key, dropped: e.data.dropped, reviewer });
     for (const f of e.data.findings) {
-      run(db, `INSERT INTO findings (project_id, branch, id, severity, file, fate, ts) VALUES (:project, :branch, :id, :severity, :file, :fate, :ts)
-               ON CONFLICT (project_id, branch, id) DO UPDATE SET severity = excluded.severity, file = excluded.file, fate = excluded.fate, ts = excluded.ts WHERE excluded.ts >= findings.ts`,
+      run(db, `INSERT INTO findings (project_id, ref, id, severity, file, fate, ts) VALUES (:project, :ref, :id, :severity, :file, :fate, :ts)
+               ON CONFLICT (project_id, ref, id) DO UPDATE SET severity = excluded.severity, file = excluded.file, fate = excluded.fate, ts = excluded.ts WHERE excluded.ts >= findings.ts`,
       { ...key, id: f.id, severity: f.severity, file: f.file, fate: f.fate });
     }
   }

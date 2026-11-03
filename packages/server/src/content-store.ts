@@ -66,8 +66,10 @@ export function openContentStore(path: string): ContentStore {
 }
 
 // The same ids the history writer gives the nodes (store/writer.ts): Prompt by prompt_id, Agent by session:agent,
-// ApiRequest by the turn.step event id, ToolCall by tool_use_id; Project by remote, else host:cwd. A finding (#27) by `project|branch|id`.
-export const findingId = (project: string, branch: string, id: string) => `${project}|${branch}|${id}`;
+// ApiRequest by the turn.step event id, ToolCall by tool_use_id; Project by remote, else host:cwd. A finding (#27) by `project|ref|id`.
+export const findingId = (project: string, ref: string, id: string) => `${project}|${ref}|${id}`;
+/** Where a findings report is filed (#27): `pr:416` when its fence named the PR (owner, 2026-11-03), else its branch. A branch name never holds `:` (git refuses it). */
+export const findingRef = (d: { branch?: string; pr?: number }) => (d.pr ? `pr:${d.pr}` : d.branch!);
 const projectOf = (e: Event) => e.project.git_remote ?? `${e.host}:${e.project.cwd}`;
 
 /** The text in a batch, one row per field; metadata-only events give none. */
@@ -96,8 +98,8 @@ export function contentRows(events: Event[]): ContentRow[] {
         break;
       case 'findings.report':
         for (const f of e.data.findings) {
-          add(e, 'finding', findingId(projectOf(e), e.data.branch, f.id), 'title', f.title);
-          add(e, 'finding', findingId(projectOf(e), e.data.branch, f.id), 'why', f.why);
+          add(e, 'finding', findingId(projectOf(e), findingRef(e.data), f.id), 'title', f.title);
+          add(e, 'finding', findingId(projectOf(e), findingRef(e.data), f.id), 'why', f.why);
         }
         break;
     }

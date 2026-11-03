@@ -70,6 +70,14 @@ describe('parseFindings', () => {
     expect(performance.now() - t).toBeLessThan(1_000);
   });
 
+  it('the fence line may name the PR, #N (owner, 2026-11-03): the report then goes to that PR, whatever branch the checkout is on', () => {
+    expect(parseFindings('```orb-findings #416\nF1 major a.ts open\n```')).toEqual({ pr: 416, dropped: 0, findings: [{ id: 'F1', severity: 'major', file: 'a.ts', fate: 'open' }] });
+    expect(parseFindings('  ```orb-findings   #416  \r\nF1 major a.ts open\r\n  ```\r\n')!.pr).toBe(416);
+    // anything else on the fence line is no number, and the block still counts: a missed block would read as no report
+    for (const info of ['416', 'PR 416', '#0', '#4x', '# 416', '#416 #417']) expect(parseFindings(`\`\`\`orb-findings ${info}\nF1 major a.ts open\n\`\`\``), info).toEqual({ dropped: 0, findings: [{ id: 'F1', severity: 'major', file: 'a.ts', fate: 'open' }] });
+    expect(parseFindings('```orb-findingsX\nF1 major a.ts open\n```')).toBeUndefined(); // another block's name
+  });
+
   it('the last block counts: a report that quotes an earlier one ends with its own', () => {
     const r = parseFindings('Round 1 said:\n```orb-findings\nF1 major a.ts open\n```\nNow:\n```orb-findings\nF1 major a.ts fixed\n```\n');
     expect(r!.findings).toEqual([{ id: 'F1', severity: 'major', file: 'a.ts', fate: 'fixed' }]);
@@ -178,6 +186,7 @@ describe('the three events speak the server schema', () => {
   it.each([
     build.findingsReport(ctx, { agentId: 'a-1', turnId: 't-2' }, 'fix/409-token-retry', parseFindings(REPORT, (s) => s)!),
     build.findingsReport(ctx, { agentId: 'a-1', turnId: 't-2' }, 'fix/409-token-retry', parseFindings(REPORT)!),
+    build.findingsReport(ctx, { agentId: 'a-1', turnId: 't-2' }, undefined, parseFindings(REPORT.replace('```orb-findings', '```orb-findings #416'))!), // a detached head, the PR named
     build.gateReport(ctx, { agentId: 'a-2', turnId: 't-3' }, { result: 'pass', commit: 'a1b2c3d' }),
     build.projectOpenPrs(ctx, parseOpenPrs(OPEN)!),
   ])('%#', (e) => {

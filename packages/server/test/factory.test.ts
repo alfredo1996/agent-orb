@@ -195,6 +195,26 @@ describe('GET /api/factory', () => {
     expect(await the416()).toMatchObject({ ready: true, conditions: { bots: { ok: true } } });
   });
 
+  it('a report that names its PR goes to that PR, not to the branch the checkout was on (owner, 2026-11-03)', async () => {
+    const named = (ts: number, pr: number, list: object[], branch?: string) => ev(ts, 'findings.report', { ...(branch ? { branch } : {}), pr, findings: list, dropped: 0 }, { agent_id: `a-${ts}`, turn_id: `t-${ts}` });
+    await send(read(T0 + MIN, [open416(), { ...open416(), number: 418, head: 'feat/412-queue' }]), gate(T0 + MIN, 'pass', HEAD),
+      findings(T0 + MIN, [{ id: 'F01', severity: 'major', file: 'q.ts', fate: 'open' }], 'feat/412-queue'), // #418's own review, by branch
+      named(T0 + 2 * MIN, 416, [{ id: 'F01', severity: 'major', file: 'a.ts', fate: 'fixed' }], 'feat/412-queue')); // #416's fixer, run from #418's checkout
+    const f = await factory();
+    const pr = (n: number) => f.prs.find((p: { number: number }) => p.number === n);
+    expect([pr(416).ready, pr(416).findings]).toEqual([true, [{ id: 'F01', severity: 'major', file: 'a.ts', fate: 'fixed' }]]);
+    expect([pr(418).ready, pr(418).reason]).toEqual([false, '1 finding open: 1 major']); // #418's F01 stays open
+  });
+
+  it('a PR keeps its branch\'s rounds too: a numbered report adds to them, the latest fate of each finding winning', async () => {
+    await send(read(T0 + MIN, [open416()]), gate(T0 + MIN, 'pass', HEAD),
+      findings(T0 + 2 * MIN, [{ id: 'F1', severity: 'major', file: 'a.ts', fate: 'open', title: 'Race' }, { id: 'F2', severity: 'minor', file: 'b.ts', fate: 'open' }]),
+      ev(T0 + 3 * MIN, 'findings.report', { pr: 416, findings: [{ id: 'F1', severity: 'major', file: 'a.ts', fate: 'fixed' }], dropped: 0 }, { agent_id: 'a-n', turn_id: 't-n' }));
+    const p = await the416();
+    expect(p.findings).toEqual([{ id: 'F2', severity: 'minor', file: 'b.ts', fate: 'open' }, { id: 'F1', severity: 'major', file: 'a.ts', fate: 'fixed', title: 'Race' }]);
+    expect(p.reason).toBe('1 finding open: 1 minor');
+  });
+
   it('a gate on another project\'s commit, or another branch\'s findings, count for nothing here', async () => {
     const OTHER: Project = { cwd: '/Users/a/billing', name: 'billing', git_remote: 'github.com/o/billing' };
     await send(read(T0 + MIN, [open416()]), ev(T0 + 2 * MIN, 'gate.report', { result: 'pass', commit: 'e4f5a6b' }, { agent_id: 'g', turn_id: 'tg' }, OTHER),

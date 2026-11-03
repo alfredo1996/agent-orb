@@ -184,8 +184,10 @@ export const Event = z.discriminatedUnion('kind', [
   // v0.4 slice 1 (#27, Factory): a reviewer's or developer's `orb-findings` block, parsed on the machine (PROJECT.md §5). `branch` is the checkout's when the report ended,
   // which the server joins to an open PR's head. With Content off only id, severity, file and fate travel: `title` and `why` (a dismissed finding's reason) are text,
   // sent only with Content on full. `dropped` counts the lines that did not parse.
+  // `pr` is the PR the fence line named (```orb-findings #416, owner 2026-11-03): the report goes to it whatever the branch. One of the two at least.
   Base.extend({ kind: z.literal('findings.report'), data: z.object({
-    branch: id.max(200),
+    branch: id.max(200).optional(),
+    pr: z.number().int().positive().optional(),
     findings: z.array(z.object({
       id: z.string().regex(/^[A-Za-z0-9][\w.#-]{0,39}$/),
       severity: z.string().regex(/^[a-z]{1,20}$/),
@@ -195,7 +197,7 @@ export const Event = z.discriminatedUnion('kind', [
       why: z.string().transform((s) => s.slice(0, 300)).optional(),
     })).max(500),
     dropped: count,
-  }) }),
+  }).refine((d) => d.branch !== undefined || d.pr !== undefined, 'a findings report names its branch or its PR') }),
   // A tester's `orb-gate` block: the result and the commit it ran on, as the report wrote it (7 to 64 hex characters).
   Base.extend({ kind: z.literal('gate.report'), data: z.object({ result: z.enum(['pass', 'fail']), commit: z.string().regex(/^[0-9a-f]{7,64}$/) }) }),
   // The open PRs as gh lists them, every 5 minutes while a session runs: numbers, the branch (none for an excluded project), the head, the merge state, each check's name

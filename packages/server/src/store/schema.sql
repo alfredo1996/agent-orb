@@ -101,14 +101,15 @@ CREATE TABLE IF NOT EXISTS open_prs (
   project_id TEXT NOT NULL, number INTEGER NOT NULL, head TEXT, head_oid TEXT NOT NULL, merge_state TEXT NOT NULL, last_commit_at INTEGER, checks TEXT NOT NULL, bots TEXT NOT NULL,
   PRIMARY KEY (project_id, number)
 ) WITHOUT ROWID;
--- One finding per project, branch and id, as reviewers and developers reported it (findings.report): the latest report wins, across rounds, and a finding no later
--- report names keeps its fate. A title and a dismissal's reason are text: the text store holds them (node 'finding', id `project|branch|id`), with Content on full only.
--- finding_reports is the last report a branch had (an empty one says "nothing found") and how many lines did not parse, kept until a reviewer's report drops none.
+-- One finding per project, ref and id, as reviewers and developers reported it (findings.report): the latest report wins, across rounds, and a finding no later
+-- report names keeps its fate. ref is `pr:416` for a report whose fence named its PR, else the branch it was made on (a branch name never holds `:`); an open PR reads
+-- both its own and its head branch's. A title and a dismissal's reason are text: the text store holds them (node 'finding', id `project|ref|id`), with Content on full only.
+-- finding_reports is the last report a ref had (an empty one says "nothing found") and how many lines did not parse, kept until a reviewer's report drops none.
 CREATE TABLE IF NOT EXISTS findings (
-  project_id TEXT NOT NULL, branch TEXT NOT NULL, id TEXT NOT NULL, severity TEXT NOT NULL, file TEXT NOT NULL, fate TEXT NOT NULL, ts INTEGER NOT NULL,
-  PRIMARY KEY (project_id, branch, id)
+  project_id TEXT NOT NULL, ref TEXT NOT NULL, id TEXT NOT NULL, severity TEXT NOT NULL, file TEXT NOT NULL, fate TEXT NOT NULL, ts INTEGER NOT NULL,
+  PRIMARY KEY (project_id, ref, id)
 ) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS finding_reports (project_id TEXT NOT NULL, branch TEXT NOT NULL, ts INTEGER NOT NULL, dropped INTEGER NOT NULL, PRIMARY KEY (project_id, branch)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS finding_reports (project_id TEXT NOT NULL, ref TEXT NOT NULL, ts INTEGER NOT NULL, dropped INTEGER NOT NULL, PRIMARY KEY (project_id, ref)) WITHOUT ROWID;
 -- A tester's orb-gate per project and commit, as the report wrote it (7 to 64 hex characters, matched against a PR's head by prefix): the latest wins.
 CREATE TABLE IF NOT EXISTS gates (project_id TEXT NOT NULL, commit_sha TEXT NOT NULL, result TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (project_id, commit_sha)) WITHOUT ROWID;
 
