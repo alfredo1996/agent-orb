@@ -4,9 +4,9 @@ import type { EngineInterface as $, Register } from 'claude-code'
 import type { OrbAgentRow, OrbEventRow, OrbView } from '../types'
 import {
   BATCH, build, capText, changesArgv, checkStalls, commandClass, enqueue, errorClass, errorShape, filesTouched, fingerprintFiles, fingerprintsFrom, fmtTokens, goalNotice, hostName, isExcluded, mask, modelLabel, newOutbox, newTracker,
-  normalizeRemote, openPrsArgv, parseChanges, parseFindings, parseGate, parseGoal, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, toolContent, type ContentMode, type Goal, type GoalSent,
+  normalizeRemote, openPrsArgv, parseChanges, parseFindings, parseGoal, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, toolContent, type ContentMode, type Goal, type GoalSent,
   familyOf, modelCheck, modelFromFrontmatter, pricierNotice, rejectedIn, roleFromFrontmatter, settle, statusText, takeBatch, tokensOf, usageOf,
-  descriptionOf, preloadOf, refsIn, type CatalogAgent, type CatalogSkill, type Ctx, type Ev, type Refs, type Role, type SkillLoad,
+  descriptionOf, FINDINGS_ASK, preloadOf, refsIn, type CatalogAgent, type CatalogSkill, type Ctx, type Ev, type Refs, type Role, type SkillLoad,
 } from './core.ts'
 
 // Capture (PROJECT.md §4): every hook passes through at once and only queues an event.
@@ -36,11 +36,12 @@ let endpoint = 'http://127.0.0.1:4040'
 let token = ''
 let stallMs = 15 * 60_000
 let modelCeiling = 'sonnet' // v0.2 slice 2: haiku | sonnet | opus | off
+let askFindings = true // #34: every subagent is asked for the findings block; the setting's off leaves prompts as they are
 let contentSetting = 'off'
 let excludeList = ''
 // off | full | excluded, decided at session start from the setting and the project (§15, 2026-10-20)
 let contentMode: ContentMode = 'off'
-let excluded = true // the project is in excludeProjects: it sends no findings or gate blocks (#27), whatever Content is set to; closed until start() has decided
+let excluded = true // the project is in excludeProjects: it sends no findings or gate (#27) and its agents are not asked (#34), whatever Content is set to; closed until start() has decided
 const text = (s: string | undefined) => (contentMode === 'full' && s ? capText(mask(s)) : undefined)
 
 let ctx: Ctx | undefined
@@ -75,7 +76,6 @@ const parentOf = new Map<string, string>()
 // What an agent file says, read once per type: whether a file was found, its orb-role and its model.
 type AgentFile = { found: boolean; role?: Role; model?: string }
 const agentFiles = new Map<string, AgentFile>()
-const agentType = new Map<string, string>() // v0.4 slice 1: a subagent's type, whose file's orb-role says which block its final report carries
 const skillCalls: string[] = []
 // Slice 5: the session's skill and agent names (to match references against), a typed /name waiting for its turn,
 // and the newest subagent (a preload fires right after its first turn starts; docs/verified.md, Skills).
@@ -337,26 +337,33 @@ async function readOpenPrs($: $) {
 }
 
 /**
- * v0.4 slice 1 (#27): a subagent's final report, read for its blocks by its declared role: a reviewer's or a developer's `orb-findings`, a tester's `orb-gate`. The
- * findings go to the PR the fence names (```orb-findings #416), and with the branch the checkout is on now (a session moves from its worktree's branch to its
- * issue's), which the server joins to an open PR's head when the fence names none; a detached head with no number sends nothing. A title and a dismissal's reason go only with Content on full, masked. An excluded project sends neither block.
+ * v0.4 slice 1 (#27): a subagent's final report, read for its `orb-findings` block, whatever its role (#34: the plugin asked every subagent for it, so no role is needed).
+ * The findings go to the PR the fence names (```orb-findings #416), and with the branch the checkout is on now (a session moves from its worktree's branch to its
+ * issue's), which the server joins to an open PR's head when the fence names none; a detached head with no number sends nothing. A title and a dismissal's reason go only with Content on full, masked. An excluded project sends no block.
  * ponytail: the branch is the session's checkout's; a subagent isolated in a worktree of its own reports on the session's branch. Pass the agent's cwd if that is ever seen.
  */
 async function sendReport($: $, w: { agentId: string; turnId: string }, answer: string) {
-  const type = agentType.get(w.agentId)
-  if (!ctx || excluded || !type) return
-  const role = (await agentFile($, type).catch((): AgentFile => ({ found: false }))).role // read once per type; a report can end before the spawn's own read did
-  if (role === 'tester') {
-    const g = parseGate(answer)
-    if (g) push($, build.gateReport(ctx, w, g), { agent: label(w.agentId), kind: 'gate.report', detail: `${g.result} ${g.commit.slice(0, 7)}` })
-    return
-  }
-  if (role !== 'reviewer' && role !== 'developer') return
+  if (!ctx || excluded) return
   const f = parseFindings(answer, text)
   if (!f) return
   const branch = await $.process.run(['git', '-C', checkout, 'branch', '--show-current']).then((r: { exitCode: number; stdout: string }) => (r.exitCode === 0 ? r.stdout.trim().slice(0, 200) : '')).catch(() => '') // cut as parseOpenPrs cuts a head, so the two still join
   // A report that names its PR goes to it from anywhere; one that does not needs the branch to find its PR.
   if ((branch || f.pr) && ctx) push($, build.findingsReport(ctx, w, branch || undefined, f), { agent: label(w.agentId), kind: 'findings.report', detail: `${f.findings.length} on ${f.pr ? `#${f.pr}` : branch}` })
+}
+
+/**
+ * #34: the gate from the test runs the session makes: a Bash call of class `test` that ran is a pass or a fail on the commit the checkout is on, when no tracked file
+ * differs from it. A dirty tree sends nothing: the run tested the commit plus an edit. An excluded project sends none.
+ * ponytail: any test run counts, one file's as much as the suite's, and the tree is the session's checkout's, so a subagent isolated in a worktree of its own, or a
+ * `cd` elsewhere, reads the session's. That is the ceiling of reading runs rather than a declared gate (README, Known limits).
+ */
+async function sendGate($: $, w: { agentId?: string; turnId?: string }, result: 'pass' | 'fail') {
+  if (!ctx || excluded) return
+  const git = (...args: string[]) => $.process.run(['git', '-C', checkout, ...args]).catch(() => ({ exitCode: 1, stdout: '' }))
+  const [head, status] = await Promise.all([git('rev-parse', 'HEAD'), git('status', '--porcelain', '--untracked-files=no')])
+  const commit = head.stdout.trim()
+  if (head.exitCode || status.exitCode || status.stdout.trim() || !/^[0-9a-f]{7,64}$/.test(commit) || !ctx) return
+  push($, build.gateReport(ctx, w, { result, commit }), { agent: label(key(w.agentId)), kind: 'gate.report', detail: `${result} ${commit.slice(0, 7)}` })
 }
 
 const timeZone = () => {
@@ -448,6 +455,7 @@ export const register: Register = (on, options) => {
   token = String(options.token ?? '')
   stallMs = Math.max(1, Number(options.stallMinutes ?? 15)) * 60_000
   modelCeiling = String(options.modelCeiling ?? 'sonnet')
+  askFindings = String(options.askFindings ?? 'on') !== 'off'
   contentSetting = String(options.content ?? 'off')
   excludeList = String(options.excludeProjects ?? '')
 
@@ -536,13 +544,15 @@ export const register: Register = (on, options) => {
   }).catch(($, e, next) => next(e))
 
   on('agent.spawn', async ($, e, next) => {
-    const r = await next(e)
+    // #34: the subagent is asked for the findings block, once. A workflow agent's or a resume's prompt is the engine's to keep (it ignores a rewrite), and a brief that
+    // carries the paragraph already is a re-dispatch of one the engine was given.
+    const ask = askFindings && !excluded && !e.workflow && !e.resume && !e.prompt.includes(FINDINGS_ASK)
+    const r = await next(ask ? { ...e, prompt: e.prompt + FINDINGS_ASK } : e)
     if (ctx && r.agentId) {
       const c = ctx
       const child = r.agentId
       const a = agent(child)
       a.label = e.subagentType
-      agentType.set(child, e.subagentType)
       agentModel.set(child, r.model)
       if (e.parentAgentId) parentOf.set(child, e.parentAgentId)
       else parentOf.set(child, 'main')
@@ -604,14 +614,17 @@ export const register: Register = (on, options) => {
       const r = await next(e)
       const success = r.deny === undefined && r.isError !== true
       const out = contentMode === 'full' ? toolContent(String(tool), input, r.text ?? r.deny ?? '') : undefined
+      const failure = success ? undefined : errorClass(String(tool), r.deny ?? r.text ?? '', r.deny !== undefined)
       push($, build.toolResult(c, w, {
         output: out?.output, outputSkipped: out?.output_skipped,
         toolUseId: id, success, errorType: r.deny !== undefined ? 'denied' : r.isError ? 'error' : undefined,
-        errorClass: success ? undefined : errorClass(String(tool), r.deny ?? r.text ?? '', r.deny !== undefined),
+        errorClass: failure,
         errorShape: success ? undefined : errorShape(String(tool), r.deny ?? r.text ?? '', command), // v0.3 slice 3 (#45): a short name or hash of the failure, never its text
         durationMs: stamp() - since, outputSize: (r.text ?? '').length, files: success ? filesTouched(String(tool), input, checkout) : [],
       }), { agent: label(k), kind: 'tool.result', detail: `${tool} ${success ? '✓' : '✗'} · ${dur(stamp() - since)}`, tone: success ? undefined : 'bad' })
       if (success) taskEvent($, c, w, String(tool), input, r.result)
+      // #34: a test run that ran is the gate on the checkout's commit; one sent to the background answered "started", and a refused one never ran.
+      if (command === 'test' && input.run_in_background !== true && failure !== 'refused') void sendGate($, w, success ? 'pass' : 'fail').catch(() => {}) // off the hook's path: it asks git
       // v0.3 slice 2 (#42): a PR of this repository that a command printed (`gh pr create` ends with its URL) is this session's: only the number is sent.
       // Bash and MCP output only: a file or a page the session read can mention any PR, and reading it did not open them.
       if ((tool === 'Bash' || String(tool).startsWith('mcp__')) && r.text) {

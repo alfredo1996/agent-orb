@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS findings (
   PRIMARY KEY (project_id, ref, id)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS finding_reports (project_id TEXT NOT NULL, ref TEXT NOT NULL, ts INTEGER NOT NULL, dropped INTEGER NOT NULL, PRIMARY KEY (project_id, ref)) WITHOUT ROWID;
--- A tester's orb-gate per project and commit, as the report wrote it (7 to 64 hex characters, matched against a PR's head by prefix): the latest wins.
+-- A test run's result per project and commit, from a run on a clean tree (#34; 7 to 64 hex characters, matched against a PR's head by prefix): the latest wins.
 CREATE TABLE IF NOT EXISTS gates (project_id TEXT NOT NULL, commit_sha TEXT NOT NULL, result TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (project_id, commit_sha)) WITHOUT ROWID;
 
 -- The indexes the writer's own lookups and the reads walk. A read goes from a project down to its calls (projects, sessions, agents, turns), and what it counts

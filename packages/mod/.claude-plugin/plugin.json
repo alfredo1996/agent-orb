@@ -39,6 +39,16 @@
       ],
       "default": "sonnet"
     },
+    "askFindings": {
+      "type": "string",
+      "title": "Ask agents for findings",
+      "description": "on: every subagent is asked to end a review or a fix with an orb-findings block, for the Factory page; off leaves their prompts as they are",
+      "options": [
+        "on",
+        "off"
+      ],
+      "default": "on"
+    },
     "content": {
       "type": "string",
       "title": "Content",

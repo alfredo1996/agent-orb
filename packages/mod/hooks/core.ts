@@ -560,7 +560,7 @@ export function prNumbersIn(text: string, remote: string | undefined): number[] 
   return [...found];
 }
 
-// ── Factory: findings, the gate and the open PRs (v0.4 slice 1, #27, PROJECT.md §5) ──────────────
+// ── Factory: findings, the gate and the open PRs (v0.4 slice 1, #27, PROJECT.md §5; the gate from test runs, #34) ──────────────
 
 export const FATES = ['fixed', 'dismissed', 'open'] as const;
 export type Fate = (typeof FATES)[number];
@@ -570,7 +570,23 @@ export type Gate = { result: 'pass' | 'fail'; commit: string };
 const FINDINGS_MAX = 500;
 // `id severity file fate`: an id of letters, digits and `._#-`, a lower-case severity, a path with no space, and one of the three fates. Anything else is dropped, not guessed.
 const FINDING = /^([A-Za-z0-9][\w.#-]{0,39}) ([a-z]{1,20}) (\S{1,300}) (fixed|dismissed|open)$/;
-const GATE = /^(pass|fail) ([0-9a-f]{7,64})$/;
+
+/**
+ * #34: the one thing the plugin adds to what an agent is told (PROJECT.md §2), appended to every subagent's prompt, so findings reach the Factory from any repo with no
+ * change to its agent files. Its example is the format parseFindings reads; factory.spec.ts holds the two together.
+ */
+export const FINDINGS_ASK = [
+  '',
+  '',
+  'agent-orb, a plugin that records this session, asks one thing: if you reviewed or fixed code, end your final report with an `orb-findings` block, one finding a line,',
+  '`id severity file fate | title`, then ` | why` for a dismissed one: fate is fixed, dismissed or open, severity one lower-case word, file a path with no space.',
+  "Put the PR's number for #N, or leave #N out if you don't know it. Keep the ids a review gave you, and write an empty block if you found nothing. For example:",
+  '```orb-findings #N',
+  'F1 major src/auth/refresh.ts open | Two refreshes can run at once',
+  'F2 minor src/net/client.ts dismissed | The timeout is not a constant | Used once, so no config',
+  'F3 major src/auth/refresh.ts fixed | The token was written before the response was checked',
+  '```',
+].join('\n');
 
 /**
  * The last ```name block in a report: its body, and what its fence line says after the name, or nothing when there is none. A fence may be indented (a block in a
@@ -587,7 +603,7 @@ function lastBlock(text: string, name: string): { body: string; info: string } |
 }
 
 /**
- * A reviewer's or developer's `orb-findings` block: one finding a line, `id severity file fate`, then ` | title`, then ` | why` for a dismissed one. A line that does not
+ * A subagent's `orb-findings` block (FINDINGS_ASK asks every one for it): one finding a line, `id severity file fate`, then ` | title`, then ` | why` for a dismissed one. A line that does not
  * parse is dropped and counted (`dropped`), so a reader can tell "none open" from "some unread". An empty block is a report that found nothing; no block, no report.
  * `text` decides what of the title and the reason travels: the plugin passes its Content helper (masked, and nothing unless Content is on full); without it, nothing does.
  */
@@ -615,15 +631,6 @@ export function parseFindings(report: string, text: (s: string) => string | unde
     findings.push({ id: m[1]!, severity: m[2]!, file: mask(m[3]!).slice(0, 300), fate, ...(t ? { title: t } : {}), ...(w ? { why: w } : {}) });
   }
   return { findings, dropped, ...(pr ? { pr } : {}) };
-}
-
-/** A tester's `orb-gate` block: `pass|fail <commit>`, the first line that parses. A commit is 7 to 64 lower-case hex characters, as git prints one. */
-export function parseGate(report: string): Gate | undefined {
-  for (const line of lastBlock(report, 'orb-gate')?.body.split('\n') ?? []) {
-    const m = GATE.exec(line.trim());
-    if (m) return { result: m[1] as Gate['result'], commit: m[2]! };
-  }
-  return undefined;
 }
 
 export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };

@@ -85,6 +85,7 @@ All of them live in the plugin's settings in Claude Code.
 | Token | empty | `ORB_TOKEN` from `deploy/.env` |
 | Stall alert (minutes) | 15 | Flags a tool, or a silent agent mid-turn, after this long |
 | Model ceiling | `sonnet` | Agents with no model of their own (general-purpose, workflow agents, `model: inherit`) are flagged above this: `haiku`, `sonnet`, `opus`, or `off` to turn that part off. An agent whose file has a `model:` is always held to that |
+| Ask agents for findings | `on` | Adds one short paragraph to every subagent's prompt: an agent that reviewed or fixed code ends its report with an `orb-findings` block, which the Factory page reads. Nothing in your repo changes. `off` leaves prompts as they are |
 | Content | `off` | `off` sends metadata only. `full` also keeps prompts, answers, thinking where Claude Code shares it, and tool input and output |
 | Never send content for | empty | Repo names, `owner/repo` or paths that stay metadata-only even with Content on `full` |
 
@@ -135,6 +136,9 @@ To restore, run `deploy/restore.sh ~/agent-orb-backups/<date>`. It asks first, s
 - Live state is held in memory, so restarting the server clears the live cards. The history, the Ledger and the reports keep everything.
 - A session counts under the folder it started in.
 - It's built for one person on one machine. The studio has no login, so keep it on 127.0.0.1.
+- Factory's findings come from the subagents the plugin asks. A workflow agent can't be asked, since Claude Code doesn't let a plugin change its prompt (Code Review's agents are workflow agents), so its findings don't show.
+- A review the main session does itself, with no subagent, isn't asked either.
+- Factory's gate is the last test run the plugin saw on the PR's head commit, with no uncommitted change to a tracked file. Any test run counts, so a narrow one (a single file) that passes on the head counts as the gate. That's the ceiling of reading runs rather than a declared gate.
 
 ## How it compares
 

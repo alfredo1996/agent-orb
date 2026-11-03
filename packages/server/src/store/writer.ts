@@ -232,10 +232,13 @@ function writeRows(db: Store, ev: Event[], source: Source) {
     }
   }
   // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it
-  // handled, not what the review found. The role is the reporting agent's, from its spawn.
+  // handled, not what the review found. The role is the reporting agent's, from its spawn; with none (#34: orb-role is optional), an agent that wrote no file is the reviewer.
+  // ponytail: a fixer that changed code through Bash alone (sed, a script) wrote no file here and counts as a reviewer. Read its Bash calls if that is ever seen.
   for (const e of only(ev, 'findings.report')) {
     const key = { project: projectId(e), ref: findingRef(e.data), ts: e.ts }; // its PR when the fence named one, else its branch
-    const reviewer = get(db, 'SELECT role FROM agents WHERE id = :id', { id: agentKey(e) })?.role === 'reviewer';
+    const role = get(db, 'SELECT role FROM agents WHERE id = :id', { id: agentKey(e) })?.role;
+    const reviewer = role === 'reviewer' || (role !== 'developer' && !get(db, `SELECT 1 AS x FROM turns t JOIN tool_calls c ON c.turn_id = t.id
+      JOIN files_touched f ON f.tool_use_id = c.tool_use_id AND f.mode = 'write' WHERE t.agent_id = :id LIMIT 1`, { id: agentKey(e) }));
     run(db, `INSERT INTO finding_reports (project_id, ref, ts, dropped) VALUES (:project, :ref, :ts, :dropped)
              ON CONFLICT (project_id, ref) DO UPDATE SET ts = excluded.ts,
                dropped = CASE WHEN :reviewer THEN excluded.dropped ELSE max(finding_reports.dropped, excluded.dropped) END WHERE excluded.ts >= finding_reports.ts`,

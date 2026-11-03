@@ -11,7 +11,7 @@ const MIN = 60_000;
 const NOW = Date.parse('2026-11-03T10:00:00Z');
 
 const cond = (ok: boolean | null, note: string) => ({ ok, note });
-const ALL_OK = { findings: cond(true, '11 fixed, 2 dismissed, none open'), gate: cond(true, 'orb-gate passed on a1b2c3d'), bots: cond(true, 'No unread bot comment since the last commit'), clean: cond(true, 'CLEAN') };
+const ALL_OK = { findings: cond(true, '11 fixed, 2 dismissed, none open'), gate: cond(true, 'Test run passed on a1b2c3d'), bots: cond(true, 'No unread bot comment since the last commit'), clean: cond(true, 'CLEAN') };
 const FULL = [
   { id: 'F12', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open' as const, title: 'Two refreshes can run at once' },
   { id: 'F14', severity: 'minor', file: 'src/auth/refresh.spec.ts', fate: 'open' as const, title: 'The retry test passes with the backoff removed' },
