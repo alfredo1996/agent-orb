@@ -7,7 +7,7 @@ import { prepare } from './store/store.ts';
 // date range is one DELETE, and the history store never carries the bulk.
 // ponytail: no full-text index yet; when search is built, add an FTS5 table over `body` (built into node:sqlite).
 
-export type ContentNode = 'prompt' | 'agent' | 'request' | 'tool';
+export type ContentNode = 'prompt' | 'agent' | 'request' | 'tool' | 'finding';
 export type ContentRow = { node: ContentNode; id: string; field: string; body: string; session_id: string; project: string; ts: number };
 export type ContentStore = {
   put(rows: ContentRow[]): void;
@@ -66,7 +66,8 @@ export function openContentStore(path: string): ContentStore {
 }
 
 // The same ids the history writer gives the nodes (store/writer.ts): Prompt by prompt_id, Agent by session:agent,
-// ApiRequest by the turn.step event id, ToolCall by tool_use_id; Project by remote, else host:cwd.
+// ApiRequest by the turn.step event id, ToolCall by tool_use_id; Project by remote, else host:cwd. A finding (#27) by `project|branch|id`.
+export const findingId = (project: string, branch: string, id: string) => `${project}|${branch}|${id}`;
 const projectOf = (e: Event) => e.project.git_remote ?? `${e.host}:${e.project.cwd}`;
 
 /** The text in a batch, one row per field; metadata-only events give none. */
@@ -92,6 +93,12 @@ export function contentRows(events: Event[]): ContentRow[] {
         break;
       case 'tool.result':
         add(e, 'tool', e.data.tool_use_id, 'output', e.data.output);
+        break;
+      case 'findings.report':
+        for (const f of e.data.findings) {
+          add(e, 'finding', findingId(projectOf(e), e.data.branch, f.id), 'title', f.title);
+          add(e, 'finding', findingId(projectOf(e), e.data.branch, f.id), 'why', f.why);
+        }
         break;
     }
   }

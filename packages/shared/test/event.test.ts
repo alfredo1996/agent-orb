@@ -41,6 +41,10 @@ const examples = [
   ev('project.changes', { commits: [{ sha: '0dd1cc0ffee0dd1cc0ffee0dd1cc0ffee0dd1cc0', ts: 1_792_300_000_000, subject: 'feat: the agents arrive', files: ['.claude/agents/implementer.md', 'CLAUDE.md'], blobs: ['1'.repeat(40), '2'.repeat(40)] }, { sha: 'c3f9a2e', ts: 1_792_200_000_000, files: [] }] }),
   ev('project.prs', { prs: [{ number: 141, title: 'feat(api): export photos as a zip', merged_at: 1_792_300_000_000, additions: 1288, deletions: 47, head: 'feat/zip-export' }, { number: 129, merged_at: 1_792_200_000_000, additions: 0, deletions: 0 }] }),
   ev('session.pr', { number: 141 }),
+  // v0.4 slice 1 (#27, Factory)
+  ev('findings.report', { branch: 'fix/409-token-retry', findings: [{ id: 'F12', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open', title: 'Two refreshes race' }, { id: 'F09', severity: 'minor', file: 'b.ts', fate: 'dismissed', why: 'Used once' }], dropped: 0 }, { agent_id: 'a-1', turn_id: 't-1' }),
+  ev('gate.report', { result: 'pass', commit: 'a1b2c3d' }, { agent_id: 'a-2', turn_id: 't-2' }),
+  ev('project.open_prs', { prs: [{ number: 416, head: 'fix/409-token-retry', head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: 1_792_400_000_000, checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: 1_792_400_100_000 }] }] }),
   ev('project.fingerprint', { files: [{ path: '.claude/agents/implementer.md', hash: '1'.repeat(40), scope: 'project' }, { path: '~/.claude/rules/git.md', hash: 'a'.repeat(64), scope: 'user' }] }),
   ev('skills.catalog', {
     skills: [{ name: 'alpha', source: 'projectSettings', tokens: 19, description: 'Runs beta', refs: { skills: ['beta'], agents: ['scout'] } }, { name: 'p:x', source: 'plugin', plugin: 'p', tokens: 40 }],
@@ -148,6 +152,16 @@ describe('Event schema', () => {
     for (const number of [0, -3, 1.5, '7', undefined]) expect(Event.safeParse(ev('session.pr', { number })).success, String(number)).toBe(false);
     const e = Event.parse(ev('session.pr', { number: 7, url: 'https://github.com/o/r/pull/7', title: 'a title' }));
     expect(e.data).toEqual({ number: 7 }); // only the number leaves the machine
+  });
+
+  it('findings.report, gate.report, project.open_prs: a fate is one of three, a commit is hex, and a comment\'s text has no field to travel in (v0.4 slice 1)', () => {
+    const f = (finding: object) => ev('findings.report', { branch: 'b', findings: [{ id: 'F1', severity: 'major', file: 'a.ts', fate: 'open', ...finding }], dropped: 0 });
+    for (const bad of [{ fate: 'wontfix' }, { severity: 'Major' }, { id: 'F 1' }, { file: '' }]) expect(Event.safeParse(f(bad)).success, JSON.stringify(bad)).toBe(false);
+    expect(Event.parse(f({ fate: 'dismissed', title: 't'.repeat(250), why: 'w'.repeat(400) })).data).toMatchObject({ findings: [{ title: 't'.repeat(200), why: 'w'.repeat(300) }] });
+    for (const commit of ['a1b2c3', 'A1B2C3D', 'a1b2c3d '.trim() + 'g']) expect(Event.safeParse(ev('gate.report', { result: 'pass', commit })).success, commit).toBe(false);
+    expect(Event.safeParse(ev('gate.report', { result: 'passed', commit: 'a1b2c3d' })).success).toBe(false);
+    const read = Event.parse(ev('project.open_prs', { prs: [{ number: 1, head_oid: 'e'.repeat(40), merge_state: 'CLEAN', checks: [], bots: [{ author: 'coderabbitai', at: 1, body: 'the review text' }], title: 'a title', comments: ['x'] }] }));
+    expect(JSON.stringify(read)).not.toMatch(/review text|a title|comments/);
   });
 
   it('project.checkout: the session\'s own working tree, optional, never empty (v0.2 slice 3)', () => {

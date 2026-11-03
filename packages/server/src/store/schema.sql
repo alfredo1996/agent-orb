@@ -8,8 +8,8 @@
 CREATE TABLE IF NOT EXISTS ingested (id TEXT PRIMARY KEY) WITHOUT ROWID;
 
 -- id is the git remote, else `host:cwd` (a project the import filed before the plugin knew the remote; the re-home moves it).
--- goal_usd is the owner's monthly goal, set by PUT /api/goal, never by the writer.
-CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, git_remote TEXT, goal_usd REAL) WITHOUT ROWID;
+-- goal_usd is the owner's monthly goal, set by PUT /api/goal, never by the writer. prs_read_at is when the plugin last read the project's open PRs (#27; open_prs below).
+CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, git_remote TEXT, goal_usd REAL, prs_read_at INTEGER) WITHOUT ROWID;
 -- Project.cwds: every distinct project.cwd seen for it.
 CREATE TABLE IF NOT EXISTS project_cwds (project_id TEXT NOT NULL, cwd TEXT NOT NULL, PRIMARY KEY (project_id, cwd)) WITHOUT ROWID;
 -- RoleRule: the role the owner fixed for an agent type in a project. The writer reads it on a spawn and moves it on a re-home; the API writes it.
@@ -94,6 +94,23 @@ CREATE TABLE IF NOT EXISTS claims (
   agent_id TEXT NOT NULL, turn_id TEXT NOT NULL, n INTEGER NOT NULL, session_id TEXT NOT NULL, kind TEXT NOT NULL, file TEXT, backed INTEGER NOT NULL, why TEXT,
   edit_ts INTEGER, run_ts INTEGER, request_id TEXT NOT NULL, at INTEGER NOT NULL, len INTEGER NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (agent_id, turn_id, n)
 ) WITHOUT ROWID;
+
+-- v0.4 slice 1 (#27, Factory). open_prs: the open PRs as the plugin last read them from GitHub (project.open_prs), a snapshot per project: a read newer than
+-- projects.prs_read_at replaces the project's rows, so a PR merged or closed since leaves. checks and bots are JSON arrays ({ name, state }, { author, at }).
+CREATE TABLE IF NOT EXISTS open_prs (
+  project_id TEXT NOT NULL, number INTEGER NOT NULL, head TEXT, head_oid TEXT NOT NULL, merge_state TEXT NOT NULL, last_commit_at INTEGER, checks TEXT NOT NULL, bots TEXT NOT NULL,
+  PRIMARY KEY (project_id, number)
+) WITHOUT ROWID;
+-- One finding per project, branch and id, as reviewers and developers reported it (findings.report): the latest report wins, across rounds, and a finding no later
+-- report names keeps its fate. A title and a dismissal's reason are text: the text store holds them (node 'finding', id `project|branch|id`), with Content on full only.
+-- finding_reports is the last report a branch had (an empty one says "nothing found") and how many of its lines did not parse.
+CREATE TABLE IF NOT EXISTS findings (
+  project_id TEXT NOT NULL, branch TEXT NOT NULL, id TEXT NOT NULL, severity TEXT NOT NULL, file TEXT NOT NULL, fate TEXT NOT NULL, ts INTEGER NOT NULL,
+  PRIMARY KEY (project_id, branch, id)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS finding_reports (project_id TEXT NOT NULL, branch TEXT NOT NULL, ts INTEGER NOT NULL, dropped INTEGER NOT NULL, PRIMARY KEY (project_id, branch)) WITHOUT ROWID;
+-- A tester's orb-gate per project and commit, as the report wrote it (7 to 64 hex characters, matched against a PR's head by prefix): the latest wins.
+CREATE TABLE IF NOT EXISTS gates (project_id TEXT NOT NULL, commit_sha TEXT NOT NULL, result TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (project_id, commit_sha)) WITHOUT ROWID;
 
 -- The indexes the writer's own lookups and the reads walk. A read goes from a project down to its calls (projects, sessions, agents, turns), and what it counts
 -- must come from an index, not from a table row fetched for every call: that, not the joins, was the cost (#83, slice 2). So calls_turn carries `success`,

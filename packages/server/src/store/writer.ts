@@ -217,6 +217,35 @@ function writeRows(db: Store, ev: Event[], source: Source) {
              ON CONFLICT (session_id, pr_id) DO UPDATE SET ts = ${earliest('session_prs.ts', 'ts')}`, { session: e.session_id, id, ts: e.ts });
   }
 
+  // v0.4 slice 1 (#27, Factory): the open PRs replace the project's last read when they are newer than it (an older read arriving late changes nothing); a finding and a gate
+  // keep the latest report's word, whatever order the reports arrive in. A finding's title and reason go to the text store (content-store.ts), never here.
+  for (const e of only(ev, 'project.open_prs')) {
+    const project = projectId(e);
+    if (!Number(run(db, 'UPDATE projects SET prs_read_at = :ts WHERE id = :project AND (prs_read_at IS NULL OR prs_read_at < :ts)', { project, ts: e.ts }).changes)) continue;
+    run(db, 'DELETE FROM open_prs WHERE project_id = :project', { project });
+    for (const p of e.data.prs) {
+      run(db, `INSERT INTO open_prs (project_id, number, head, head_oid, merge_state, last_commit_at, checks, bots) VALUES (:project, :number, :head, :oid, :state, :at, :checks, :bots)
+               ON CONFLICT (project_id, number) DO UPDATE SET head = excluded.head, head_oid = excluded.head_oid, merge_state = excluded.merge_state, last_commit_at = excluded.last_commit_at,
+                 checks = excluded.checks, bots = excluded.bots`,
+      { project, number: p.number, head: p.head, oid: p.head_oid, state: p.merge_state, at: p.last_commit_at, checks: JSON.stringify(p.checks), bots: JSON.stringify(p.bots) });
+    }
+  }
+  for (const e of only(ev, 'findings.report')) {
+    const key = { project: projectId(e), branch: e.data.branch, ts: e.ts };
+    run(db, `INSERT INTO finding_reports (project_id, branch, ts, dropped) VALUES (:project, :branch, :ts, :dropped)
+             ON CONFLICT (project_id, branch) DO UPDATE SET ts = excluded.ts, dropped = excluded.dropped WHERE excluded.ts >= finding_reports.ts`, { ...key, dropped: e.data.dropped });
+    for (const f of e.data.findings) {
+      run(db, `INSERT INTO findings (project_id, branch, id, severity, file, fate, ts) VALUES (:project, :branch, :id, :severity, :file, :fate, :ts)
+               ON CONFLICT (project_id, branch, id) DO UPDATE SET severity = excluded.severity, file = excluded.file, fate = excluded.fate, ts = excluded.ts WHERE excluded.ts >= findings.ts`,
+      { ...key, id: f.id, severity: f.severity, file: f.file, fate: f.fate });
+    }
+  }
+  for (const e of only(ev, 'gate.report')) {
+    run(db, `INSERT INTO gates (project_id, commit_sha, result, ts) VALUES (:project, :commit, :result, :ts)
+             ON CONFLICT (project_id, commit_sha) DO UPDATE SET result = excluded.result, ts = excluded.ts WHERE excluded.ts >= gates.ts`,
+    { project: projectId(e), commit: e.data.commit, result: e.data.result, ts: e.ts });
+  }
+
   // Slice 5: the skills and custom agents a session lists, one SkillDef per project, kind, origin and name. A field a later event leaves out keeps
   // what an earlier one said (a plugin skill's references arrive with its first load). tokens is 0 until one says.
   const def = (e: Event, kind: 'skill' | 'agent', d: { name: string; source: string; plugin?: string; tokens?: number; description?: string; refs?: { skills: string[]; agents: string[] }; preload?: string[] }) => ({

@@ -4,6 +4,7 @@ import Fastify, { type FastifyRequest, type FastifyServerOptions } from 'fastify
 import { analysis } from './api/analysis.ts';
 import type { Claude } from './analysis-claude.ts';
 import { openAnalysisStore, type AnalysisStore } from './analysis-store.ts';
+import { factory } from './api/factory.ts';
 import { goal } from './api/goal.ts';
 import { history } from './api/history.ts';
 import { openContentStore, type ContentStore } from './content-store.ts';
@@ -75,5 +76,6 @@ export function buildApp({ store = openStore(':memory:'), token, logger = false,
   worth(app, { store, reports }); // the owner's rate, plan and sizes live in the same file as the cap
   patterns(app, { store, content }); // v0.3 slice 3 (#45): the store's classes and shapes; only a repeat's sample reads the text store
   pipeline(app, { store }); // the Pipeline, its role fixes, and the lanes and lists its pickers ask for
+  factory(app, { store, content }); // v0.4 slice 1 (#27): ready() per open PR, and its findings; a finding's title and reason are in the text store
   return app;
 }
