@@ -723,6 +723,17 @@ The split: v0.3 "Worth and truth" (#43, #42, #45, #44, in that order) and v0.4 "
 - **Four slices**, each its own PR into `feat/sqlite`: the store, the writer and the import (#87); the read APIs (#83); the Pipeline (#84); the deploy (#85). #44 (unbacked claims) is built after, on SQLite.
 - **No migration.** Slice 4 removed the Neo4j service, driver, writer, Testcontainers setup and dump. The owner's only Neo4j data is a backup kept by hand, and this version cannot restore it. This supersedes round 1 decision 4, round 2 decisions 3 and 6, the 2026-10-24 backup decision's Neo4j dump, and the text store's "Neo4j keeps the topology".
 
+### Decision (owner, 2026-11-03, in chat): v0.4 is Factory, and its mockup is approved
+"Approve it": `design/v0.4-factory.html` with every board as recommended, plus one line the mockup added: a dismissed finding says why. The plan behind it, settled on 27 Oct, 31 Oct and 2 Nov, is #20. In short:
+- Factory serves the owner's own code factory, not a product. One new page with three bands, Needs you, Board and Machine; findings open in a sheet.
+- A PR is ready when no finding is open, the gate passed on its head commit, no bot comment is newer than the last commit, and `mergeStateStatus` is `CLEAN`. Ready means ready for the owner's ok: nothing merges by itself.
+- The plugin reads GitHub every 5 minutes while a session runs in that repo. The server holds no token.
+- An issue's cost goes by time windows, the rest is one "not on an issue" total per project, and every figure is an estimate. Budgets warn at 80% and 100% and never stop anything.
+- agent-orb acts in two ways only: it refuses `gh pr merge` on a definite no, and Live's Stop ends a stalled session's main turn. §2 gets that one exception when slice 5 lands.
+- Six slices, one issue and one PR each: findings, the merge check and the page with Needs you; issue cost and budget; the machine view; alerts, after the phone test; merge refusal and Stop; the board.
+
+This supersedes the v0.4 "Explain" of the 2026-10-25 split: Explain is v0.5 and Share v0.6.
+
 Earlier (v1.0): TypeScript everywhere, Fastify server; Neo4j Community + APOC with the server as its only client (replaced by SQLite on 2026-10-26, above); cost computed server-side from `pricing.json`.
 
 ---
