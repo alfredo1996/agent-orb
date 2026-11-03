@@ -10,8 +10,8 @@ import { all, get, type Store } from '../store/store.ts';
 
 export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };
 export type PrState = { headOid: string; mergeState: string; lastCommitAt?: number; checks: Check[]; bots: { author: string; at: number }[] };
-/** A branch's findings, the latest fate each, and how many lines its last report dropped; undefined when no report reached the branch. */
-export type Ledger = { findings: { severity: string; fate: Fate }[]; dropped: number } | undefined;
+/** A branch's findings, the latest fate each, how many lines its reports dropped, and when its last report came; undefined when no report reached the branch. */
+export type Ledger = { findings: { severity: string; fate: Fate }[]; dropped: number; at: number } | undefined;
 /** ok: true holds, false is a definite no, null is not known (no report yet, a check running, GitHub still working it out). */
 export type Cond = { ok: boolean | null; note: string };
 export type Readiness = { ready: boolean; reason: string | null; conditions: { findings: Cond; gate: Cond; bots: Cond; clean: Cond } };
@@ -56,11 +56,20 @@ function gateCond(pr: PrState, gate: { result: 'pass' | 'fail' } | undefined): C
   return gate ? { ok: true, note: `orb-gate passed on ${short(pr.headOid)}` } : { ok: null, note: `No gate report on ${short(pr.headOid)}` };
 }
 
-function botsCond(pr: PrState): Cond {
-  if (!pr.bots.length) return { ok: true, note: 'No bot comment since the last commit' };
+// Sonar is judged by its check, not its comment (owner, 2026-11-03, #27): it comments after it analyses each push, and its quality gate is a check, which condition 2 reads.
+// ponytail: by name, as the plugin finds bots; another quality bot that comments on every push would block until it is named here.
+const QUALITY_BOTS = new Set(['sonarqubecloud', 'sonarcloud']);
+
+/**
+ * Condition 3: no bot comment newer than the last commit that nobody read. A review bot's comment (CodeRabbit) counts only until a findings report on the branch comes
+ * after it: every review finding goes to the fixer, so that report is the fixer having read it (owner, 2026-11-03, #27).
+ */
+function botsCond(pr: PrState, ledger: Ledger): Cond {
+  const unread = pr.bots.filter((b) => !QUALITY_BOTS.has(b.author.toLowerCase()) && !(ledger && ledger.at > b.at));
+  if (!unread.length) return { ok: true, note: 'No unread bot comment since the last commit' };
   if (pr.lastCommitAt === undefined) return { ok: null, note: 'The last commit\'s time is unknown' };
-  const newer = pr.bots.filter((b) => b.at > pr.lastCommitAt!).toSorted((a, b) => b.at - a.at).map((b) => b.author);
-  return newer.length ? { ok: false, note: `${andMore(newer)} commented after the last commit` } : { ok: true, note: 'No bot comment since the last commit' };
+  const newer = unread.filter((b) => b.at > pr.lastCommitAt!).toSorted((a, b) => b.at - a.at).map((b) => b.author);
+  return newer.length ? { ok: false, note: `${andMore(newer)} commented after the last commit, and no findings report since` } : { ok: true, note: 'No unread bot comment since the last commit' };
 }
 
 function cleanCond(state: string): Cond {
@@ -71,10 +80,10 @@ function cleanCond(state: string): Cond {
 
 /**
  * The merge check (#20): ready when, and only when, all four hold. 1. no finding is open; 2. the gate passed on the PR's own head; 3. no bot comment is newer than the
- * last commit; 4. mergeStateStatus is CLEAN (MERGEABLE is not enough: NeoBoard's #2405 read MERGEABLE and UNSTABLE at once). The reason is the first that does not hold.
+ * last commit, unless a findings report came after it (Sonar is judged by its check); 4. mergeStateStatus is CLEAN (MERGEABLE is not enough: NeoBoard's #2405 read MERGEABLE and UNSTABLE at once). The reason is the first that does not hold.
  */
 export function ready(pr: PrState, ledger: Ledger, gate: { result: 'pass' | 'fail' } | undefined): Readiness {
-  const conditions = { findings: findingsCond(ledger), gate: gateCond(pr, gate), bots: botsCond(pr), clean: cleanCond(pr.mergeState) };
+  const conditions = { findings: findingsCond(ledger), gate: gateCond(pr, gate), bots: botsCond(pr, ledger), clean: cleanCond(pr.mergeState) };
   const first = Object.values(conditions).find((c) => c.ok !== true);
   return { ready: !first, reason: first?.note ?? null, conditions };
 }
@@ -93,7 +102,7 @@ export function factory(app: FastifyInstance, { store, content, now = Date.now }
     const rows = all(store, 'SELECT o.* FROM open_prs o JOIN projects p ON p.id = o.project_id WHERE p.name = :project', { project });
     const prs = rows.map((r) => {
       const pr: PrState = { headOid: r.head_oid, mergeState: r.merge_state, lastCommitAt: r.last_commit_at ?? undefined, checks: JSON.parse(r.checks), bots: JSON.parse(r.bots) };
-      const report = r.head ? get(store, 'SELECT dropped FROM finding_reports WHERE project_id = :p AND branch = :b', { p: r.project_id, b: r.head }) : undefined;
+      const report = r.head ? get(store, 'SELECT dropped, ts FROM finding_reports WHERE project_id = :p AND branch = :b', { p: r.project_id, b: r.head }) : undefined;
       const list = report ? all(store, 'SELECT id, severity, file, fate FROM findings WHERE project_id = :p AND branch = :b', { p: r.project_id, b: r.head }) : [];
       const gate = get(store, 'SELECT result FROM gates WHERE project_id = :p AND substr(:oid, 1, length(commit_sha)) = commit_sha ORDER BY ts DESC LIMIT 1', { p: r.project_id, oid: r.head_oid });
       const text = content.get(list.map((f) => ({ node: 'finding', id: findingId(r.project_id, r.head, f.id) })));
@@ -103,7 +112,7 @@ export function factory(app: FastifyInstance, { store, content, now = Date.now }
           const t = text.get(`finding:${findingId(r.project_id, r.head, f.id)}`);
           return { id: f.id, severity: f.severity, file: f.file, fate: f.fate, ...(t?.title ? { title: t.title } : {}), ...(f.fate === 'dismissed' && t?.why ? { why: t.why } : {}) };
         });
-      const ledger: Ledger = report ? { findings: list as { severity: string; fate: Fate }[], dropped: report.dropped } : undefined;
+      const ledger: Ledger = report ? { findings: list as { severity: string; fate: Fate }[], dropped: report.dropped, at: report.ts } : undefined;
       let verdict = ready(pr, ledger, gate as { result: 'pass' | 'fail' } | undefined);
       // Old data is never "ready": a PR can have moved since. Its conditions still show as they were read.
       if (verdict.ready && readAt !== null && now() - readAt > STALE_MS) verdict = { ...verdict, ready: false, reason: `Was ready when GitHub was last read, ${Math.floor((now() - readAt) / 60_000)} min ago` };

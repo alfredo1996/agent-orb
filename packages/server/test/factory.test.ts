@@ -14,7 +14,8 @@ const NEW_HEAD = '9c8d7e6'.padEnd(40, '2');
 const pr = (over: Partial<PrState> = {}): PrState => ({
   headOid: HEAD, mergeState: 'CLEAN', lastCommitAt: T0, checks: [{ name: 'Unit tests', state: 'pass', ci: true }], bots: [{ author: 'coderabbitai', at: T0 - MIN }], ...over,
 });
-const none = { findings: [{ severity: 'major', fate: 'fixed' as const }, { severity: 'minor', fate: 'dismissed' as const }], dropped: 0 };
+// the branch's findings, as its last report (2 minutes before the last commit) left them
+const none = { findings: [{ severity: 'major', fate: 'fixed' as const }, { severity: 'minor', fate: 'dismissed' as const }], dropped: 0, at: T0 - 2 * MIN };
 
 describe('ready(): all four conditions, and nothing less', () => {
   it('is true when all four hold, and says so in each condition', () => {
@@ -22,21 +23,21 @@ describe('ready(): all four conditions, and nothing less', () => {
       ready: true, reason: null, conditions: {
         findings: { ok: true, note: '1 fixed, 1 dismissed, none open' },
         gate: { ok: true, note: '1 check passed' },
-        bots: { ok: true, note: 'No bot comment since the last commit' },
+        bots: { ok: true, note: 'No unread bot comment since the last commit' },
         clean: { ok: true, note: 'CLEAN' },
       },
     });
   });
 
   it('1. an open finding: not ready, and the reason names how many and how bad', () => {
-    const r = ready(pr(), { findings: [...none.findings, { severity: 'major', fate: 'open' }, { severity: 'minor', fate: 'open' }, { severity: 'minor', fate: 'open' }], dropped: 0 }, undefined);
+    const r = ready(pr(), { findings: [...none.findings, { severity: 'major', fate: 'open' }, { severity: 'minor', fate: 'open' }, { severity: 'minor', fate: 'open' }], dropped: 0, at: T0 }, undefined);
     expect([r.ready, r.reason, r.conditions.findings]).toEqual([false, '3 findings open: 1 major, 2 minor', { ok: false, note: '3 findings open: 1 major, 2 minor' }]);
   });
 
   it('1. no findings block reached this PR\'s branch: unknown, so not ready; an empty block is a review that found nothing', () => {
     expect(ready(pr(), undefined, undefined).conditions.findings).toEqual({ ok: null, note: 'No findings reported yet' });
     expect(ready(pr(), undefined, undefined).ready).toBe(false);
-    expect(ready(pr(), { findings: [], dropped: 0 }, undefined)).toMatchObject({ ready: true, conditions: { findings: { ok: true, note: 'Reported, none found' } } });
+    expect(ready(pr(), { findings: [], dropped: 0, at: T0 }, undefined)).toMatchObject({ ready: true, conditions: { findings: { ok: true, note: 'Reported, none found' } } });
   });
 
   it('1. a last report with a line that did not parse is unknown: the line may have been an open finding', () => {
@@ -69,14 +70,30 @@ describe('ready(): all four conditions, and nothing less', () => {
     expect(ready(pr({ checks: [] }), none, undefined)).toMatchObject({ ready: false, conditions: { gate: { ok: null, note: 'No gate report on e4f5a6b' } } });
   });
 
-  it('3. a bot comment newer than the last commit: not ready', () => {
-    const r = ready(pr({ bots: [{ author: 'sonarqubecloud', at: T0 + 13 * MIN }, { author: 'coderabbitai', at: T0 + 6 * MIN }] }), none, undefined);
-    expect([r.ready, r.conditions.bots]).toEqual([false, { ok: false, note: 'sonarqubecloud and 1 more commented after the last commit' }]);
+  it('3. a review bot\'s comment newer than both the last commit and the last findings report: not ready', () => {
+    const r = ready(pr({ bots: [{ author: 'gemini-code-assist', at: T0 + 13 * MIN }, { author: 'coderabbitai', at: T0 + 6 * MIN }] }), none, undefined);
+    expect([r.ready, r.conditions.bots]).toEqual([false, { ok: false, note: 'gemini-code-assist and 1 more commented after the last commit, and no findings report since' }]);
   });
 
-  it('3. a bot comment and no time for the last commit is unknown; no bot comment at all needs none', () => {
+  it('3. a findings report after a review bot\'s comment says the fixer read it, so it no longer counts (owner, 2026-11-03)', () => {
+    const cr = pr({ bots: [{ author: 'coderabbitai', at: T0 + 6 * MIN }] });
+    expect(ready(cr, { ...none, at: T0 + 7 * MIN }, undefined)).toMatchObject({ ready: true, conditions: { bots: { ok: true, note: 'No unread bot comment since the last commit' } } });
+    expect(ready(cr, { ...none, at: T0 + 5 * MIN }, undefined).conditions.bots.ok).toBe(false); // a report from before the comment read nothing of it
+    expect(ready(cr, undefined, undefined).conditions.bots.ok).toBe(false); // nor does no report at all
+  });
+
+  it('3. Sonar is judged by its check, not its comment (owner, 2026-11-03): a comment after the last commit holds nothing up, a failing check does', () => {
+    const sonar = pr({ bots: [{ author: 'sonarqubecloud', at: T0 + 13 * MIN }], checks: [{ name: 'Unit tests', state: 'pass', ci: true }, { name: 'SonarCloud Code Analysis', state: 'pass' }] });
+    expect(ready(sonar, none, undefined)).toMatchObject({ ready: true, conditions: { bots: { ok: true, note: 'No unread bot comment since the last commit' } } });
+    expect(ready({ ...sonar, bots: [{ author: 'SonarCloud', at: T0 + 13 * MIN }] }, none, undefined).ready).toBe(true);
+    expect(ready({ ...sonar, checks: [{ name: 'SonarCloud Code Analysis', state: 'fail' }] }, none, undefined).ready).toBe(false);
+  });
+
+  it('3. a comment that counts and no time for the last commit is unknown; with none that counts, the time is not needed', () => {
     expect(ready(pr({ lastCommitAt: undefined }), none, undefined).conditions.bots).toEqual({ ok: null, note: 'The last commit\'s time is unknown' });
-    expect(ready(pr({ lastCommitAt: undefined, bots: [] }), none, undefined).conditions.bots).toEqual({ ok: true, note: 'No bot comment since the last commit' });
+    for (const bots of [[], [{ author: 'sonarqubecloud', at: T0 }], [{ author: 'coderabbitai', at: T0 - 3 * MIN }]]) {
+      expect(ready(pr({ lastCommitAt: undefined, bots }), none, undefined).conditions.bots, JSON.stringify(bots)).toEqual({ ok: true, note: 'No unread bot comment since the last commit' });
+    }
   });
 
   it('4. MERGEABLE with UNSTABLE is not ready: only mergeStateStatus CLEAN is', () => {
@@ -168,6 +185,14 @@ describe('GET /api/factory', () => {
     expect((await the416()).ready).toBe(true);
     NOW = T0 + 12 * MIN;
     expect(await the416()).toMatchObject({ ready: false, reason: 'Was ready when GitHub was last read, 11 min ago' });
+  });
+
+  it('as NeoBoard works: CodeRabbit and Sonar comment after the push; the fixer\'s report after them makes the PR ready', async () => {
+    const bots = [{ author: 'coderabbitai', at: T0 + 2 * MIN }, { author: 'sonarqubecloud', at: T0 + 3 * MIN }];
+    await send(read(T0 + 4 * MIN, [open416({ bots })]), gate(T0 + MIN, 'pass', HEAD), findings(T0 + MIN, [{ id: 'F1', severity: 'minor', file: 'a.ts', fate: 'open' }]));
+    expect(await the416()).toMatchObject({ ready: false, reason: '1 finding open: 1 minor', conditions: { bots: { ok: false, note: 'coderabbitai commented after the last commit, and no findings report since' } } });
+    await send(findings(T0 + 5 * MIN, [{ id: 'F1', severity: 'minor', file: 'a.ts', fate: 'dismissed' }]));
+    expect(await the416()).toMatchObject({ ready: true, conditions: { bots: { ok: true } } });
   });
 
   it('a gate on another project\'s commit, or another branch\'s findings, count for nothing here', async () => {
