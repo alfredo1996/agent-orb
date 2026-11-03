@@ -560,6 +560,118 @@ export function prNumbersIn(text: string, remote: string | undefined): number[] 
   return [...found];
 }
 
+// ── Factory: findings, the gate and the open PRs (v0.4 slice 1, #27, PROJECT.md §5) ──────────────
+
+export const FATES = ['fixed', 'dismissed', 'open'] as const;
+export type Fate = (typeof FATES)[number];
+export type Finding = { id: string; severity: string; file: string; fate: Fate; title?: string; why?: string };
+export type Findings = { findings: Finding[]; dropped: number };
+export type Gate = { result: 'pass' | 'fail'; commit: string };
+const FINDINGS_MAX = 500;
+// `id severity file fate`: an id of letters, digits and `._#-`, a lower-case severity, a path with no space, and one of the three fates. Anything else is dropped, not guessed.
+const FINDING = /^([A-Za-z0-9][\w.#-]{0,39}) ([a-z]{1,20}) (\S{1,300}) (fixed|dismissed|open)$/;
+const GATE = /^(pass|fail) ([0-9a-f]{7,64})$/;
+
+/** The body of the last ```name block in a report (its end is the report's own), or nothing when there is none. */
+function lastBlock(text: string, name: string): string | undefined {
+  let body: string | undefined;
+  for (const m of text.matchAll(new RegExp(`^\`\`\`${name}[ \\t]*\\r?\\n([\\s\\S]*?)^\`\`\`[ \\t]*$`, 'gm'))) body = m[1];
+  return body;
+}
+
+/**
+ * A reviewer's or developer's `orb-findings` block: one finding a line, `id severity file fate`, then ` | title`, then ` | why` for a dismissed one. A line that does not
+ * parse is dropped and counted (`dropped`), so a reader can tell "none open" from "some unread". An empty block is a report that found nothing; no block, no report.
+ * `text` decides what of the title and the reason travels: the plugin passes its Content helper (masked, and nothing unless Content is on full); without it, nothing does.
+ */
+export function parseFindings(report: string, text: (s: string) => string | undefined = () => undefined): Findings | undefined {
+  const body = lastBlock(report, 'orb-findings');
+  if (body === undefined) return undefined;
+  const findings: Finding[] = [];
+  let dropped = 0;
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    const [head = '', title, ...why] = line.split(/\s+\|\s+/);
+    const m = FINDING.exec(head.replace(/\s+/g, ' '));
+    if (!m || findings.length >= FINDINGS_MAX) {
+      dropped++;
+      continue;
+    }
+    const fate = m[4] as Fate;
+    const t = title ? text(title)?.slice(0, 200) : undefined;
+    const w = fate === 'dismissed' && why.length ? text(why.join(' | '))?.slice(0, 300) : undefined;
+    findings.push({ id: m[1]!, severity: m[2]!, file: m[3]!, fate, ...(t ? { title: t } : {}), ...(w ? { why: w } : {}) });
+  }
+  return { findings, dropped };
+}
+
+/** A tester's `orb-gate` block: `pass|fail <commit>`, the first line that parses. A commit is 7 to 64 lower-case hex characters, as git prints one. */
+export function parseGate(report: string): Gate | undefined {
+  for (const line of lastBlock(report, 'orb-gate')?.split('\n') ?? []) {
+    const m = GATE.exec(line.trim());
+    if (m) return { result: m[1] as Gate['result'], commit: m[2]! };
+  }
+  return undefined;
+}
+
+export type Check = { name: string; state: 'pass' | 'fail' | 'pending' };
+export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; checks: Check[]; bots: { author: string; at: number }[] };
+const OPEN_PRS_MAX = 100;
+
+/** The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time. */
+export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', String(OPEN_PRS_MAX), '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits'];
+
+// gh names a bot's author bare (`coderabbitai`, `sonarqubecloud`, measured on NeoBoard's PRs), with no mark that it is one.
+// ponytail: a name list. Upgrade path: `gh api graphql` with `author { __typename }`, which says Bot.
+const BOTS = new Set(['coderabbitai', 'sonarqubecloud', 'sonarcloud', 'github-actions', 'codecov', 'copilot-pull-request-reviewer', 'dependabot', 'renovate']);
+export const isBot = (login: string) => /(?:\[bot\]|[-_]bot)$/i.test(login) || BOTS.has(login.toLowerCase());
+
+const checkOf = (c: Record<string, unknown>): Check | undefined => {
+  const name = typeof c.name === 'string' && c.name ? c.name : typeof c.context === 'string' && c.context ? c.context : undefined;
+  if (!name) return undefined;
+  const state = c.__typename === 'StatusContext'
+    ? (c.state === 'SUCCESS' ? 'pass' : c.state === 'PENDING' || c.state === 'EXPECTED' ? 'pending' : 'fail')
+    : c.status !== 'COMPLETED' ? 'pending' : ['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(String(c.conclusion)) ? 'pass' : 'fail';
+  return { name: name.slice(0, 200), state };
+};
+
+/**
+ * The open PRs in `openPrsArgv`'s output. Only numbers, the branch (none for an excluded project), the head, the merge state, each check's name and result, and each bot's
+ * latest comment or review time are kept: a comment's text, a title and a body are never read into the event. The head's time is its commit's in the list; a PR whose
+ * head is not among them (gh lists at most 100 commits) has none. Nothing when the output is not gh's list; an empty list is a read of no open PRs.
+ */
+export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined {
+  let list: unknown;
+  try {
+    list = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(list)) return undefined;
+  const at = (x: unknown) => (typeof x === 'string' ? Date.parse(x) : NaN);
+  const prs: OpenPr[] = [];
+  for (const p of (list as Record<string, unknown>[]).slice(0, OPEN_PRS_MAX)) {
+    if (typeof p?.number !== 'number' || !Number.isInteger(p.number) || p.number < 1 || typeof p.headRefOid !== 'string' || !/^[0-9a-f]{40,64}$/.test(p.headRefOid)) continue;
+    const head = heads && typeof p.headRefName === 'string' && p.headRefName ? p.headRefName.slice(0, 200) : undefined;
+    const state = typeof p.mergeStateStatus === 'string' && /^[A-Z_]{1,40}$/.test(p.mergeStateStatus) ? p.mergeStateStatus : 'UNKNOWN';
+    const commit = (Array.isArray(p.commits) ? p.commits as Record<string, unknown>[] : []).find((c) => c?.oid === p.headRefOid);
+    const committed = at(commit?.committedDate);
+    const checks = (Array.isArray(p.statusCheckRollup) ? p.statusCheckRollup as Record<string, unknown>[] : []).map(checkOf).filter((c): c is Check => c !== undefined).slice(0, 200);
+    const bots = new Map<string, number>();
+    for (const c of [...(Array.isArray(p.comments) ? p.comments : []), ...(Array.isArray(p.reviews) ? p.reviews : [])] as Record<string, any>[]) {
+      const login = c?.author?.login;
+      const t = at(c?.createdAt ?? c?.submittedAt);
+      if (typeof login === 'string' && login && login.length <= 100 && isBot(login) && t > 0 && t > (bots.get(login) ?? 0)) bots.set(login, t);
+    }
+    prs.push({
+      number: p.number, ...(head ? { head } : {}), head_oid: p.headRefOid, merge_state: state, ...(committed > 0 ? { last_commit_at: committed } : {}),
+      checks, bots: [...bots].slice(0, 50).map(([author, t]) => ({ author, at: t })),
+    });
+  }
+  return prs;
+}
+
 // ── The monthly goal (v0.2 slice 3, PROJECT.md §15, 2026-10-24) ──────────────
 
 /** The project's goal for a month, in API-equivalent dollars, and what it has spent so far: the server's GET /api/goal. */
@@ -809,6 +921,9 @@ export const build = {
   projectFingerprint: (c: Ctx, files: Fingerprint[]) => makeEvent(c, 'project.fingerprint', { files }),
   projectPrs: (c: Ctx, prs: Pr[]) => makeEvent(c, 'project.prs', { prs }),
   sessionPr: (c: Ctx, number: number) => makeEvent(c, 'session.pr', { number }), // the session's, not an agent's: no agent_id, no turn_id
+  findingsReport: (c: Ctx, w: Who, branch: string, f: Findings) => makeEvent(c, 'findings.report', { branch, findings: f.findings, dropped: f.dropped }, who(w)),
+  gateReport: (c: Ctx, w: Who, g: Gate) => makeEvent(c, 'gate.report', { result: g.result, commit: g.commit }, who(w)),
+  projectOpenPrs: (c: Ctx, prs: OpenPr[]) => makeEvent(c, 'project.open_prs', { prs }),
   skillsCatalog: (c: Ctx, skills: CatalogSkill[], agents: CatalogAgent[]) => makeEvent(c, 'skills.catalog', { skills, agents }),
   stall: (c: Ctx, edge: 'start' | 'end', s: Stall) =>
     makeEvent(c, `stall.${edge}`, { ...(s.tool_use_id ? { tool_use_id: s.tool_use_id, tool: s.tool } : {}), since: s.since }, { agent_id: s.agent === 'main' ? undefined : s.agent }),

@@ -46,7 +46,9 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   const hash = { calls: [] as { argv: readonly string[]; cwd?: string; stdin?: string }[], exitCode: 0, hang: false }
   // v0.3 slice 2 (#42): `gh pr list --state merged ...` answers `gh.out` (a test sets it before the session starts), exits with `gh.exitCode`, never
   // answers (`hang`), or is not installed (`missing`: the call rejects).
-  const gh = { out: '', exitCode: 0, hang: false, missing: false, calls: [] as { argv: readonly string[]; cwd?: string }[] }
+  const gh = { out: '', exitCode: 0, hang: false, missing: false, calls: [] as { argv: readonly string[]; cwd?: string }[],
+    // v0.4 slice 1 (#27): `gh pr list --state open ...` answers `gh.open`, and is recorded in `openCalls` (not `calls`, which is the merged list's)
+    open: '', openCalls: [] as { argv: readonly string[]; cwd?: string }[] }
   // #107: `uname -s` names the platform and `scutil --get LocalHostName` the Mac's own name; `hostname -s` ('mbp') is the network's. Linux by default,
   // so a test that wants a Mac sets `os` before the session starts. `scutilExit` non-zero makes scutil fail as it does when no LocalHostName is set.
   const machine = { os: 'Linux', localHostName: 'Alfredos-MacBook-Pro-4', scutilExit: 0, calls: [] as string[][] }
@@ -57,10 +59,11 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
       return { value: { exitCode: e.argv[0] === 'uname' ? 0 : machine.scutilExit, stdout: out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
     if (e.argv[0] === 'gh') {
-      gh.calls.push({ argv: e.argv, cwd: e.init?.cwd })
+      const open = e.argv.includes('open')
+      ;(open ? gh.openCalls : gh.calls).push({ argv: e.argv, cwd: e.init?.cwd })
       if (gh.hang) return new Promise(() => {})
       if (gh.missing) return { deny: 'spawn gh ENOENT' }
-      return { value: { exitCode: gh.exitCode, stdout: gh.out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      return { value: { exitCode: gh.exitCode, stdout: open ? gh.open : gh.out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
     const isLog = e.argv[0] === 'git' && e.argv[3] === 'log'
     if (isLog) git.calls.push(e.argv)
@@ -1399,4 +1402,149 @@ test('v0.3 slice 2: a project with no remote links nothing', opts, async ($: any
   await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_1', command: 'gh pr create' })
   await w.clock.advance(2_000)
   expect(linksSent(w)).toEqual([])
+})
+
+// ── v0.4 slice 1 (#27, Factory): the findings and gate blocks, and the open PRs ──
+const REVIEWER = '---\nname: reviewer\norb-role: reviewer\n---\nReview it.'
+const TESTER = '---\nname: test-runner\norb-role: tester\n---\nRun the gate.'
+const FINDINGS = ['Two left.', '```orb-findings', 'F12 major src/auth/refresh.ts open | Two refreshes race, token ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789',
+  'F09 minor src/net/client.ts dismissed | Timeout is not a constant | Used once, so no config', 'F03 major src/auth/refresh.ts fixed | Written before the check', 'not a finding', '```'].join('\n')
+const reportsSent = (w: ReturnType<typeof world>, kind = 'findings.report') => w.sent().filter((e) => e.kind === kind)
+// A subagent of `type` that ends its run with `answer`; the branch the checkout is on by then is `branch`.
+async function reportBy($: any, w: ReturnType<typeof world>, type: string, answer: string, branch = 'fix/409-token-retry') {
+  w.engine.agentId = `a-${type}`
+  await $.agent.spawn(spawnArgs({ tool_use_id: `toolu_${type}`, subagentType: type }))
+  await $.turn.start({ text: 'go', turnId: `t-${type}`, agentId: `a-${type}` })
+  w.tree.branches['/repo'] = branch
+  await $.turn.complete({ turnId: `t-${type}`, agentId: `a-${type}`, answer, durationMs: 1_000, isAborted: false, reason: 'answer' })
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+}
+
+test('v0.4 slice 1: a reviewer\'s findings block sends one findings.report on the checkout\'s branch as the report ended; with Content off, no title or reason', opts, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  w.tree.branches['/repo'] = 'claude/the-worktree' // the branch at session start; the session moved to its issue branch since
+  await boot($)
+  await reportBy($, w, 'reviewer', FINDINGS)
+  const [r, ...more] = reportsSent(w)
+  expect(more).toEqual([])
+  expect(r.agent_id).toBe('a-reviewer')
+  expect(r.turn_id).toBe('t-reviewer')
+  expect(r.data).toEqual({ branch: 'fix/409-token-retry', dropped: 1, findings: [
+    { id: 'F12', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open' },
+    { id: 'F09', severity: 'minor', file: 'src/net/client.ts', fate: 'dismissed' },
+    { id: 'F03', severity: 'major', file: 'src/auth/refresh.ts', fate: 'fixed' },
+  ] })
+  expect(JSON.stringify(w.sent())).not.toMatch(/race|Timeout|Used once|Written before|ghp_/)
+})
+
+test('v0.4 slice 1: a developer\'s block is read too, and Content on full sends the title and a dismissal\'s reason, masked', { options: { token: 'tok', content: 'full' } }, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  await boot($)
+  await reportBy($, w, 'implementer', FINDINGS) // implementer.md says orb-role: developer
+  expect(reportsSent(w).map((e) => e.data.findings.map((f: any) => [f.id, f.title, f.why]))).toEqual([[
+    ['F12', 'Two refreshes race, token [REDACTED]', undefined],
+    ['F09', 'Timeout is not a constant', 'Used once, so no config'],
+    ['F03', 'Written before the check', undefined],
+  ]])
+})
+
+test('v0.4 slice 1: an excluded project sends neither block, whatever Content is set to', { options: { token: 'tok', content: 'full', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  w.files['/repo/.claude/agents/test-runner.md'] = TESTER
+  await boot($)
+  await reportBy($, w, 'reviewer', FINDINGS)
+  await reportBy($, w, 'test-runner', '```orb-gate\npass a1b2c3d\n```')
+  expect(w.sent().filter((e) => e.kind === 'agent.complete')).toHaveLength(2) // the agents ran and ended
+  expect([...reportsSent(w), ...reportsSent(w, 'gate.report')]).toEqual([])
+})
+
+test('v0.4 slice 1: an excluded project with Content off sends neither block either', { options: { token: 'tok', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  await boot($)
+  await reportBy($, w, 'reviewer', FINDINGS)
+  expect(reportsSent(w)).toEqual([])
+})
+
+test('v0.4 slice 1: a tester\'s gate block sends gate.report; a role that is neither sends no block, and a reviewer\'s gate block is not a gate', opts, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/test-runner.md'] = TESTER
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  w.files['/repo/.claude/agents/scout.md'] = '---\nname: scout\norb-role: researcher\n---\nLook.'
+  await boot($)
+  await reportBy($, w, 'test-runner', `All green.\n\`\`\`orb-gate\npass ${'a1b2c3d'.padEnd(40, '9')}\n\`\`\`\n${FINDINGS}`)
+  await reportBy($, w, 'scout', FINDINGS)
+  await reportBy($, w, 'Explore', FINDINGS) // no agent file: no declared role
+  await reportBy($, w, 'reviewer', '```orb-gate\npass c0d1e2f\n```')
+  expect(reportsSent(w, 'gate.report').map((e) => [e.agent_id, e.data])).toEqual([['a-test-runner', { result: 'pass', commit: 'a1b2c3d'.padEnd(40, '9') }]])
+  expect(reportsSent(w)).toEqual([]) // the tester's findings block is not a tester's to send, and the scout's and Explore's are no one's
+})
+
+test('v0.4 slice 1: a report on a detached head (no branch) sends no findings: there is no PR to join them to', opts, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  await boot($)
+  await reportBy($, w, 'reviewer', FINDINGS, '')
+  expect(reportsSent(w)).toEqual([])
+})
+
+const OPEN_LIST = JSON.stringify([{
+  number: 416, headRefName: 'fix/409-token-retry', headRefOid: 'e'.repeat(40), mergeStateStatus: 'UNSTABLE', mergeable: 'MERGEABLE', title: 'Retry after an expired token',
+  statusCheckRollup: [{ __typename: 'CheckRun', name: 'Unit tests', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+  comments: [{ author: { login: 'coderabbitai' }, body: 'The refresh races with logout', createdAt: '2026-11-01T15:10:51Z' }, { author: { login: 'someone' }, body: 'Ship it', createdAt: '2026-11-01T15:20:00Z' }],
+  reviews: [], commits: [{ oid: 'e'.repeat(40), committedDate: '2026-11-01T15:04:42Z', messageHeadline: 'fix: retry the refresh' }],
+}])
+const openSent = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'project.open_prs')
+const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '100', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits']
+
+test('v0.4 slice 1: the open PRs are read in the checkout at session start and every 5 minutes after, and no comment text, title or commit message leaves', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = OPEN_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.openCalls).toEqual([{ argv: OPEN_ARGV, cwd: '/repo' }])
+  await w.clock.advance(4 * MIN)
+  expect(w.gh.openCalls).toHaveLength(1)
+  await w.clock.advance(MIN + 2_000)
+  expect(w.gh.openCalls).toHaveLength(2)
+  await w.clock.advance(2_000)
+  expect(openSent(w).map((e) => e.data)).toEqual([0, 1].map(() => ({ prs: [{
+    number: 416, head: 'fix/409-token-retry', head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: Date.parse('2026-11-01T15:04:42Z'),
+    checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: Date.parse('2026-11-01T15:10:51Z') }],
+  }] })))
+  expect(JSON.stringify(w.sent())).not.toMatch(/races|Ship it|someone|Retry after|retry the refresh|MERGEABLE/)
+})
+
+test('v0.4 slice 1: an excluded project\'s open PRs go without branch names; a gh that is not logged in sends nothing', { options: { token: 'tok', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = OPEN_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(openSent(w).map((e) => e.data.prs.map((p: any) => [p.number, 'head' in p]))).toEqual([[[416, false]]])
+  w.gh.open = 'To get started with GitHub CLI, please run:  gh auth login'
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.openCalls).toHaveLength(2)
+  expect(openSent(w)).toHaveLength(1)
+})
+
+test('v0.4 slice 1: a gh that never answers holds up nothing, and is not asked again meanwhile', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  on('tool.call', () => ({ result: 'ok', text: 'ok' }))
+  const w = world(on)
+  w.gh.hang = true
+  await boot($)
+  const r = await $.tool.call({ tool: 'Read', tool_use_id: 'toolu_r', file_path: '/repo/a.ts' })
+  expect(r.text).toBe('ok')
+  await w.clock.advance(11 * MIN)
+  expect(w.gh.openCalls).toHaveLength(1)
+  expect(w.sent().map((e) => e.kind)).toContain('session.start')
 })
