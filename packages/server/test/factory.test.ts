@@ -44,18 +44,18 @@ describe('ready(): all four conditions, and nothing less', () => {
     expect(ready(pr(), { ...none, dropped: 2 }, undefined).conditions.findings).toEqual({ ok: null, note: '2 lines of the last report didn\'t parse' });
   });
 
-  it('2. a failed check: not ready, whatever the orb-gate says', () => {
+  it('2. a failed check: not ready, whatever the test runs say', () => {
     const r = ready(pr({ checks: [{ name: 'Unit tests', state: 'pass' }, { name: 'Lint', state: 'fail' }, { name: 'E2E', state: 'fail' }] }), none, { result: 'pass' });
     expect([r.ready, r.conditions.gate]).toEqual([false, { ok: false, note: 'Lint and 1 more failed' }]);
   });
 
-  it('2. a tester\'s fail on this head is a no, even with CI green', () => {
-    expect(ready(pr(), none, { result: 'fail' }).conditions.gate).toEqual({ ok: false, note: 'orb-gate failed on e4f5a6b' });
+  it('2. a test run that failed on this head is a no, even with CI green', () => {
+    expect(ready(pr(), none, { result: 'fail' }).conditions.gate).toEqual({ ok: false, note: 'Test run failed on e4f5a6b' });
   });
 
-  it('2. checks that are no CI workflow\'s (CodeRabbit, Sonar) do not stand for the gate: the orb-gate is still asked', () => {
+  it('2. checks that are no CI workflow\'s (CodeRabbit, Sonar) do not stand for the gate: a test run on the head is still asked', () => {
     const bots = pr({ checks: [{ name: 'CodeRabbit', state: 'pass' }, { name: 'SonarCloud Code Analysis', state: 'pass' }] });
-    expect(ready(bots, none, undefined)).toMatchObject({ ready: false, conditions: { gate: { ok: null, note: 'No gate report on e4f5a6b' } } });
+    expect(ready(bots, none, undefined)).toMatchObject({ ready: false, conditions: { gate: { ok: null, note: 'No test run on e4f5a6b' } } });
     expect(ready(bots, none, { result: 'pass' }).ready).toBe(true);
     expect(ready(pr({ checks: [{ name: 'SonarCloud Code Analysis', state: 'fail' }] }), none, { result: 'pass' }).conditions.gate).toEqual({ ok: false, note: 'SonarCloud Code Analysis failed' }); // a failed quality gate
   });
@@ -64,10 +64,10 @@ describe('ready(): all four conditions, and nothing less', () => {
     expect(ready(pr({ checks: [{ name: 'E2E', state: 'pending' }] }), none, undefined).conditions.gate).toEqual({ ok: null, note: 'E2E is running' });
   });
 
-  it('2. with no checks (no CI), the orb-gate on this head decides: pass, fail, or none yet', () => {
-    expect(ready(pr({ checks: [] }), none, { result: 'pass' })).toMatchObject({ ready: true, conditions: { gate: { ok: true, note: 'orb-gate passed on e4f5a6b' } } });
-    expect(ready(pr({ checks: [] }), none, { result: 'fail' }).conditions.gate).toEqual({ ok: false, note: 'orb-gate failed on e4f5a6b' });
-    expect(ready(pr({ checks: [] }), none, undefined)).toMatchObject({ ready: false, conditions: { gate: { ok: null, note: 'No gate report on e4f5a6b' } } });
+  it('2. with no checks (no CI), the test run on this head decides: pass, fail, or none yet', () => {
+    expect(ready(pr({ checks: [] }), none, { result: 'pass' })).toMatchObject({ ready: true, conditions: { gate: { ok: true, note: 'Test run passed on e4f5a6b' } } });
+    expect(ready(pr({ checks: [] }), none, { result: 'fail' }).conditions.gate).toEqual({ ok: false, note: 'Test run failed on e4f5a6b' });
+    expect(ready(pr({ checks: [] }), none, undefined)).toMatchObject({ ready: false, conditions: { gate: { ok: null, note: 'No test run on e4f5a6b' } } });
   });
 
   it('3. a review bot\'s comment newer than both the last commit and the last findings report: not ready', () => {
@@ -163,7 +163,7 @@ describe('GET /api/factory', () => {
     await send(read(T0 + MIN, [open416()]), findings(T0 + MIN, []), gate(T0 + 2 * MIN, 'pass', 'e4f5a6b'));
     expect((await the416()).ready).toBe(true);
     await send(read(T0 + 6 * MIN, [open416({ head_oid: NEW_HEAD, last_commit_at: T0 + 5 * MIN })]));
-    expect(await the416()).toMatchObject({ ready: false, headOid: NEW_HEAD, reason: 'No gate report on 9c8d7e6' });
+    expect(await the416()).toMatchObject({ ready: false, headOid: NEW_HEAD, reason: 'No test run on 9c8d7e6' });
     await send(gate(T0 + 7 * MIN, 'pass', NEW_HEAD));
     expect((await the416()).ready).toBe(true);
   });
@@ -175,6 +175,21 @@ describe('GET /api/factory', () => {
     expect((await the416()).conditions.findings).toEqual({ ok: null, note: '1 line of the last report didn\'t parse' });
     await send(by('a-dev', T0 + 3 * MIN, 0));
     expect((await the416()).conditions.findings.ok).toBe(null);
+    await send(by('a-rev', T0 + 4 * MIN, 0));
+    expect((await the416()).ready).toBe(true);
+  });
+
+  it('#34: with no orb-role, an agent that wrote no file is the reviewer: a fixer\'s clean report keeps a dropped line not known, a review with none dropped clears it', async () => {
+    const spawn = (agent: string) => ev(T0, 'agent.spawn', { tool_use_id: `toolu_${agent}`, agent_type: 'general-purpose', model: 'claude-sonnet-5-5', prompt_length: 1 }, { agent_id: agent });
+    const by = (agent: string, ts: number, dropped: number) => ev(ts, 'findings.report', { branch: 'fix/409-token-retry', findings: [], dropped }, { agent_id: agent, turn_id: `t-${agent}` });
+    const edit = (agent: string, ts: number, mode: 'read' | 'write') => [
+      ev(ts, 'tool.call', { tool_use_id: `toolu_e-${agent}-${mode}`, tool: mode === 'write' ? 'Edit' : 'Read', input_size: 10 }, { agent_id: agent, turn_id: `t-${agent}` }),
+      ev(ts, 'tool.result', { tool_use_id: `toolu_e-${agent}-${mode}`, success: true, duration_ms: 5, output_size: 2, files_touched: [{ path: 'src/auth/refresh.ts', mode }] }, { agent_id: agent, turn_id: `t-${agent}` }),
+    ];
+    await send(read(T0 + MIN, [open416()]), gate(T0 + MIN, 'pass', HEAD), spawn('a-rev'), spawn('a-fix'), ...edit('a-rev', T0 + MIN, 'read'), by('a-rev', T0 + 2 * MIN, 1));
+    expect((await the416()).conditions.findings).toEqual({ ok: null, note: '1 line of the last report didn\'t parse' });
+    await send(...edit('a-fix', T0 + 3 * MIN, 'write'), by('a-fix', T0 + 3 * MIN, 0));
+    expect((await the416()).conditions.findings.ok).toBe(null); // it lists what it handled, not what the review found
     await send(by('a-rev', T0 + 4 * MIN, 0));
     expect((await the416()).ready).toBe(true);
   });

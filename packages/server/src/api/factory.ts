@@ -41,19 +41,19 @@ function findingsCond(l: Ledger): Cond {
 }
 
 /**
- * The gate on the head: GitHub's checks when CI runs, otherwise the tester's orb-gate on that commit. CI is a check of a GitHub Actions workflow (`ci`); an app's check
- * (CodeRabbit, Sonar) is no CI, so with only those the orb-gate is still asked. Any check that failed is a no, and a quality gate (Sonar) is a check, which is condition 3's
- * "every quality-gate check passed" too; a tester's fail on this head is a no whatever CI says.
- * ponytail: CI that is not Actions (a StatusContext from another service) is not CI here, so such a repo needs the orb-gate too: the safe way round.
+ * The gate on the head: GitHub's checks when CI runs, otherwise the last test run the plugin saw on that commit, on a clean tree (#34). CI is a check of a GitHub Actions
+ * workflow (`ci`); an app's check (CodeRabbit, Sonar) is no CI, so with only those a test run is still asked. Any check that failed is a no, and a quality gate (Sonar) is a
+ * check, which is condition 3's "every quality-gate check passed" too; a test run that failed on this head is a no whatever CI says.
+ * ponytail: CI that is not Actions (a StatusContext from another service) is not CI here, so such a repo needs a test run too: the safe way round.
  */
 function gateCond(pr: PrState, gate: { result: 'pass' | 'fail' } | undefined): Cond {
   const failed = pr.checks.filter((c) => c.state === 'fail').map((c) => c.name);
   if (failed.length) return { ok: false, note: `${andMore(failed)} failed` };
-  if (gate?.result === 'fail') return { ok: false, note: `orb-gate failed on ${short(pr.headOid)}` };
+  if (gate?.result === 'fail') return { ok: false, note: `Test run failed on ${short(pr.headOid)}` };
   const running = pr.checks.filter((c) => c.state === 'pending').map((c) => c.name);
   if (running.length) return { ok: null, note: `${andMore(running)} is running` };
   if (pr.checks.some((c) => c.ci)) return { ok: true, note: `${plural(pr.checks.length, 'check')} passed` };
-  return gate ? { ok: true, note: `orb-gate passed on ${short(pr.headOid)}` } : { ok: null, note: `No gate report on ${short(pr.headOid)}` };
+  return gate ? { ok: true, note: `Test run passed on ${short(pr.headOid)}` } : { ok: null, note: `No test run on ${short(pr.headOid)}` };
 }
 
 // Sonar is judged by its check, not its comment (owner, 2026-11-03, #27): it comments after it analyses each push, and its quality gate is a check, which condition 2 reads.

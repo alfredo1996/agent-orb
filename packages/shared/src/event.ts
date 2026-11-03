@@ -198,7 +198,7 @@ export const Event = z.discriminatedUnion('kind', [
     })).max(500),
     dropped: count,
   }).refine((d) => d.branch !== undefined || d.pr !== undefined, 'a findings report names its branch or its PR') }),
-  // A tester's `orb-gate` block: the result and the commit it ran on, as the report wrote it (7 to 64 hex characters).
+  // A test run the plugin saw on a clean tree (#34): passed or failed, and the commit it ran on (7 to 64 hex characters).
   Base.extend({ kind: z.literal('gate.report'), data: z.object({ result: z.enum(['pass', 'fail']), commit: z.string().regex(/^[0-9a-f]{7,64}$/) }) }),
   // The open PRs as gh lists them, every 5 minutes while a session runs: numbers, the branch (none for an excluded project), the head, the merge state, each check's name
   // and result, each bot's latest comment time. Never a comment's text, a title or a body. `last_commit_at` is the head commit's time, when gh listed it.

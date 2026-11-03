@@ -41,7 +41,9 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   const git = { log: '', exitCode: 0, hang: false, calls: [] as string[][] }
   // v0.2 slice 3: `git -C <cwd> rev-parse --show-toplevel` answers the session's own working tree (a test points it at a worktree), and
   // `git -C <dir> branch --show-current` answers per directory (the main checkout and a worktree are on different branches).
-  const tree = { toplevel: '/repo', exitCode: 0, branches: {} as Record<string, string>, calls: [] as string[][] }
+  const tree = { toplevel: '/repo', exitCode: 0, branches: {} as Record<string, string>, calls: [] as string[][],
+    // #34: `git -C <dir> rev-parse HEAD` answers `head`, and `git -C <dir> status --porcelain --untracked-files=no` answers `status` (empty: a clean tree)
+    head: 'a1b2c3d'.padEnd(40, '9'), status: '', reads: [] as string[][] }
   // v0.2 slice 3: `git hash-object --stdin-paths` answers one blob id per path on stdin (a stand-in for git's: a function of the file's text).
   const hash = { calls: [] as { argv: readonly string[]; cwd?: string; stdin?: string }[], exitCode: 0, hang: false }
   // v0.3 slice 2 (#42): `gh pr list --state merged ...` answers `gh.out` (a test sets it before the session starts), exits with `gh.exitCode`, never
@@ -74,6 +76,10 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
       const paths = String(e.init?.stdin ?? '').split('\n').filter(Boolean)
       const stdout = hash.exitCode ? 'fatal: could not open\n' : paths.map((path) => blobOf(files[path] ?? '')).join('\n') + (paths.length ? '\n' : '')
       return { value: { exitCode: hash.exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
+    if (e.argv[0] === 'git' && (e.argv[4] === 'HEAD' || e.argv[3] === 'status')) {
+      tree.reads.push(e.argv)
+      return { value: { exitCode: 0, stdout: e.argv[3] === 'status' ? tree.status : `${tree.head}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
     if (e.argv[0] === 'git' && e.argv[3] === 'rev-parse') {
       tree.calls.push(e.argv)
@@ -114,8 +120,9 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use', usage }
   })
   // v0.2 slice 2: what the engine answers to a spawn, a test sets it (the model the agent resolved to, and its id) before spawning.
-  const engine = { model: 'claude-sonnet-5-5', agentId: 'a-child' }
-  on('agent.spawn', () => ({ model: engine.model, agentId: engine.agentId }))
+  // #34: the prompt each subagent was started with, as the engine received it beneath the mod.
+  const engine = { model: 'claude-sonnet-5-5', agentId: 'a-child', prompts: [] as string[] }
+  on('agent.spawn', (_$: any, e: any) => (engine.prompts.push(e.prompt), { model: engine.model, agentId: engine.agentId }))
   const sent = () => posts.flat()
   return { clock, posts, sent, statuses, notes, titles, git, files, engine, hash, goal, tree, gh, repo, machine }
 }
@@ -1452,15 +1459,18 @@ test('v0.4 slice 1: a developer\'s block is read too, and Content on full sends 
   ]])
 })
 
-test('v0.4 slice 1: an excluded project sends neither block, whatever Content is set to', { options: { token: 'tok', content: 'full', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
+test('v0.4 slice 1: an excluded project sends no findings and no gate, whatever Content is set to', { options: { token: 'tok', content: 'full', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
   on('turn.complete', () => ({ text: 'done' }))
+  on('tool.call', () => ({ result: 'ok', text: 'Tests 12 passed' }))
   const w = world(on)
   w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
-  w.files['/repo/.claude/agents/test-runner.md'] = TESTER
   await boot($)
   await reportBy($, w, 'reviewer', FINDINGS)
-  await reportBy($, w, 'test-runner', '```orb-gate\npass a1b2c3d\n```')
-  expect(w.sent().filter((e) => e.kind === 'agent.complete')).toHaveLength(2) // the agents ran and ended
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_t', command: 'pnpm test' }) // a passing run on a clean tree
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+  expect(w.sent().filter((e) => e.kind === 'agent.complete')).toHaveLength(1) // the agent ran and ended
+  expect(w.sent().filter((e) => e.kind === 'tool.call').map((e) => e.data.command_class)).toEqual(['test']) // and the run was seen
   expect([...reportsSent(w), ...reportsSent(w, 'gate.report')]).toEqual([])
 })
 
@@ -1473,19 +1483,101 @@ test('v0.4 slice 1: an excluded project with Content off sends neither block eit
   expect(reportsSent(w)).toEqual([])
 })
 
-test('v0.4 slice 1: a tester\'s gate block sends gate.report; a role that is neither sends no block, and a reviewer\'s gate block is not a gate', opts, async ($: any, on: any) => {
+test('#34: findings parse from any subagent\'s report, with no orb-role: no file, a file with no role, any role; an orb-gate block is no longer read', opts, async ($: any, on: any) => {
   on('turn.complete', () => ({ text: 'done' }))
   const w = world(on)
   w.files['/repo/.claude/agents/test-runner.md'] = TESTER
-  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
-  w.files['/repo/.claude/agents/scout.md'] = '---\nname: scout\norb-role: researcher\n---\nLook.'
   await boot($)
-  await reportBy($, w, 'test-runner', `All green.\n\`\`\`orb-gate\npass ${'a1b2c3d'.padEnd(40, '9')}\n\`\`\`\n${FINDINGS}`)
-  await reportBy($, w, 'scout', FINDINGS)
-  await reportBy($, w, 'Explore', FINDINGS) // no agent file: no declared role
-  await reportBy($, w, 'reviewer', '```orb-gate\npass c0d1e2f\n```')
-  expect(reportsSent(w, 'gate.report').map((e) => [e.agent_id, e.data])).toEqual([['a-test-runner', { result: 'pass', commit: 'a1b2c3d'.padEnd(40, '9') }]])
-  expect(reportsSent(w)).toEqual([]) // the tester's findings block is not a tester's to send, and the scout's and Explore's are no one's
+  await reportBy($, w, 'general-purpose', FINDINGS) // no agent file
+  await reportBy($, w, 'scout', FINDINGS) // scout.md has no orb-role
+  await reportBy($, w, 'test-runner', `All green.\n\`\`\`orb-gate\npass ${'a1b2c3d'.padEnd(40, '9')}\n\`\`\`\n${FINDINGS}`) // a tester's
+  await reportBy($, w, 'Explore', 'Nothing to review here.') // no block: no report
+  expect(reportsSent(w).map((e) => [e.agent_id, e.data.branch, e.data.findings.map((f: any) => f.id)])).toEqual(['a-general-purpose', 'a-scout', 'a-test-runner'].map((a) => [a, 'fix/409-token-retry', ['F12', 'F09', 'F03']]))
+  expect(reportsSent(w, 'gate.report')).toEqual([])
+})
+
+// ── #34: the plugin asks every subagent for the findings block, and reads the gate from the test runs it sees ──
+test('#34: a subagent is started with its prompt and the findings paragraph, once; a brief that has it already, a resume and a workflow agent are left as they are', opts, async ($: any, on: any) => {
+  const w = world(on)
+  await boot($)
+  await $.agent.spawn(spawnArgs({ subagentType: 'general-purpose' }))
+  const [asked = ''] = w.engine.prompts
+  expect(asked.startsWith('build it\n\n')).toBe(true) // the caller's task first, untouched
+  expect(asked).toMatch(/reviewed or fixed code/)
+  expect(asked.match(/```orb-findings/g)).toHaveLength(1)
+  w.engine.agentId = 'a-2'
+  await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_2', prompt: asked })) // a re-dispatch of the brief the engine was given
+  await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_3', prompt: 'go on', resume: { agentId: 'a-child' } })) // its prompt is the resuming message
+  await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_4', prompt: 'review it', workflow: { runId: 'wf_1', agentIndex: 1 } })) // the engine ignores a rewrite of one
+  await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_5', prompt: 'fix it', subagentType: 'fork', fork: true }))
+  expect(w.engine.prompts.slice(1)).toEqual([asked, 'go on', 'review it', asked.replace('build it', 'fix it')])
+  await w.clock.advance(2_000)
+  expect(spawned(w)[0].data.prompt_length).toBe(8) // the event measures the caller's task, not the paragraph
+})
+
+test('#34: with the findings ask off, prompts go as they are, and a block an agent writes on its own is still read', { options: { token: 'tok', askFindings: 'off' } }, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  await boot($)
+  await $.agent.spawn(spawnArgs())
+  await reportBy($, w, 'general-purpose', FINDINGS)
+  expect(w.engine.prompts).toEqual(['build it', 'build it'])
+  expect(reportsSent(w)).toHaveLength(1)
+})
+
+test('#34: an excluded project\'s subagents are not asked', { options: { token: 'tok', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
+  const w = world(on)
+  await boot($)
+  await $.agent.spawn(spawnArgs())
+  expect(w.engine.prompts).toEqual(['build it'])
+})
+
+test('#34: a passing test run on a clean tree sends gate.report pass on HEAD, and a failing one fail', opts, async ($: any, on: any) => {
+  let answer: object = { result: 'r', text: 'Tests 12 passed' }
+  on('tool.call', () => answer)
+  const w = world(on)
+  await boot($)
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_t1', command: 'pnpm test' })
+  await w.clock.advance(2_000)
+  answer = { result: 'r', isError: true, text: 'Exit code 1\nFAIL src/auth/refresh.test.ts' }
+  w.tree.head = 'c0d1e2f'.padEnd(40, '0')
+  w.engine.agentId = 'a-tester'
+  await $.agent.spawn(spawnArgs({ subagentType: 'test-runner' }))
+  await $.turn.start({ text: 'go', turnId: 't-tester', agentId: 'a-tester' })
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_t2', command: 'cd /repo && npx vitest run', agentId: 'a-tester' })
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+  expect(reportsSent(w, 'gate.report').map((e) => [e.agent_id, e.turn_id, e.data])).toEqual([
+    [undefined, 't-1', { result: 'pass', commit: 'a1b2c3d'.padEnd(40, '9') }],
+    ['a-tester', 't-tester', { result: 'fail', commit: 'c0d1e2f'.padEnd(40, '0') }],
+  ])
+  expect(w.tree.reads).toContainEqual(['git', '-C', '/repo', 'rev-parse', 'HEAD'])
+  expect(w.tree.reads).toContainEqual(['git', '-C', '/repo', 'status', '--porcelain', '--untracked-files=no'])
+})
+
+test('#34: a dirty tree, a command that is no test run, a run sent to the background and a refused one send no gate', opts, async ($: any, on: any) => {
+  let answer: object = { result: 'r', text: 'Tests 12 passed' }
+  on('tool.call', () => answer)
+  const w = world(on)
+  await boot($)
+  w.tree.status = ' M src/auth/refresh.ts\n'
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_d', command: 'pnpm test' }) // it tested the commit plus an edit
+  await w.clock.advance(2_000)
+  const dirtyReads = w.tree.reads.length
+  w.tree.status = ''
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_l', command: 'ls test' })
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_g', command: 'git commit -m "pnpm test"' })
+  await $.tool.call({ tool: 'Read', tool_use_id: 'toolu_r', file_path: '/repo/package.json' })
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_b', command: 'pnpm test', run_in_background: true }) // its result is "started", not the run's
+  answer = { deny: 'Permission for this action was denied by the Claude Code auto mode classifier.' }
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_x', command: 'pnpm test' }) // it never ran
+  answer = { result: 'r', isError: true, text: 'PreToolUse:Bash hook error: BLOCKED' }
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_h', command: 'pnpm test' }) // nor did this one
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+  expect(reportsSent(w, 'gate.report')).toEqual([])
+  expect(dirtyReads).toBeGreaterThan(0) // the dirty run asked git
+  expect(w.tree.reads).toHaveLength(dirtyReads) // and nothing after it did
 })
 
 test('v0.4 slice 1: a branch past 200 characters is cut as the open-PR read cuts a head, so the two still join and the server takes the event', opts, async ($: any, on: any) => {

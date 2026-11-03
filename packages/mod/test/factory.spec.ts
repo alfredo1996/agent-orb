@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Event } from '../../shared/src/index.ts';
-import { build, isBot, openPrsArgv, parseFindings, parseGate, parseOpenPrs, type Ctx } from '../hooks/core.ts';
+import { build, FINDINGS_ASK, isBot, openPrsArgv, parseFindings, parseOpenPrs, type Ctx } from '../hooks/core.ts';
 
-// v0.4 slice 1 (#27, Factory): the `orb-findings` and `orb-gate` blocks at the end of an agent's final report, parsed on the machine, and the open PRs read from gh.
+// v0.4 slice 1 (#27, Factory): the `orb-findings` block at the end of an agent's final report, parsed on the machine, and the open PRs read from gh.
+// #34: the paragraph the plugin appends to every subagent's prompt, asking for that block.
 const ctx: Ctx = { host: 'mbp', session_id: 's-1', project: { cwd: '/r', name: 'mobile-app', git_remote: 'github.com/o/mobile-app' } };
 
 const REPORT = [
@@ -89,16 +90,22 @@ describe('parseFindings', () => {
   });
 });
 
-describe('parseGate', () => {
-  it('reads pass or fail and the commit it ran on', () => {
-    expect(parseGate('Suite green.\n```orb-gate\npass a1b2c3d\n```')).toEqual({ result: 'pass', commit: 'a1b2c3d' });
-    expect(parseGate(`\`\`\`orb-gate\nfail ${'e4f5a6b'.padEnd(40, '0')}\n\`\`\``)).toEqual({ result: 'fail', commit: 'e4f5a6b'.padEnd(40, '0') });
+describe('the findings paragraph (#34)', () => {
+  it('asks for the format parseFindings reads: its own example parses whole, every fate, a dismissal with its reason, and #N on the fence is no number', () => {
+    const r = parseFindings(FINDINGS_ASK, (s) => s);
+    expect(r).toEqual({ dropped: 0, findings: [
+      { id: 'F1', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open', title: expect.any(String) },
+      { id: 'F2', severity: 'minor', file: 'src/net/client.ts', fate: 'dismissed', title: expect.any(String), why: expect.any(String) },
+      { id: 'F3', severity: 'major', file: 'src/auth/refresh.ts', fate: 'fixed', title: expect.any(String) },
+    ] });
   });
 
-  it('a line that does not parse is dropped: no result, no commit, a short commit, a word that is not pass or fail', () => {
-    expect(parseGate('```orb-gate\npassed a1b2c3d\nok\npass a1b2\n```')).toBeUndefined();
-    expect(parseGate('```orb-gate\nPASS A1B2C3D\nfail c0d1e2f\n```')).toEqual({ result: 'fail', commit: 'c0d1e2f' });
-    expect(parseGate('No gate block here: pass a1b2c3d')).toBeUndefined();
+  it('is one short paragraph that says when to write the block, to keep a review\'s ids, and what an empty block means', () => {
+    expect(FINDINGS_ASK).toMatch(/^\n\n/); // set apart from the caller's task
+    expect(FINDINGS_ASK).toMatch(/reviewed or fixed code/);
+    expect(FINDINGS_ASK).toMatch(/keep the ids/i);
+    expect(FINDINGS_ASK).toMatch(/empty block/i);
+    expect(FINDINGS_ASK.length).toBeLessThan(900);
   });
 });
 
