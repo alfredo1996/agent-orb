@@ -573,19 +573,22 @@ const FINDING = /^([A-Za-z0-9][\w.#-]{0,39}) ([a-z]{1,20}) (\S{1,300}) (fixed|di
 
 /**
  * #34: the one thing the plugin adds to what an agent is told (PROJECT.md §2), appended to every subagent's prompt, so findings reach the Factory from any repo with no
- * change to its agent files. Its example is the format parseFindings reads; factory.spec.ts holds the two together.
+ * change to its agent files. Its example is the format parseFindings reads; factory.spec.ts holds the two together. Every subagent reads it, so it says who must not
+ * answer: an empty block is a review that found nothing, and an Explore lookup told "write an empty block if you found nothing" wrote one (#36).
  */
 export const FINDINGS_ASK = [
   '',
   '',
-  'agent-orb, a plugin that records this session, asks one thing: if you reviewed or fixed code, end your final report with an `orb-findings` block, one finding a line,',
-  '`id severity file fate | title`, then ` | why` for a dismissed one: fate is fixed, dismissed or open, severity one lower-case word, file a path with no space.',
-  "Put the PR's number for #N, or leave #N out if you don't know it. Keep the ids a review gave you, and write an empty block if you found nothing. For example:",
+  'agent-orb, a plugin that records this session, asks one thing, only if your task was to review code or to fix review findings: end your final report with an',
+  '`orb-findings` block, one finding a line, `id severity file fate | title`, then ` | why` for a dismissed one: fate is fixed, dismissed or open, severity one',
+  "lower-case word, file a path with no space. Put the PR's number for #N, or leave #N out if you don't know it. Keep the ids a review gave you, and write an",
+  'empty block if your review found nothing. For example:',
   '```orb-findings #N',
   'F1 major src/auth/refresh.ts open | Two refreshes can run at once',
   'F2 minor src/net/client.ts dismissed | The timeout is not a constant | Used once, so no config',
   'F3 major src/auth/refresh.ts fixed | The token was written before the response was checked',
   '```',
+  'If your task was anything else, such as a search, a plan or new code, write no block.',
 ].join('\n');
 
 /**
