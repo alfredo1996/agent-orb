@@ -120,6 +120,11 @@ CREATE TABLE IF NOT EXISTS budgets (project TEXT NOT NULL, kind TEXT NOT NULL, k
 -- A test run's result per project and commit, from a run on a clean tree (#34; 7 to 64 hex characters, matched against a PR's head by prefix): the latest wins.
 CREATE TABLE IF NOT EXISTS gates (project_id TEXT NOT NULL, commit_sha TEXT NOT NULL, result TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (project_id, commit_sha)) WITHOUT ROWID;
 
+-- v0.4 slice 3 (#29, Factory). machine_samples: one row per host, the latest machine.sample the plugin sent (a sample older than the row's changes nothing): free and total memory in bytes (null: the
+-- plugin could not read them), Docker's state (ok, absent, stopped) and the running containers as JSON (name, created_at, state, health, memory, and the compose and Testcontainers labels, as the event
+-- carries them). The grouping and the flags are a read's (api/machine.ts), against the history as it stands then.
+CREATE TABLE IF NOT EXISTS machine_samples (host TEXT PRIMARY KEY, ts INTEGER NOT NULL, mem_free INTEGER, mem_total INTEGER, docker TEXT NOT NULL, containers TEXT NOT NULL) WITHOUT ROWID;
+
 -- The indexes the writer's own lookups and the reads walk. A read goes from a project down to its calls (projects, sessions, agents, turns), and what it counts
 -- must come from an index, not from a table row fetched for every call: that, not the joins, was the cost (#83, slice 2). So calls_turn carries `success`,
 -- and a failure, a test run and a permission wait, which a read picks out of a project's whole history, have a partial index of their own (a few percent of the table).

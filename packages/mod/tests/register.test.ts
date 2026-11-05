@@ -56,7 +56,18 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   // #107: `uname -s` names the platform and `scutil --get LocalHostName` the Mac's own name; `hostname -s` ('mbp') is the network's. Linux by default,
   // so a test that wants a Mac sets `os` before the session starts. `scutilExit` non-zero makes scutil fail as it does when no LocalHostName is set.
   const machine = { os: 'Linux', localHostName: 'Alfredos-MacBook-Pro-4', scutilExit: 0, calls: [] as string[][] }
+  // v0.4 slice 3 (#29): `docker ps` and `docker stats` answer `dock.ps` and `dock.stats` while `mode` is 'ok'; 'absent' rejects as a binary that is not installed does, 'stopped' exits 1 as a
+  // daemon that is down does, 'hang' never answers. `vm_stat`, `sysctl -n hw.memsize` and `cat /proc/meminfo` answer the three memory fields. Every call is recorded.
+  const dock = { mode: 'absent' as 'ok' | 'absent' | 'stopped' | 'hang', ps: '', stats: '', vmStat: '', memsize: '', meminfo: '', calls: [] as string[][] }
   on('process.run', (_$: any, e: any) => {
+    if (e.argv[0] === 'docker' || e.argv[0] === 'vm_stat' || e.argv[0] === 'sysctl' || (e.argv[0] === 'cat' && e.argv[1] === '/proc/meminfo')) {
+      dock.calls.push(e.argv)
+      const out = { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+      if (e.argv[0] !== 'docker') return { value: { ...out, stdout: e.argv[0] === 'vm_stat' ? dock.vmStat : e.argv[0] === 'sysctl' ? dock.memsize : dock.meminfo } }
+      if (dock.mode === 'hang') return new Promise(() => {})
+      if (dock.mode === 'absent') return { deny: 'spawn docker ENOENT' }
+      return { value: dock.mode === 'stopped' ? { ...out, exitCode: 1, stderr: 'Cannot connect to the Docker daemon' } : { ...out, stdout: e.argv[1] === 'ps' ? dock.ps : dock.stats } }
+    }
     if (e.argv[0] === 'uname' || e.argv[0] === 'scutil') {
       machine.calls.push(e.argv)
       const out = e.argv[0] === 'uname' ? `${machine.os}\n` : machine.scutilExit ? '' : `${machine.localHostName}\n`
@@ -127,7 +138,7 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   const engine = { model: 'claude-sonnet-5-5', agentId: 'a-child', prompts: [] as string[] }
   on('agent.spawn', (_$: any, e: any) => (engine.prompts.push(e.prompt), { model: engine.model, agentId: engine.agentId }))
   const sent = () => posts.flat()
-  return { clock, posts, sent, statuses, notes, titles, git, files, engine, hash, goal, tree, gh, repo, machine }
+  return { clock, posts, sent, statuses, notes, titles, git, files, engine, hash, goal, tree, gh, repo, machine, dock }
 }
 
 // A stand-in for a git blob id: 40 hex characters that are a function of the text.
@@ -1699,4 +1710,128 @@ test('v0.4 slice 2: a gh issue list that fails still sends the PRs, with no issu
   await w.clock.advance(5 * MIN + 2_000)
   await w.clock.advance(2_000)
   expect(openSent(w).map((e) => e.data.issues)).toEqual([undefined, [{ number: 409 }, { number: 410 }]])
+})
+
+// v0.4 slice 3 (#29, Factory): the Mac's free memory and its running containers, sampled once per machine however many sessions run. Only names, a few labels, state, health and memory leave.
+const MiB = 1_048_576
+const VM_STAT = 'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 100.\nPages active: 999.\nPages inactive: 50.\nPages speculative: 10.\nPages wired down: 77.\n'
+// A row of `docker ps` as the plugin's template renders it, plus what a fuller row holds (command, environment, mounts, labels, image), which must never leave.
+const psRow = (o: Record<string, unknown> = {}) => JSON.stringify({
+  id: 'a1b2c3d4e5f6', name: 'mobile-app-db-1', created: '2026-11-05 10:12:03 +0100 CET', state: 'running', status: 'Up 2 hours (healthy)', project: 'mobile-app', dir: '/repo/deploy', tc: '', session: '',
+  command: 'postgres -c password=hunter2', env: ['API_KEY=sk-live-1'], mounts: '/Users/a/.ssh', labels: 'owner=x,com.example.secret=s3cret', image: 'sha256:deadbeef', ...o,
+})
+const SECRETS = /postgres|hunter2|sk-live|\.ssh|owner=|s3cret|deadbeef/
+const samples = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'machine.sample')
+const macWorld = (on: any, stored: Record<string, unknown> = {}) => {
+  const w = world(on, undefined, true, stored)
+  w.machine.os = 'Darwin'
+  w.dock.mode = 'ok'
+  w.dock.vmStat = VM_STAT
+  w.dock.memsize = '1000000\n'
+  w.dock.ps = `${psRow()}\n${psRow({ id: 'f6e5d4c3b2a1', name: 'quirky_curie', project: '', dir: '', tc: 'true', session: '3f2a9b', status: 'Up 3 minutes' })}\n`
+  w.dock.stats = '{"id":"a1b2c3d4e5f6","mem":"100MiB / 8GiB"}\n{"id":"f6e5d4c3b2a1","mem":"20MiB / 8GiB"}\n'
+  return w
+}
+
+test('#29: a session samples the machine at its start: free memory, Docker ok, each container with its labels, state, health and memory, and nothing else of its row', opts, async ($: any, on: any) => {
+  const w = macWorld(on)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(samples(w).map((e) => e.data)).toEqual([{
+    mem_free: 160 * 16_384, mem_total: 1_000_000, docker: 'ok',
+    containers: [
+      { name: 'mobile-app-db-1', created_at: Date.parse('2026-11-05T10:12:03+01:00'), state: 'running', health: 'healthy', memory: 100 * MiB, compose: 'mobile-app', working_dir: '/repo/deploy' },
+      { name: 'quirky_curie', created_at: Date.parse('2026-11-05T10:12:03+01:00'), state: 'running', memory: 20 * MiB, testcontainers: { session: '3f2a9b' } },
+    ],
+  }])
+  expect(samples(w)[0]).toMatchObject({ session_id: 's-1', host: 'Alfredos-MacBook-Pro-4' }) // about the host; the sampling session rides along as on any event
+  expect(JSON.stringify(w.sent())).not.toMatch(SECRETS)
+  const asked = w.dock.calls.filter((c) => c[0] === 'docker')
+  expect(asked.map((c) => c.slice(0, 3))).toEqual([['docker', 'ps', '--format'], ['docker', 'stats', '--no-stream']])
+  expect(asked[0]!.join(' ')).not.toMatch(/\.Command|\.Mounts|\.Labels|\.Image|\{\{json \.\}\}|inspect| -a/)
+})
+
+test('#29: on Linux the memory is /proc/meminfo\'s MemAvailable', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.dock.meminfo = 'MemTotal: 2000 kB\nMemAvailable: 1000 kB\n'
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(samples(w).map((e) => e.data)).toEqual([{ mem_free: 1_024_000, mem_total: 2_048_000, docker: 'absent', containers: [] }])
+  expect(w.dock.calls.map((c) => c[0])).not.toContain('vm_stat')
+})
+
+test('#29: two sessions within 10 minutes sample once', opts, async ($: any, on: any) => {
+  const w = macWorld(on)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  await w.clock.advance(5 * MIN)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false }) // the second session: the store says 5 minutes ago
+  await w.clock.advance(2_000)
+  expect(samples(w)).toHaveLength(1)
+  expect(w.dock.calls.filter((c) => c[0] === 'docker' && c[1] === 'ps')).toHaveLength(1)
+})
+
+test('#29: a sample 10 minutes old is taken again by a session already running, from the tick; one another session took 4 minutes ago is not', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = macWorld(on, { 'machine:sampled': T0 - 4 * MIN }) // another session sampled 4 minutes ago
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(samples(w)).toHaveLength(0)
+  await w.clock.advance(5 * MIN) // 9 minutes after it
+  expect(samples(w)).toHaveLength(0)
+  await w.clock.advance(2 * MIN) // past 10 (the tick looks every minute)
+  expect(samples(w)).toHaveLength(1)
+  await w.clock.advance(8 * MIN) // and not again before another 10
+  expect(samples(w)).toHaveLength(1)
+  await w.clock.advance(4 * MIN)
+  expect(samples(w)).toHaveLength(2)
+})
+
+test('#29: a time in the store from the future (the clock moved back) is not a fresh sample', opts, async ($: any, on: any) => {
+  const w = macWorld(on, { 'machine:sampled': T0 + 60 * MIN })
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(samples(w)).toHaveLength(1)
+})
+
+const DOCKER_DOWN = (mode: 'absent' | 'stopped') => async ($: any, on: any) => {
+  const w = macWorld(on)
+  w.dock.mode = mode
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(samples(w).map((e) => e.data)).toEqual([{ mem_free: 160 * 16_384, mem_total: 1_000_000, docker: mode, containers: [] }])
+  expect(w.dock.calls.some((c) => c[1] === 'stats')).toBe(false)
+}
+test('#29: Docker not installed is a sample that says "absent", with the memory and no containers', opts, DOCKER_DOWN('absent'))
+test('#29: a Docker daemon that is stopped is a sample that says "stopped", with the memory and no containers', opts, DOCKER_DOWN('stopped'))
+
+test('#29: a daemon that never answers holds up nothing; the time was written before the read, so the minute-by-minute look finds it fresh and does not ask again', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  on('tool.call', () => ({ result: 'ok', text: 'ok' }))
+  const w = macWorld(on)
+  w.dock.mode = 'hang'
+  await boot($)
+  const r = await $.tool.call({ tool: 'Read', tool_use_id: 'toolu_r', file_path: '/repo/a.ts' })
+  expect(r.text).toBe('ok')
+  await w.clock.advance(9 * MIN)
+  expect(w.dock.calls.filter((c) => c[1] === 'ps')).toHaveLength(1) // a look every minute for nine minutes, one read
+  expect(w.sent().map((e) => e.kind)).toContain('session.start')
+})
+
+test('#29: a container of an excluded project goes as numbers alone, whatever Content is set to; the others keep their names', { options: { token: 'tok', content: 'full', excludeProjects: '/repo' } }, async ($: any, on: any) => {
+  const w = macWorld(on)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  const [s] = samples(w)
+  expect(s.data.containers).toEqual([
+    { state: 'running', health: 'healthy', memory: 100 * MiB, excluded: true }, // its directory is /repo/deploy, inside the excluded /repo
+    expect.objectContaining({ name: 'quirky_curie', testcontainers: { session: '3f2a9b' } }), // a Testcontainers one has no directory
+  ])
+  expect(JSON.stringify(s)).not.toMatch(/mobile-app-db|deploy/)
+  expect(JSON.stringify(w.sent())).not.toMatch(SECRETS)
+})
+
+test('#29: with no token nothing is sampled or queued for the network', { options: { stallMinutes: 15 } }, async ($: any, on: any) => {
+  const w = macWorld(on)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(w.dock.calls).toEqual([])
 })

@@ -48,6 +48,13 @@ const built: Ev[] = [
   build.findingsReport(ctx, sub, 'fix/409-token-retry', { findings: [{ id: 'F12', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open' }], dropped: 1 }),
   build.gateReport(ctx, sub, { result: 'pass', commit: 'a1b2c3d' }),
   build.projectOpenPrs(ctx, [{ number: 416, head: 'fix/409-token-retry', head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: 1_792_400_000_000, checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: 1_792_400_100_000 }] }]),
+  // v0.4 slice 3 (#29, Factory): the machine, with a compose container, a Testcontainers one and an excluded project's, and a Mac with no Docker
+  build.machineSample(ctx, { mem_free: 6_200_000_000, mem_total: 36_000_000_000, docker: 'ok', containers: [
+    { name: 'mobile-app-db-1', created_at: 1_792_400_000_000, state: 'running', health: 'healthy', memory: 104_857_600, compose: 'mobile-app', working_dir: '/r/deploy' },
+    { name: 'quirky_curie', state: 'running', memory: 52_428_800, testcontainers: { session: '3f2a9b' } },
+    { state: 'running', health: 'unhealthy', memory: 1_048_576, excluded: true },
+  ] }),
+  build.machineSample(ctx, { docker: 'absent', containers: [] }),
   build.stall(ctx, 'start', stall),
   build.stall(ctx, 'end', { key: 'agent:main', agent: 'main', since: 1_792_400_000_000 }),
   build.dropped(ctx, 3, 1_792_400_000_000),
