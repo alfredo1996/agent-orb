@@ -637,13 +637,39 @@ export function parseFindings(report: string, text: (s: string) => string | unde
 }
 
 export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };
-export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; checks: Check[]; bots: { author: string; at: number }[] };
+// created_at is when the PR opened and issue the one it closes (#28): the body is read for `Closes #N` and goes no further.
+export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; created_at?: number; issue?: number; checks: Check[]; bots: { author: string; at: number }[] };
+export type OpenIssue = { number: number; milestone?: string };
 // gh's `commits` asks GitHub for 100 commits of 100 authors a PR, and GitHub refuses a query of more than 500,000 nodes before running it: 50 PRs fail, on every repo.
 const OPEN_PRS_MAX = 40;
 const OPEN_PRS_BUDGET = 250_000; // characters of JSON, as PRS_BUDGET: 100 PRs of 200 checks would pass the server's 1 MB request, and a refused event is lost
 
-/** The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time. */
-export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', String(OPEN_PRS_MAX), '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits'];
+/** The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time; and (#28) when the PR opened and its body, for the issue it closes. */
+export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', String(OPEN_PRS_MAX), '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body'];
+/** The open issues' numbers and milestones (#28): what a milestone's budget default is matched to. gh lists at most 200 here; a read keeps at most 500. */
+export const openIssuesArgv = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone'];
+const OPEN_ISSUES_MAX = 500;
+
+// The issue a branch names, as shared/src/issue.ts reads it (the plugin imports nothing from shared; contract.spec.ts holds the two to one table).
+const BRANCH_ISSUE = /^(?:[^/]+\/)*([1-9]\d{0,8})(?:[-_]|$)/;
+export const branchIssue = (branch: string | null | undefined): number | null => {
+  const m = branch ? BRANCH_ISSUE.exec(branch) : null;
+  return m ? Number(m[1]) : null;
+};
+// GitHub's closing keywords before `#N` of this repository (not `owner/repo#N`, not a URL). The gaps are bounded: a body of a long run of spaces after a keyword stays linear.
+const CLOSES = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?!\w)\s{0,4}:?\s{1,4}#([1-9]\d{0,8})(?!\d)/i;
+
+/**
+ * The issue a PR is for (#28): the number in its branch (`fix/90-…`) first, else the first `Closes #N` (or Fixes, Resolves) in its body. Only the number is kept: the body is read
+ * here and goes no further. A PR that closes several issues is the first's.
+ * ponytail: a keyword inside a sentence that denies it ("does not close #5") still counts, as on GitHub; `Closes owner/repo#N` and a closing URL do not.
+ */
+export function issueOf(head: unknown, body: unknown): number | undefined {
+  const b = typeof head === 'string' ? branchIssue(head.slice(0, 200)) : null;
+  if (b !== null) return b;
+  const m = typeof body === 'string' ? CLOSES.exec(body) : null;
+  return m ? Number(m[1]) : undefined;
+}
 
 // gh names a bot's author bare (`coderabbitai`, `sonarqubecloud`, measured on NeoBoard's PRs), with no mark that it is one.
 // ponytail: a name list. Upgrade path: `gh api graphql` with `author { __typename }`, which says Bot.
@@ -683,6 +709,8 @@ export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined
     const state = typeof p.mergeStateStatus === 'string' && /^[A-Z_]{1,40}$/.test(p.mergeStateStatus) ? p.mergeStateStatus : 'UNKNOWN';
     const commit = (Array.isArray(p.commits) ? p.commits as Record<string, unknown>[] : []).find((c) => c?.oid === p.headRefOid);
     const committed = at(commit?.committedDate);
+    const opened = at(p.createdAt);
+    const issue = issueOf(p.headRefName, p.body); // from the real branch name, which an excluded project does not send
     const checks = (Array.isArray(p.statusCheckRollup) ? p.statusCheckRollup as Record<string, unknown>[] : []).map(checkOf).filter((c): c is Check => c !== undefined).slice(0, 200);
     const bots = new Map<string, number>();
     for (const c of [...(Array.isArray(p.comments) ? p.comments : []), ...(Array.isArray(p.reviews) ? p.reviews : [])] as Record<string, any>[]) {
@@ -692,11 +720,34 @@ export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined
     }
     prs.push({
       number: p.number, ...(head ? { head } : {}), head_oid: p.headRefOid, merge_state: state, ...(committed > 0 ? { last_commit_at: committed } : {}),
+      ...(opened > 0 ? { created_at: opened } : {}), ...(issue ? { issue } : {}),
       checks, bots: [...bots].slice(0, 50).map(([author, t]) => ({ author, at: t })),
     });
   }
   let size = 0;
   return prs.filter((p) => (size += JSON.stringify(p).length + 1) <= OPEN_PRS_BUDGET);
+}
+
+/**
+ * The open issues in `openIssuesArgv`'s output: a number and its milestone's title, never an issue's title or body. `titles: false` (an excluded project) leaves the milestone out:
+ * a title is a name. Nothing when the output is not gh's list; an empty list is a read of no open issues. At most 500.
+ */
+export function parseOpenIssues(stdout: string, titles = true): OpenIssue[] | undefined {
+  let list: unknown;
+  try {
+    list = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(list)) return undefined;
+  const issues: OpenIssue[] = [];
+  for (const i of list as Record<string, any>[]) {
+    if (typeof i?.number !== 'number' || !Number.isInteger(i.number) || i.number < 1) continue;
+    const title = titles && typeof i.milestone?.title === 'string' && i.milestone.title ? i.milestone.title.slice(0, 200) : undefined;
+    issues.push({ number: i.number, ...(title ? { milestone: title } : {}) });
+    if (issues.length >= OPEN_ISSUES_MAX) break;
+  }
+  return issues;
 }
 
 // ── The monthly goal (v0.2 slice 3, PROJECT.md §15, 2026-10-24) ──────────────
@@ -951,7 +1002,7 @@ export const build = {
   findingsReport: (c: Ctx, w: Who, branch: string | undefined, f: Findings) =>
     makeEvent(c, 'findings.report', { ...(branch ? { branch } : {}), ...(f.pr ? { pr: f.pr } : {}), findings: f.findings, dropped: f.dropped }, who(w)),
   gateReport: (c: Ctx, w: Who, g: Gate) => makeEvent(c, 'gate.report', { result: g.result, commit: g.commit }, who(w)),
-  projectOpenPrs: (c: Ctx, prs: OpenPr[]) => makeEvent(c, 'project.open_prs', { prs }),
+  projectOpenPrs: (c: Ctx, prs: OpenPr[], issues?: OpenIssue[]) => makeEvent(c, 'project.open_prs', { prs, ...(issues ? { issues } : {}) }),
   skillsCatalog: (c: Ctx, skills: CatalogSkill[], agents: CatalogAgent[]) => makeEvent(c, 'skills.catalog', { skills, agents }),
   stall: (c: Ctx, edge: 'start' | 'end', s: Stall) =>
     makeEvent(c, `stall.${edge}`, { ...(s.tool_use_id ? { tool_use_id: s.tool_use_id, tool: s.tool } : {}), since: s.since }, { agent_id: s.agent === 'main' ? undefined : s.agent }),

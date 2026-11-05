@@ -255,3 +255,27 @@ export const OTHER_SHAPE: [Shape, Shape][] = [
   [['_', 'Bash', 'Exit code 1\nfatal: bad object', 'git'], ['_', 'Bash', 'Exit code 1\nfatal: not a git repository', 'git']], // another failure
   [['_', 'Bash', 'Exit code 1\ncat: src/a.ts: No such file or directory', 'other'], ['_', 'Bash', 'Exit code 1\nls: src/a.ts: No such file or directory', 'other']], // another command's words
 ];
+
+/**
+ * The issue a branch name names (#28, Factory): a number right after the type prefix (`fix/90-…`), or leading a branch with none (GitHub's own `90-fix-thing`), and followed by `-`, `_` or the end.
+ * A copy lives in the plugin, which imports nothing from shared: packages/mod/test/contract.spec.ts holds both to these rows.
+ */
+export const BRANCH_ISSUES: [string | undefined, number | null][] = [
+  ['fix/90-token-retry', 90],
+  ['feat/407-compress-photos', 407],
+  ['claude/28-issue-cost-19d731', 28], // a desktop session's worktree branch
+  ['90-fix-thing', 90], // what GitHub's "Create a branch" makes
+  ['fix/90', 90],
+  ['user/fix/12_retry', 12], // a nested prefix, and `_`
+  ['main', null],
+  ['dev', null],
+  ['release/0.4', null], // a version is no issue
+  ['fix/token-retry-90', null], // a number at the end is no prefix
+  ['dependabot/npm_and_yarn/vite-8.3.4', null],
+  ['feature/ABC-123-thing', null], // a tracker key is not an issue of this repository
+  ['fix/0-nothing', null],
+  ['fix/90.1-x', null],
+  ['fix/1234567890-x', null], // ten digits are no issue number
+  ['', null],
+  [undefined, null],
+];

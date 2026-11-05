@@ -1,20 +1,29 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { usd } from './format.ts';
 import { trapTab, usePhone } from './History.tsx';
 import { PageHeader, ProjectSelect, Reading, useProject, type Said } from './kit.tsx';
 
 // Factory (v0.4 slice 1, #27), drawn as approved in design/v0.4-factory.html, the Factory and Findings boards, from GET /api/factory: each open PR with the first
 // reason it isn't ready for your ok, or "Ready for your ok", and its findings in a sheet. Nothing here merges: the merge stays yours.
-// The board, the budget and the machine bands come with slices 2, 3 and 6.
+// Slice 2 (#28) adds each PR's issue cost against its budget (the cost cell, the Budget card and the sheet's field), from GET and PUT /api/budget; every figure is an estimate and
+// nothing is ever stopped. The board and the machine bands come with slices 3 and 6.
 
 type Cond = { ok: boolean | null; note: string };
 export type FactoryFinding = { id: string; severity: string; file: string; fate: 'open' | 'dismissed' | 'fixed'; title?: string; why?: string };
 export type FactoryPr = {
-  number: number; head: string | null; headOid: string; ready: boolean; reason: string | null; dropped: number;
+  number: number; head: string | null; issue?: number | null; headOid: string; ready: boolean; reason: string | null; dropped: number;
   conditions: { findings: Cond; gate: Cond; bots: Cond; clean: Cond }; findings: FactoryFinding[];
 };
 export type FactoryData = { project: string; readAt: number | null; prs: FactoryPr[] };
 type OpenSheet = (pr: number, from: HTMLElement) => void;
+/** An issue's cost, estimated by time windows, with its budget (the issue's own, else its milestone's) and whether it has reached 80% (`at80`) or the budget (`at100`). */
+export type IssueCost = {
+  number: number; milestone: string | null; usd: number; partial: boolean; whole: number; windows: number; budget: number | null; milestoneBudget: number | null; source: 'issue' | 'milestone' | null; mark: 'at80' | 'at100' | null;
+};
+export type BudgetData = { project: string; month: string; issues: IssueCost[]; notOnIssue: { usd: number; partial: boolean }; milestones: { name: string; budget: number | null }[] };
+/** Saves a budget (null removes it) and answers the server's words when it refused, or nothing. */
+type Save = (target: { milestone: string } | { issue: number }, usd: number | null) => Promise<string | undefined>;
 
 const REFRESH_MS = 30_000; // the plugin reads GitHub every 5 minutes; the page asks more often so a fresh read shows soon after it lands
 const STALE_MS = 10 * 60_000; // two reads missed: no session is reading this repo now
@@ -55,10 +64,107 @@ export function factoryReading(d: FactoryData): Said {
   return said;
 }
 
-/** Each open PR, worst first (the server's order): its state, the first reason it isn't ready or "Ready for your ok", and its dismissed findings to read. */
-export function NeedsYou({ prs, onOpen }: { prs: FactoryPr[]; onOpen: OpenSheet }) {
+/** What a budget field holds, as the server wants it (above 0, at most 1,000,000), or nothing at all, which removes the budget; else what is wrong with it. */
+export function budgetInput(text: string): { usd: number | null } | { error: string } {
+  if (!text.trim()) return { usd: null };
+  const n = Number(text);
+  if (!Number.isFinite(n) || n <= 0) return { error: 'Give a number of dollars above 0, or leave it empty to remove the budget' };
+  return n > 1_000_000 ? { error: 'A budget is at most $1,000,000' } : { usd: n };
+}
+
+/** An issue's cost against its budget: the figure (a floor when a request had no price), a bar, and how far it is. The bar's colour is the server's mark, never a percent worked out here. */
+export function CostCell({ issue, cost }: { issue: number | null | undefined; cost?: IssueCost }) {
+  const lab = <span className="lab">Cost, estimate</span>;
+  if (!issue) return <div className="costcell">{lab}<span className="why none">No issue</span></div>;
+  if (!cost || (cost.usd === 0 && !cost.partial)) return <div className="costcell">{lab}<span className="why none">Nothing spent</span></div>;
+  if (cost.budget === null) return <div className="costcell">{lab}<span className="num">{usd(cost.usd, cost.partial)}</span><small>No budget set</small></div>;
+  const pct = Math.round((100 * cost.usd) / cost.budget);
+  const note = cost.mark === 'at100' ? `${pct}% of the budget: reached, nothing is stopped` : cost.mark === 'at80' ? `${pct}% of the budget: nearly spent` : `${pct}% of the budget`;
   return (
-    <section className="card needs" aria-labelledby="fneeds-h">
+    <div className="costcell">
+      {lab}<span className="num">{usd(cost.usd, cost.partial)} of {usd(cost.budget)}</span>
+      <div className={cost.mark === 'at100' ? 'bar over' : cost.mark === 'at80' ? 'bar warn' : 'bar'} role="img" aria-label={`${pct}% of the budget`}><i style={{ width: `${Math.min(pct, 100)}%` }} /></div>
+      <small>{note}</small>
+    </div>
+  );
+}
+
+/** One budget: a dollar amount to save, or to leave empty and save to remove. `value` is what is stored; a refusal shows the server's words. */
+function BudgetField({ label, value, placeholder, onSave }: { label: string; value: number | null; placeholder?: number | null; onSave: (usd: number | null) => Promise<string | undefined> }) {
+  const [draft, setDraft] = useState(value === null ? '' : String(value));
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setDraft(value === null ? '' : String(value)), [value]); // what the server holds, after a save or a fresh read
+  const typed = budgetInput(draft);
+  const problem = error ?? ('error' in typed ? typed.error : undefined);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if ('error' in typed || busy) return;
+    setBusy(true);
+    setError(await onSave(typed.usd));
+    setBusy(false);
+  };
+  return (
+    <form className="bfield" noValidate onSubmit={submit}>
+      <span className="blab">{label}</span>
+      <span className="bin">
+        <span aria-hidden="true">$</span>
+        <input aria-label={label} type="number" inputMode="decimal" min="0" step="any" placeholder={placeholder ? String(placeholder) : 'None'} value={draft} aria-invalid={!!problem}
+          onChange={(e) => { setDraft(e.target.value); setError(undefined); }} />
+        <button type="submit" className="btn primary" disabled={busy || 'error' in typed || typed.usd === value}>Save</button>
+      </span>
+      {problem && <p className="gerr" role="alert">{problem}</p>}
+    </form>
+  );
+}
+
+/** What the milestones' defaults are, where to set them, and the month's spend on no issue. The numbers and warnings are the server's. */
+export function BudgetCard({ data, onSave }: { data: BudgetData; onSave: Save }) {
+  const own = data.issues.filter((i) => i.source === 'issue');
+  const none = !own.length && data.milestones.every((m) => m.budget === null);
+  return (
+    <section className="card budget" aria-labelledby="fbudget-h">
+      <h2 id="fbudget-h">Budget per issue <span className="hint">warns at 80% and 100%, never stops anything</span></h2>
+      <div className="bbody">
+        {!data.milestones.length && <p className="dnote">No open issue has a milestone, so there is no default to set. An issue's own budget is on its PR's sheet.</p>}
+        {data.milestones.map((m) => <BudgetField key={m.name} label={`Default for ${m.name}`} value={m.budget} onSave={(u) => onSave({ milestone: m.name }, u)} />)}
+        {none && <span className="sub">No budget is set, so rows show cost only and nothing warns.</span>}
+        {own.length > 0 && (
+          <span className="sub">{own.length === 1 ? 'One issue has its own budget' : `${own.length} issues have their own budget`}: {own.map((i) => `#${i.number}, ${usd(i.budget!)}`).join('; ')}. Set it on the PR's sheet.</span>
+        )}
+      </div>
+      <div className="notissue">
+        <span>Not on an issue: <b className="num">{usd(data.notOnIssue.usd, data.notOnIssue.partial)}</b> this month</span>
+        <span className="sub">Sessions with no PR, and turns after a session's last PR. Cost is an estimate by time windows.</span>
+      </div>
+    </section>
+  );
+}
+
+/** The PR sheet's cost: where the issue's money went, and its own budget (which beats the milestone's). */
+function CostSection({ issue, cost, onSave }: { issue: number | null | undefined; cost?: IssueCost; onSave: Save }) {
+  if (!issue) return <section className="dsec"><h4>Cost, estimate</h4><p className="dnote">This PR closes no issue, so its cost is on "not on an issue".</p></section>;
+  const c = cost ?? { number: issue, milestone: null, usd: 0, partial: false, whole: 0, windows: 0, budget: null, milestoneBudget: null, source: null, mark: null };
+  const dflt = c.milestoneBudget; // known beside the issue's own budget: it is what removing that gives back
+  return (
+    <section className="dsec">
+      <h4>Cost, estimate</h4>
+      <div className="ledger2">
+        {c.whole > 0 && <div><span className="sub">On the issue's branch, whole</span><span className="num">{usd(c.whole)}</span></div>}
+        {c.windows > 0 && <div><span className="sub">Turns before a PR opened, in a longer session</span><span className="num">{usd(c.windows)}</span></div>}
+        {c.usd === 0 && !c.partial && <span className="sub">Nothing spent yet</span>}
+        {c.partial && <span className="sub">At least this much: a request on a model with no price adds nothing.</span>}
+      </div>
+      <BudgetField label="Budget for this issue" value={c.source === 'issue' ? c.budget : null} placeholder={dflt} onSave={(u) => onSave({ issue }, u)} />
+      <span className="sub">{dflt !== null ? `Milestone default: ${usd(dflt)}` : 'No milestone default'}</span>
+    </section>
+  );
+}
+
+/** Each open PR, worst first (the server's order): its state, the first reason it isn't ready or "Ready for your ok", its issue's cost once read, and its dismissed findings to read. */
+export function NeedsYou({ prs, costs, onOpen }: { prs: FactoryPr[]; costs?: Map<number, IssueCost>; onOpen: OpenSheet }) {
+  return (
+    <section className={costs ? 'card needs withcost' : 'card needs'} aria-labelledby="fneeds-h">
       <h2 id="fneeds-h">Needs you</h2>
       {!prs.length && <p className="nothing">Nothing needs you.</p>}
       {prs.map((p) => {
@@ -72,6 +178,7 @@ export function NeedsYou({ prs, onOpen }: { prs: FactoryPr[]; onOpen: OpenSheet 
               <b>PR #{p.number}</b>{p.head && <> <code>{p.head}</code></>}
               <span className="sub">{p.reason ?? 'Ready for your ok'}{dismissed > 0 && ` · ${dismissed} dismissed: read ${dismissed === 1 ? 'it' : 'them'} before merging`}</span>
             </span>
+            {costs && <CostCell issue={p.issue} cost={p.issue ? costs.get(p.issue) : undefined} />}
             <span className="since num">{open ? `${open} open` : short(p.headOid)}</span>
             <button type="button" className={p.ready ? 'btn primary' : 'btn'} onClick={(e) => onOpen(p.number, e.currentTarget)}>{open ? 'See findings' : 'See checks'}</button>
           </div>
@@ -92,7 +199,7 @@ function Row({ f }: { f: FactoryFinding }) {
 }
 
 /** One PR's sheet: can it merge (the four conditions), then its findings: open, dismissed (read these before merging), and fixed, folded. */
-export function PrSheet({ pr, readAt, now, sheet, onClose }: { pr: FactoryPr; readAt: number | null; now: number; sheet: boolean; onClose: () => void }) {
+export function PrSheet({ pr, readAt, now, sheet, onClose, cost, onSave }: { pr: FactoryPr; readAt: number | null; now: number; sheet: boolean; onClose: () => void; cost?: IssueCost; onSave?: Save }) {
   const box = useRef<HTMLElement>(null);
   useEffect(() => box.current?.focus(), []);
   useEffect(() => {
@@ -139,6 +246,7 @@ export function PrSheet({ pr, readAt, now, sheet, onClose }: { pr: FactoryPr; re
           {dismissed.length > 0 && <div className="fgroup"><h5>Dismissed: read these before merging ({dismissed.length})</h5>{dismissed.map((f) => <Row key={f.id} f={f} />)}</div>}
           {fixed.length > 0 && <details className="fgroup"><summary>Fixed ({fixed.length})</summary>{fixed.map((f) => <Row key={f.id} f={f} />)}</details>}
         </section>
+        {onSave && <CostSection issue={pr.issue} cost={cost} onSave={onSave} />}
       </div>
     </aside>
   );
@@ -147,6 +255,7 @@ export function PrSheet({ pr, readAt, now, sheet, onClose }: { pr: FactoryPr; re
 export function Factory({ now }: { now: number }) {
   const { project, projects } = useProject(true); // one project: the page reads one repo's PRs
   const [data, setData] = useState<FactoryData>();
+  const [budget, setBudget] = useState<BudgetData>();
   const [error, setError] = useState<string>();
   const [picked, setPicked] = useState<number>();
   const opener = useRef<HTMLElement>(null);
@@ -164,6 +273,10 @@ export function Factory({ now }: { now: number }) {
       } catch (e) {
         if (live) setError((e as Error).message);
       }
+      try { // the cost is a second read: a failure leaves the PRs showing, with no cost cell
+        const res = await fetch(`/api/budget?${new URLSearchParams({ project, tz: Intl.DateTimeFormat().resolvedOptions().timeZone })}`);
+        if (res.ok && live) setBudget((await res.json()) as BudgetData);
+      } catch { /* the next read tries again */ }
     };
     void load();
     const t = setInterval(load, REFRESH_MS);
@@ -174,6 +287,19 @@ export function Factory({ now }: { now: number }) {
   }, [project]);
 
   const shown = data && data.project === project ? data : undefined; // a project just picked never wears the last one's PRs
+  const costed = budget && budget.project === project ? budget : undefined;
+  const costs = costed && new Map(costed.issues.map((i) => [i.number, i]));
+  const save: Save = async (target, amount) => {
+    try {
+      const res = await fetch('/api/budget', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project, ...target, usd: amount }) });
+      if (!res.ok) return ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `The server answered ${res.status}.`;
+      const again = await fetch(`/api/budget?${new URLSearchParams({ project, tz: Intl.DateTimeFormat().resolvedOptions().timeZone })}`);
+      if (again.ok) setBudget((await again.json()) as BudgetData);
+    } catch (e) {
+      return (e as Error).message;
+    }
+    return undefined;
+  };
   const pr = shown?.prs.find((p) => p.number === picked);
   const close = () => {
     setPicked(undefined);
@@ -190,13 +316,14 @@ export function Factory({ now }: { now: number }) {
       {shown && (
         <>
           <Reading said={factoryReading(shown)} />
-          <NeedsYou prs={shown.prs} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />
+          <NeedsYou prs={shown.prs} costs={costs} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />
+          {costed && <BudgetCard data={costed} onSave={save} />}
         </>
       )}
       {pr && createPortal(
         <>
           <div className="scrim" onClick={close} aria-hidden="true" />
-          <PrSheet key={pr.number} pr={pr} readAt={shown!.readAt} now={now} sheet={phone} onClose={close} />
+          <PrSheet key={pr.number} pr={pr} readAt={shown!.readAt} now={now} sheet={phone} onClose={close} cost={pr.issue && costs ? costs.get(pr.issue) : undefined} onSave={costed ? save : undefined} />
         </>,
         document.body,
       )}

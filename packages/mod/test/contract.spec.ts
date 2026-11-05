@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as shared from '../../shared/src/index.ts';
 import { COMMAND_CLASSES, ERROR_CLASSES, EVENT_KINDS, Event, MODEL_FAMILIES, NAMED_SHAPES, ROLES } from '../../shared/src/index.ts';
-import { COMMANDS, ERRORS, OTHER_SHAPE, SAME_SHAPE, SHAPES } from '../../shared/test/class-tables.ts';
+import { BRANCH_ISSUES, COMMANDS, ERRORS, OTHER_SHAPE, SAME_SHAPE, SHAPES } from '../../shared/test/class-tables.ts';
 import * as mod from '../hooks/core.ts';
 import { build, FAMILIES, MOD_COMMAND_CLASSES, MOD_ERROR_CLASSES, MOD_NAMED_SHAPES, MOD_ROLES, modelLabel, roleFromFrontmatter, type Ctx, type Ev, type Stall } from '../hooks/core.ts';
 
@@ -119,6 +119,11 @@ describe('error and command classes (v0.3 slice 1, #43)', () => {
   it('the mod names exactly the classes the server accepts, so a class it sends is never refused', () => {
     expect([...MOD_ERROR_CLASSES]).toEqual([...ERROR_CLASSES]);
     expect([...MOD_COMMAND_CLASSES]).toEqual([...COMMAND_CLASSES]);
+  });
+
+  it.each(BRANCH_ISSUES.map(([branch, issue]) => [branch, issue] as const))('both copies read the issue of branch %j as %j', (branch, issue) => {
+    expect(shared.branchIssue(branch)).toBe(issue);
+    expect(mod.branchIssue(branch)).toBe(issue);
   });
 
   it.each(COMMANDS.map(([cls, command]) => [cls, command.slice(0, 80), command] as const))('both copies read %s: %j', (cls, _label, command) => {

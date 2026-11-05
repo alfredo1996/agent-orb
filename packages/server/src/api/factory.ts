@@ -99,7 +99,9 @@ export function factory(app: FastifyInstance, { store, content, now = Date.now }
     const { project } = q.data;
     // Every project row with the name, like the goal: a repo seen from two machines is two rows.
     const readAt = get(store, 'SELECT max(prs_read_at) AS at FROM projects WHERE name = :project', { project })?.at ?? null;
-    const rows = all(store, 'SELECT o.* FROM open_prs o JOIN projects p ON p.id = o.project_id WHERE p.name = :project', { project });
+    // #28: the issue each PR closes is on its pull_requests row (the open-PR read put it there), which the cost on the page is matched to.
+    const rows = all(store, `SELECT o.*, pr.issue AS issue FROM open_prs o JOIN projects p ON p.id = o.project_id
+      LEFT JOIN pull_requests pr ON pr.id = o.project_id || ':' || o.number WHERE p.name = :project`, { project });
     const prs = rows.map((r) => {
       const pr: PrState = { headOid: r.head_oid, mergeState: r.merge_state, lastCommitAt: r.last_commit_at ?? undefined, checks: JSON.parse(r.checks), bots: JSON.parse(r.bots) };
       // A PR's findings are the reports that named it (```orb-findings #416) and those made on its head branch, the latest fate of each id winning across both. Its
@@ -127,7 +129,7 @@ export function factory(app: FastifyInstance, { store, content, now = Date.now }
       let verdict = ready(pr, ledger, gate as { result: 'pass' | 'fail' } | undefined);
       // Old data is never "ready": a PR can have moved since. Its conditions still show as they were read.
       if (verdict.ready && readAt !== null && now() - readAt > STALE_MS) verdict = { ...verdict, ready: false, reason: `Was ready when GitHub was last read, ${Math.floor((now() - readAt) / 60_000)} min ago` };
-      return { number: r.number as number, head: (r.head ?? null) as string | null, headOid: r.head_oid as string, ...verdict, findings, dropped: report?.dropped ?? 0 };
+      return { number: r.number as number, head: (r.head ?? null) as string | null, issue: (r.issue ?? null) as number | null, headOid: r.head_oid as string, ...verdict, findings, dropped: report?.dropped ?? 0 };
     });
     // Not ready first (they need you), then the newest PR.
     return { project, readAt, prs: prs.toSorted((a, b) => Number(a.ready) - Number(b.ready) || b.number - a.number) };

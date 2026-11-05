@@ -16,13 +16,14 @@ CREATE TABLE IF NOT EXISTS project_cwds (project_id TEXT NOT NULL, cwd TEXT NOT 
 CREATE TABLE IF NOT EXISTS role_rules (project_id TEXT NOT NULL, agent_type TEXT NOT NULL, role TEXT NOT NULL, PRIMARY KEY (project_id, agent_type)) WITHOUT ROWID;
 
 -- One session, one project: the first an event named, then the re-home. user_id and host are the Host and User nodes.
+-- branch (#28) is the git branch the first session.start that had one was on: a session on an issue branch counts whole for that issue.
 -- source is the first session.start source seen; recorded is 1 once a session.start with another source arrived.
 -- plugin_first and plugin_last are the first and last ts of the prompts, requests and calls the plugin wrote (the writer's `source` is 'plugin'):
 -- the stretch the import never fills. An imported session the plugin resumed later has a stretch from the resume on (#79); null = the plugin wrote none.
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, host TEXT NOT NULL, project_id TEXT NOT NULL,
   started_at INTEGER, ended_at INTEGER, model TEXT, claude_version TEXT, content TEXT, source TEXT, recorded INTEGER,
-  plugin_first INTEGER, plugin_last INTEGER, dropped_events INTEGER
+  plugin_first INTEGER, plugin_last INTEGER, dropped_events INTEGER, branch TEXT
 ) WITHOUT ROWID;
 
 -- id is `session:agent_id`, the main agent `session:main`. parent_id and spawn_tool_use_id are the SPAWNED edge and the SPAWNED_AGENT one.
@@ -78,11 +79,12 @@ CREATE TABLE IF NOT EXISTS fingerprints (
 -- id is `project:number`. project_id is set by gh's list alone (MERGED): a row with none was only mentioned by a session, and is no row in Worth.
 -- size is the owner's, set by PUT /api/worth/size, never by the writer (null: the PR is sized from the counts, #103). counted_lines and counted_files are the lines and files
 -- the plugin counted once lockfiles, images, build output and generated files were set aside (null: an older plugin, or gh listed no files). OPENED is session_prs.
+-- created_at and issue (#28) are when the PR opened and the issue it closes, from the open-PR read alone (project.open_prs): a PR no read saw has neither. A row that read made has no project_id.
 -- ts of a session_prs row is when the session first linked the PR (epoch ms; null for a link recorded before #103): a PR gets the session's work from the session's previous link up to this one.
 -- store.ts adds a column to a file made before it was here (CREATE TABLE IF NOT EXISTS does not).
 CREATE TABLE IF NOT EXISTS pull_requests (
   id TEXT PRIMARY KEY, project_id TEXT, number INTEGER NOT NULL, title TEXT, merged_at INTEGER, additions INTEGER, deletions INTEGER, head TEXT, size TEXT,
-  counted_lines INTEGER, counted_files INTEGER
+  counted_lines INTEGER, counted_files INTEGER, created_at INTEGER, issue INTEGER
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS session_prs (session_id TEXT NOT NULL, pr_id TEXT NOT NULL, ts INTEGER, PRIMARY KEY (session_id, pr_id)) WITHOUT ROWID;
 
@@ -110,6 +112,11 @@ CREATE TABLE IF NOT EXISTS findings (
   PRIMARY KEY (project_id, ref, id)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS finding_reports (project_id TEXT NOT NULL, ref TEXT NOT NULL, ts INTEGER NOT NULL, dropped INTEGER NOT NULL, PRIMARY KEY (project_id, ref)) WITHOUT ROWID;
+-- v0.4 slice 2 (#28, issue cost). open_issues: the open issues' numbers and milestones as the plugin last read them, a snapshot per project replaced like open_prs (a read
+-- with no `issues` leaves it). budgets: the owner's, set by PUT /api/budget and never by the writer, per project *name* like goal_usd: kind 'milestone' (key the milestone's title:
+-- the default for each issue in it) or 'issue' (key the number: that issue's own budget, which wins). No default ships: with none, nothing warns.
+CREATE TABLE IF NOT EXISTS open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS budgets (project TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, usd REAL NOT NULL, PRIMARY KEY (project, kind, key)) WITHOUT ROWID;
 -- A test run's result per project and commit, from a run on a clean tree (#34; 7 to 64 hex characters, matched against a PR's head by prefix): the latest wins.
 CREATE TABLE IF NOT EXISTS gates (project_id TEXT NOT NULL, commit_sha TEXT NOT NULL, result TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (project_id, commit_sha)) WITHOUT ROWID;
 

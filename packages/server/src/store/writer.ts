@@ -119,9 +119,10 @@ function writeRows(db: Store, ev: Event[], source: Source) {
                claude_version = CASE WHEN :imp THEN coalesce(claude_version, :version) ELSE :version END,
                content = CASE WHEN :imp THEN coalesce(content, :content) ELSE coalesce(:content, content) END,
                source = CASE WHEN :imp AND started_at IS NOT NULL THEN source ELSE coalesce(source, :source) END,
-               recorded = CASE WHEN :imp THEN recorded ELSE 1 END
+               recorded = CASE WHEN :imp THEN recorded ELSE 1 END,
+               branch = coalesce(branch, :branch)
              WHERE id = :id`,
-    { id: e.session_id, ts: e.ts, model: e.data.model, version: e.data.claude_version, content: e.data.content, source: e.data.source, imp });
+    { id: e.session_id, ts: e.ts, model: e.data.model, version: e.data.claude_version, content: e.data.content, source: e.data.source, imp, branch: e.project.git_branch });
     run(db, `UPDATE agents SET model = coalesce(model, :model), started_at = ${earliest('started_at', 'ts')} WHERE id = :id`, { id: agentKey(e), ts: e.ts, model: e.data.model });
   }
 
@@ -229,6 +230,14 @@ function writeRows(db: Store, ev: Event[], source: Source) {
                ON CONFLICT (project_id, number) DO UPDATE SET head = excluded.head, head_oid = excluded.head_oid, merge_state = excluded.merge_state, last_commit_at = excluded.last_commit_at,
                  checks = excluded.checks, bots = excluded.bots`,
       { project, number: p.number, head: p.head, oid: p.head_oid, state: p.merge_state, at: p.last_commit_at, checks: JSON.stringify(p.checks), bots: JSON.stringify(p.bots) });
+      // #28: when it opened and the issue it closes, kept on the PR (which outlives the snapshot above) for the cost windows. Neither is ever erased by a read that lacks it.
+      run(db, `INSERT INTO pull_requests (id, number, created_at, issue) VALUES (:id, :number, :created_at, :issue)
+               ON CONFLICT (id) DO UPDATE SET created_at = coalesce(excluded.created_at, pull_requests.created_at), issue = coalesce(excluded.issue, pull_requests.issue)`,
+      { id: `${project}:${p.number}`, number: p.number, created_at: p.created_at, issue: p.issue });
+    }
+    if (e.data.issues) { // absent says nothing about the issues: the last read stands
+      run(db, 'DELETE FROM open_issues WHERE project_id = :project', { project });
+      for (const i of e.data.issues) run(db, 'INSERT OR REPLACE INTO open_issues (project_id, number, milestone) VALUES (:project, :number, :milestone)', { project, number: i.number, milestone: i.milestone });
     }
   }
   // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it

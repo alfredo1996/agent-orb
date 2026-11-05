@@ -50,7 +50,9 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   // answers (`hang`), or is not installed (`missing`: the call rejects).
   const gh = { out: '', exitCode: 0, hang: false, missing: false, calls: [] as { argv: readonly string[]; cwd?: string }[],
     // v0.4 slice 1 (#27): `gh pr list --state open ...` answers `gh.open`, and is recorded in `openCalls` (not `calls`, which is the merged list's)
-    open: '', openCalls: [] as { argv: readonly string[]; cwd?: string }[] }
+    open: '', openCalls: [] as { argv: readonly string[]; cwd?: string }[],
+    // v0.4 slice 2 (#28): `gh issue list --state open ...` answers `gh.issues` (empty: gh printed nothing usable) and is recorded in `issueCalls`
+    issues: '', issueCalls: [] as { argv: readonly string[]; cwd?: string }[] }
   // #107: `uname -s` names the platform and `scutil --get LocalHostName` the Mac's own name; `hostname -s` ('mbp') is the network's. Linux by default,
   // so a test that wants a Mac sets `os` before the session starts. `scutilExit` non-zero makes scutil fail as it does when no LocalHostName is set.
   const machine = { os: 'Linux', localHostName: 'Alfredos-MacBook-Pro-4', scutilExit: 0, calls: [] as string[][] }
@@ -61,11 +63,12 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
       return { value: { exitCode: e.argv[0] === 'uname' ? 0 : machine.scutilExit, stdout: out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
     if (e.argv[0] === 'gh') {
-      const open = e.argv.includes('open')
-      ;(open ? gh.openCalls : gh.calls).push({ argv: e.argv, cwd: e.init?.cwd })
+      const issue = e.argv[1] === 'issue'
+      const open = !issue && e.argv.includes('open')
+      ;(issue ? gh.issueCalls : open ? gh.openCalls : gh.calls).push({ argv: e.argv, cwd: e.init?.cwd })
       if (gh.hang) return new Promise(() => {})
       if (gh.missing) return { deny: 'spawn gh ENOENT' }
-      return { value: { exitCode: gh.exitCode, stdout: open ? gh.open : gh.out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      return { value: { exitCode: gh.exitCode, stdout: issue ? gh.issues : open ? gh.open : gh.out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
     const isLog = e.argv[0] === 'git' && e.argv[3] === 'log'
     if (isLog) git.calls.push(e.argv)
@@ -1622,7 +1625,8 @@ const OPEN_LIST = JSON.stringify([{
   reviews: [], commits: [{ oid: 'e'.repeat(40), committedDate: '2026-11-01T15:04:42Z', messageHeadline: 'fix: retry the refresh' }],
 }])
 const openSent = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'project.open_prs')
-const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits']
+const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']
+const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone']
 
 test('v0.4 slice 1: the open PRs are read in the checkout at session start and every 5 minutes after, and no comment text, title or commit message leaves', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
   const w = world(on)
@@ -1636,7 +1640,7 @@ test('v0.4 slice 1: the open PRs are read in the checkout at session start and e
   expect(w.gh.openCalls).toHaveLength(2)
   await w.clock.advance(2_000)
   expect(openSent(w).map((e) => e.data)).toEqual([0, 1].map(() => ({ prs: [{
-    number: 416, head: 'fix/409-token-retry', head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: Date.parse('2026-11-01T15:04:42Z'),
+    number: 416, head: 'fix/409-token-retry', issue: 409, head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: Date.parse('2026-11-01T15:04:42Z'),
     checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: Date.parse('2026-11-01T15:10:51Z') }],
   }] })))
   expect(JSON.stringify(w.sent())).not.toMatch(/races|Ship it|someone|Retry after|retry the refresh|MERGEABLE/)
@@ -1665,4 +1669,34 @@ test('v0.4 slice 1: a gh that never answers holds up nothing, and is not asked a
   await w.clock.advance(11 * MIN)
   expect(w.gh.openCalls).toHaveLength(1)
   expect(w.sent().map((e) => e.kind)).toContain('session.start')
+})
+
+// v0.4 slice 2 (#28): the open issues' milestones are read with the PRs, in the same event; a PR's opening time and the issue it closes come with it, its body goes no further.
+const ISSUE_LIST = JSON.stringify([{ number: 409, title: 'Retry after an expired token', body: 'private text', milestone: { number: 3, title: 'v0.4 Factory' } }, { number: 410, milestone: null }])
+const BODY_LIST = JSON.stringify([{ ...JSON.parse(OPEN_LIST)[0], headRefName: 'chore/router', createdAt: '2026-11-01T14:10:00Z', body: 'Vault key plan.\n\nCloses #409' }])
+
+test('v0.4 slice 2: the open issues\' milestones travel with the open PRs, and a PR\'s body leaves as the number it closes', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = ISSUE_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.issueCalls).toEqual([{ argv: ISSUES_ARGV, cwd: '/repo' }])
+  expect(w.gh.openCalls).toHaveLength(1) // the issue read is no second PR read
+  expect(openSent(w).map((e) => e.data)).toEqual([{ prs: [expect.objectContaining({ number: 416, created_at: Date.parse('2026-11-01T14:10:00Z'), issue: 409 })], issues: [{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }] }])
+  expect(JSON.stringify(w.sent())).not.toMatch(/Vault key|Closes|private text|Retry after an expired/)
+})
+
+test('v0.4 slice 2: a gh issue list that fails still sends the PRs, with no issues key; an excluded project sends issue numbers and no milestone', { options: { token: 'tok', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = 'To get started with GitHub CLI, please run:  gh auth login'
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(openSent(w).map((e) => 'issues' in e.data)).toEqual([false])
+  expect(openSent(w)[0]!.data.prs[0]).toMatchObject({ issue: 409 })
+  w.gh.issues = ISSUE_LIST
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(openSent(w).map((e) => e.data.issues)).toEqual([undefined, [{ number: 409 }, { number: 410 }]])
 })

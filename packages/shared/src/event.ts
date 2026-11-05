@@ -202,6 +202,8 @@ export const Event = z.discriminatedUnion('kind', [
   Base.extend({ kind: z.literal('gate.report'), data: z.object({ result: z.enum(['pass', 'fail']), commit: z.string().regex(/^[0-9a-f]{7,64}$/) }) }),
   // The open PRs as gh lists them, every 5 minutes while a session runs: numbers, the branch (none for an excluded project), the head, the merge state, each check's name
   // and result, each bot's latest comment time. Never a comment's text, a title or a body. `last_commit_at` is the head commit's time, when gh listed it.
+// #28 (issue cost): `created_at` is when the PR opened, and `issue` the one it closes (the branch's number, else the first `Closes #N` of its body, read on the machine: only the number
+// travels). `issues` is the open issues' numbers and their milestone's title (none for an excluded project): absent, a read says nothing about them.
   Base.extend({ kind: z.literal('project.open_prs'), data: z.object({
     prs: z.array(z.object({
       number: z.number().int().positive(),
@@ -209,10 +211,13 @@ export const Event = z.discriminatedUnion('kind', [
       head_oid: BLOB,
       merge_state: z.string().regex(/^[A-Z_]{1,40}$/),
       last_commit_at: z.number().int().positive().optional(),
+      created_at: z.number().int().positive().optional(),
+      issue: z.number().int().positive().optional(),
       // ci: a GitHub Actions workflow's check (it names its workflow); an app's check (CodeRabbit, Sonar) has none
       checks: z.array(z.object({ name: id.max(200), state: z.enum(['pass', 'fail', 'pending']), ci: z.literal(true).optional() })).max(200),
       bots: z.array(z.object({ author: id.max(100), at: z.number().int().positive() })).max(50),
     })).max(100),
+    issues: z.array(z.object({ number: z.number().int().positive(), milestone: id.max(200).optional() })).max(500).optional(),
   }) }),
   // Slice 5: every skill and custom agent the session lists, once per session; refs where the mod could read the text.
   Base.extend({ kind: z.literal('skills.catalog'), data: z.object({
