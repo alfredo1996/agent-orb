@@ -591,3 +591,81 @@ describe('pr-link lines', () => {
     expect(links(evs)).toEqual([]);
   });
 });
+
+// #39: the branch a session started on, from the lines' own `gitBranch`, so a history imported counts by issue as the plugin's sessions do (#28).
+describe('digest and events: the session\'s branch (#39)', () => {
+  const NAMESPACE = '5e1c2a1e-7c0b-4f0e-9a52-0c6b8f3d7a41';
+  const PROJECT = { cwd: '/Users/a/mobile-app', name: 'mobile-app' };
+  // a request on `branch` (undefined: a line with no gitBranch key at all)
+  const on = (branch: string | undefined, time: string, msg: string) => assistant(time, msg, [{ type: 'text', text: 'ANSWERWORD' }], usage(1, 2), { stop: 'end_turn', extra: { gitBranch: branch } });
+  const startOf = async (main: object[], subs: object[] = [], seen = new Set<string>(), sessionId = SID) => {
+    const evs = await sessionEvents(sessionId, await digest(main, 'main', seen), subs.length ? [{ digest: await digest(subs, 'sub', seen), meta: { agentType: 'Explore' }, fileAgentId: 'a1' }] : [], { host: 'mbp', project: PROJECT });
+    const [start, ...more] = of(evs, 'session.start');
+    expect(more).toEqual([]);
+    return start!;
+  };
+  const oldId = (sid = SID) => uuid5(NAMESPACE, `${sid}|session.start|start`);
+
+  it('the first line\'s branch goes on the session.start, under a new id: a history imported before has the old one, and takes the branch on its next run', async () => {
+    const start = await startOf([on('fix/90-x', '07:00:00', 'msg_1'), on('feat/y', '07:00:05', 'msg_2')]);
+    expect(start.project).toEqual({ ...PROJECT, git_branch: 'fix/90-x' });
+    expect(start.id).not.toBe(oldId());
+    expect(Event.safeParse(start).error).toBeUndefined();
+  });
+
+  it('the fixture\'s own lines, which all name dev, give dev; no other event carries the branch', async () => {
+    const evs = await events();
+    expect(of(evs, 'session.start')[0]!.project).toEqual({ ...PROJECT, git_branch: 'dev' });
+    expect(evs.filter((e) => e.kind !== 'session.start').every((e) => !('git_branch' in e.project))).toBe(true);
+  });
+
+  it('a session whose lines name none keeps the session.start it had: no git_branch, the old id (a key, an empty string, a detached HEAD or a value that is not text)', async () => {
+    for (const lines of [
+      [on(undefined, '07:00:00', 'msg_1')],
+      [on('', '07:00:00', 'msg_1')],
+      [on('HEAD', '07:00:00', 'msg_1'), on('HEAD', '07:00:05', 'msg_2')],
+      [on(7 as unknown as string, '07:00:00', 'msg_1'), on(null as unknown as string, '07:00:05', 'msg_2')],
+    ]) {
+      const start = await startOf(lines);
+      expect(start.project).toEqual(PROJECT);
+      expect(start.id).toBe(oldId());
+    }
+  });
+
+  it('starts on HEAD (detached) and later checks out a branch: the first real branch, as the plugin\'s first session.start that has one', async () => {
+    const start = await startOf([on('HEAD', '07:00:00', 'msg_1'), on('feat/y', '07:00:05', 'msg_2'), on('fix/90-x', '07:00:09', 'msg_3')]);
+    expect(start.project.git_branch).toBe('feat/y');
+  });
+
+  it('a branch that changes along the session is the first one, whatever comes last', async () => {
+    const start = await startOf([
+      user('07:00:00', 'PROMPTWORD', { promptId: 'p1', gitBranch: 'main' }), on('fix/90-x', '07:00:05', 'msg_1'), on('fix/91-y', '07:00:09', 'msg_2'),
+    ]);
+    expect(start.project.git_branch).toBe('main');
+  });
+
+  it('a line the reader counts can carry it, a typed prompt or a tool result as a request; one it does not read (an attachment, a system notice: they carry a branch too) is not read for it', async () => {
+    const prompt = user('07:00:00', 'PROMPTWORD', { promptId: 'p1', gitBranch: 'fix/90-x' });
+    const result = user('07:00:00', [toolResult('toolu_none', 'OUTPUTWORD')], { gitBranch: 'fix/90-x' });
+    for (const first of [prompt, result]) expect((await startOf([first, on('dev', '07:00:05', 'msg_1')])).project.git_branch).toBe('fix/90-x');
+    const notes = [
+      { type: 'attachment', ...common('06:00:00', { gitBranch: 'fix/89-z' }), attachment: { type: 'x', content: 'ATTACHWORD' } },
+      { type: 'system', subtype: 'api_error', ...common('06:00:01', { gitBranch: 'fix/89-z' }), content: 'SYSTEMWORD' },
+    ];
+    expect((await startOf([...notes, on('fix/90-x', '07:00:00', 'msg_1')])).project.git_branch).toBe('fix/90-x');
+    expect((await startOf([...notes, on(undefined, '07:00:00', 'msg_1')])).project).toEqual(PROJECT);
+  });
+
+  it('a subagent\'s file is not read for it: one in a worktree of its own is on its own branch', async () => {
+    const start = await startOf([on(undefined, '07:00:00', 'msg_1')], sub('a1', [on('worktree-agent-a1', '07:00:03', 'msg_s1')]));
+    expect(start.project).toEqual(PROJECT);
+    expect(start.id).toBe(oldId());
+  });
+
+  it('the lines a resumed file copies are the session it resumed, not this one: its branch is the first line this session counts', async () => {
+    const seen = new Set<string>();
+    await startOf([on('fix/89-old', '07:00:00', 'msg_1')], [], seen, 'sess-OLD');
+    const resumed = await startOf([on('fix/89-old', '07:00:00', 'msg_1'), on('fix/90-x', '08:00:00', 'msg_2')], [], seen, 'sess-NEW');
+    expect(resumed.project.git_branch).toBe('fix/90-x');
+  });
+});
