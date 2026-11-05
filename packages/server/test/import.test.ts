@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Event } from '@agent-orb/shared';
+import { buildApp } from '../src/app.ts';
 import { costUsd } from '../src/cost.ts';
 import { importDir, lineReader, report } from '../src/import.ts';
 import { all, openStore, run, type Store } from '../src/store/store.ts';
@@ -688,5 +689,80 @@ describe('import <dir>: PR links (v0.3 slice 2)', () => {
     ]);
     expect(rows(`SELECT count(*) AS n FROM session_prs WHERE session_id = 'live-1' AND pr_id LIKE '%:7'`)).toEqual([{ n: 1 }]);
     expect(rows(`SELECT count(*) AS n FROM prompts WHERE session_id = 'live-1'`)).toEqual([{ n: 1 }]); // the stretch still holds: the prompt is the plugin's alone
+  });
+});
+
+// #39: the branch a session was on, read from the lines' own `gitBranch`, so imported history counts by issue (#28) as the plugin's sessions do.
+describe('import <dir>: the branch (#39)', () => {
+  const NAMESPACE = '5e1c2a1e-7c0b-4f0e-9a52-0c6b8f3d7a41';
+  const CWD = '/Users/a/mobile-app';
+  const DIR = '-Users-a-mobile-app';
+  const SONNET = 'claude-sonnet-5-5';
+  const on = <L extends object>(branch: string | undefined, line: L) => (branch === undefined ? line : { ...line, gitBranch: branch });
+  /** A prompt and a request of `output` tokens, both on `branch`. */
+  const session = (sid: string, branch: string | undefined, output: number, cwd = CWD) =>
+    [on(branch, prompt(sid, cwd, '07:00:00', `p-${sid}`)), on(branch, reply(sid, cwd, '07:00:02', `msg_${sid}`, SONNET, [0, output, 0, 0]))];
+  const dollars = (output: number) => costUsd(SONNET, { input: 0, output, cache_read: 0, cache_creation: 0 })!;
+  const branches = () => Object.fromEntries(rows('SELECT id, branch FROM sessions ORDER BY id').map((r) => [r.id, r.branch]));
+  const budget = async () => {
+    const app = buildApp({ store: db, token: 'test-token-0123456789', now: () => Date.parse('2026-10-25T12:00:00Z') }); // the logs' month
+    const res = (await app.inject({ url: '/api/budget?project=mobile-app&tz=UTC' })).json();
+    await app.close();
+    return res;
+  };
+
+  it('a session on fix/90-x stores the branch, and the budget counts its requests whole for #90; one with no branch, or only HEAD, stays on no issue', async () => {
+    file(`${DIR}/s-90.jsonl`, session('s-90', 'fix/90-x', 100_000));
+    file(`${DIR}/s-none.jsonl`, session('s-none', undefined, 200_000));
+    file(`${DIR}/s-head.jsonl`, session('s-head', 'HEAD', 300_000));
+    await importDir(db, root, { host: 'mbp' });
+    expect(branches()).toEqual({ 's-90': 'fix/90-x', 's-none': null, 's-head': null });
+    const b = await budget();
+    expect(b.issues.map((i: { number: number }) => i.number)).toEqual([90]);
+    expect(b.issues[0].whole).toBeCloseTo(dollars(100_000), 9);
+    expect(b.issues[0].windows).toBe(0);
+    expect(b.notOnIssue.usd).toBeCloseTo(dollars(200_000) + dollars(300_000), 9);
+  });
+
+  it('a second run accepts nothing', async () => {
+    file(`${DIR}/s-90.jsonl`, session('s-90', 'fix/90-x', 100_000));
+    const first = await importDir(db, root, { host: 'mbp' });
+    const second = await importDir(db, root, { host: 'mbp' });
+    expect(second.accepted).toBe(0);
+    expect(second.duplicates).toBe(first.accepted);
+    expect(branches()).toEqual({ 's-90': 'fix/90-x' });
+  });
+
+  it('a history imported before this takes the branch on the next run: one new event for the session, no row doubled, and the run after accepts nothing', async () => {
+    const lines = session('s-90', 'fix/90-x', 100_000);
+    file(`${DIR}/s-90.jsonl`, lines);
+    const evs = await sessionEvents('s-90', await digest(lines, 'main'), [], { host: 'mbp', project: { cwd: CWD, name: 'mobile-app' } });
+    // what the import wrote before: the same events with the ids they had, and no branch on the session.start
+    fromImport(evs.map((e) => (e.kind === 'session.start' ? { ...e, id: uuid5(NAMESPACE, 's-90|session.start|start'), project: { cwd: CWD, name: 'mobile-app' } } : e)) as Event[]);
+    expect(branches()).toEqual({ 's-90': null });
+    expect((await budget()).issues).toEqual([]); // all of it on no issue
+    const before = dump();
+    const tables = ['sessions', 'projects', 'agents', 'turns', 'api_requests', 'prompts'].map(count);
+
+    const second = await importDir(db, root, { host: 'mbp' });
+    expect(second.accepted).toBe(1); // the session.start, which now says a branch
+    expect(branches()).toEqual({ 's-90': 'fix/90-x' });
+    expect(['sessions', 'projects', 'agents', 'turns', 'api_requests', 'prompts'].map(count)).toEqual(tables);
+    const after = dump();
+    expect(after).toHaveLength(before.length);
+    expect(after.filter((l) => !before.includes(l))).toHaveLength(1); // the session's row, and nothing else in the store
+    expect((await budget()).issues[0]).toMatchObject({ number: 90 });
+    expect((await budget()).issues[0].whole).toBeCloseTo(dollars(100_000), 9);
+
+    expect((await importDir(db, root, { host: 'mbp' })).accepted).toBe(0);
+  });
+
+  it('a session the plugin recorded keeps the branch it sent; one it recorded with none (an older plugin) takes the logs\'', async () => {
+    const onDev = { ...MOBILE, git_branch: 'dev' };
+    await fromPlugin([plugin('live-1', onDev), plugin('live-2', MOBILE)]);
+    file(`${DIR}/live-1.jsonl`, session('live-1', 'fix/90-x', 100_000));
+    file(`${DIR}/live-2.jsonl`, session('live-2', 'fix/91-y', 100_000));
+    await importDir(db, root, { host: 'mbp' });
+    expect(branches()).toEqual({ 'live-1': 'dev', 'live-2': 'fix/91-y' });
   });
 });
