@@ -138,6 +138,9 @@ To restore, run `deploy/restore.sh ~/agent-orb-backups/<date>`. It asks first, s
 - It's built for one person on one machine. The studio has no login, so keep it on 127.0.0.1.
 - Factory's findings come from the subagents the plugin asks. A workflow agent can't be asked, since Claude Code doesn't let a plugin change its prompt (Code Review's agents are workflow agents), so its findings don't show.
 - A review the main session does itself, with no subagent, isn't asked either.
+- Factory's issue cost is an estimate by time windows. A session on an issue branch (`fix/90-…` is #90) counts whole for that issue; in any other session the turns before a PR opened count for that PR's issue, and the rest is "not on an issue", which has no way to be assigned by hand. A PR names its issue by its branch number, then by `Closes #N` in its body (the first, when there are several), which the plugin reads on your machine: only the number leaves.
+- A fix made after a PR opens lands on the session's next PR, or on no issue. A session that moves to an issue branch after it started is cut by its PRs instead of counted whole. A PR that opened and merged between two reads of GitHub has no issue. Imported history has no branch, so it is cut by PR windows alone. A branch like `hotfix/2026-11-fix` reads as issue #2026.
+- Budgets only warn: the Factory page's cost cell turns amber from 80% of a budget and red once it is reached, and nothing is ever stopped. No budget ships; with none set there is no warning.
 - Factory's gate is the last test run the plugin saw on the PR's head commit, with no uncommitted change to a tracked file. Any test run counts, so a narrow one (a single file) that passes on the head counts as the gate. That's the ceiling of reading runs rather than a declared gate.
 
 ## How it compares

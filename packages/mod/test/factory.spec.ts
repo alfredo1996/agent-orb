@@ -147,18 +147,18 @@ const OPEN = JSON.stringify([
 
 describe('the open-PR read', () => {
   it('asks gh for at most 40 open PRs with the fields ready() needs, and the commits for the head\'s time: 50 passes GitHub\'s 500,000-node limit, and gh fails', () => {
-    expect(openPrsArgv).toEqual(['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits']);
+    expect(openPrsArgv).toEqual(['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']);
   });
 
   it('keeps numbers, the branch, the head, the merge state, each check\'s name and result, and each bot\'s latest comment time: never a comment\'s text', () => {
     const prs = parseOpenPrs(OPEN)!;
     expect(prs).toEqual([
       {
-        number: 416, head: 'fix/409-token-retry', head_oid: HEAD, merge_state: 'UNSTABLE', last_commit_at: Date.parse('2026-11-01T15:04:42Z'),
+        number: 416, head: 'fix/409-token-retry', issue: 409, head_oid: HEAD, merge_state: 'UNSTABLE', last_commit_at: Date.parse('2026-11-01T15:04:42Z'),
         checks: [{ name: 'Unit tests', state: 'pass', ci: true }, { name: 'E2E', state: 'pending' }, { name: 'Lint', state: 'fail' }, { name: 'Docs', state: 'pass' }, { name: 'SonarCloud Code Analysis', state: 'pass' }, { name: 'coverage', state: 'pending' }],
         bots: [{ author: 'coderabbitai', at: Date.parse('2026-11-01T15:40:00Z') }, { author: 'sonarqubecloud', at: Date.parse('2026-11-01T15:23:10Z') }, { author: 'dependabot[bot]', at: Date.parse('2026-11-01T15:30:00Z') }],
       },
-      { number: 405, head: 'feat/403-banner', head_oid: 'c0d1e2f'.padEnd(40, '2'), merge_state: 'CLEAN', checks: [], bots: [] }, // no commit listed for the head: its time is unknown
+      { number: 405, head: 'feat/403-banner', issue: 403, head_oid: 'c0d1e2f'.padEnd(40, '2'), merge_state: 'CLEAN', checks: [], bots: [] }, // no commit listed for the head: its time is unknown
     ]);
     const sent = JSON.stringify(build.projectOpenPrs(ctx, prs));
     expect(sent).not.toMatch(/Walkthrough|secret-token|Quality Gate|private remark|lgtm|review text|Closes|first try|fix: the retry|Retry after|owner-person|https:/);

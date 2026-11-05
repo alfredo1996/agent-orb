@@ -4,7 +4,7 @@ import type { EngineInterface as $, Register } from 'claude-code'
 import type { OrbAgentRow, OrbEventRow, OrbView } from '../types'
 import {
   BATCH, build, capText, changesArgv, checkStalls, commandClass, enqueue, errorClass, errorShape, filesTouched, fingerprintFiles, fingerprintsFrom, fmtTokens, goalNotice, hostName, isExcluded, mask, modelLabel, newOutbox, newTracker,
-  normalizeRemote, openPrsArgv, parseChanges, parseFindings, parseGoal, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, toolContent, type ContentMode, type Goal, type GoalSent,
+  normalizeRemote, openIssuesArgv, openPrsArgv, parseChanges, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, toolContent, type ContentMode, type Goal, type GoalSent,
   familyOf, modelCheck, modelFromFrontmatter, pricierNotice, rejectedIn, roleFromFrontmatter, settle, statusText, takeBatch, tokensOf, usageOf,
   descriptionOf, FINDINGS_ASK, preloadOf, refsIn, type CatalogAgent, type CatalogSkill, type Ctx, type Ev, type Refs, type Role, type SkillLoad,
 } from './core.ts'
@@ -321,6 +321,8 @@ async function sendPrs($: $, excluded: boolean) {
  * v0.4 slice 1 (#27, Factory): the open PRs, from `gh` in the session's checkout, at session start and then every 5 minutes from the tick, never on a hook's path: what
  * the server's ready() reads, sent as one event. Only numbers, the branch, the head, the merge state, check names and results and each bot's latest comment time leave;
  * never a comment's text. An excluded project sends no branches. No gh, or a gh that fails or is not logged in, sends nothing, quietly; a call that hangs is not repeated.
+ * #28: each PR also carries when it opened and the issue it closes (its body is read here, only the number leaves), and the open issues' numbers and milestones ride in the same
+ * event, from a second gh call that, failing, leaves them out.
  * ponytail: every session in a repo reads it; three sessions in one repo ask three times in 5 minutes. Share the last read through `$.store` if GitHub's rate limit is ever met.
  */
 async function readOpenPrs($: $) {
@@ -330,7 +332,12 @@ async function readOpenPrs($: $) {
     openPrsAt = await $.clock.now()
     const r = await $.process.run(openPrsArgv, { cwd: checkout, timeoutMs: 60_000 })
     const prs = r.exitCode === 0 ? parseOpenPrs(r.stdout, !excluded) : undefined
-    if (prs && ctx) push($, build.projectOpenPrs(ctx, prs))
+    if (prs && ctx) {
+      // #28: the open issues' milestones ride in the same event. A read that fails leaves `issues` out, so the server keeps the last.
+      const i = await $.process.run(openIssuesArgv, { cwd: checkout, timeoutMs: 60_000 }).catch(() => undefined)
+      const issues = i && i.exitCode === 0 ? parseOpenIssues(i.stdout, !excluded) : undefined
+      if (ctx) push($, build.projectOpenPrs(ctx, prs, issues))
+    }
   } finally {
     openPrsBusy = false
   }

@@ -73,15 +73,15 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var
 .seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
 .seg button { min-height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--muted); font: 500 14px/1 var(--sans); cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); border-color: var(--border-strong); font-weight: 600; box-shadow: var(--shadow); }
-.ph-pick select, .sessionpick select, .fields select, .fix select, .capline input, .gform input, .wform input { min-height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--border-strong); background-color: var(--surface); color: var(--text); font: 400 14px/1 var(--sans); min-width: 0; max-width: 100%; }
+.ph-pick select, .sessionpick select, .fields select, .fix select, .capline input, .gform input, .wform input, .bfield input { min-height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--border-strong); background-color: var(--surface); color: var(--text); font: 400 14px/1 var(--sans); min-width: 0; max-width: 100%; }
 .ph-pick select, .sessionpick select, .fields select, .fix select { appearance: none; padding-right: 32px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
-.ph-pick select:focus-visible, .sessionpick select:focus-visible, .fields select:focus-visible, .fix select:focus-visible, .capline input:focus-visible, .gform input:focus-visible, .wform input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.ph-pick select:focus-visible, .sessionpick select:focus-visible, .fields select:focus-visible, .fix select:focus-visible, .capline input:focus-visible, .gform input:focus-visible, .wform input:focus-visible, .bfield input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
 .chk { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
 .chk input { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--accent); }
 @container (max-width: 700px) {
   .btn, .link { min-height: 44px; }
   .seg button { min-height: 44px; }
-  .ph-pick select, .sessionpick select, .fields select, .fix select, .capline input, .gform input, .wform input { min-height: 44px; font-size: 16px; }
+  .ph-pick select, .sessionpick select, .fields select, .fix select, .capline input, .gform input, .wform input, .bfield input { min-height: 44px; font-size: 16px; }
 }
 
 /* App */
@@ -688,6 +688,32 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .factory .needs .what code { justify-self: start; }
 .factory .needs .sub { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .factory .needs .nothing { margin: 0; padding: 14px 20px; color: var(--muted); font-size: 14px; }
+/* Issue cost and budget (v0.4 slice 2, #28; design/v0.4-factory.html, the cost cell and the Budget board). The sheet is a portal, so its rules do not hang on .factory. */
+.factory .needs.withcost .need { grid-template-columns: auto minmax(0, 1fr) minmax(0, 190px) auto auto; }
+.costcell { display: grid; gap: 5px; min-width: 0; font-size: 13px; }
+.costcell .lab { font-size: 12px; color: var(--muted); }
+.costcell small { font-size: 12px; color: var(--muted); }
+.costcell .why.none { color: var(--faint); }
+.costcell .bar { margin-top: 0; }
+.costcell .bar.over > i { background: var(--bad-dot); }
+.budget .bbody { display: grid; gap: 14px; padding: 14px 20px; }
+.budget .bbody > .sub, .budget .dnote { margin: 0; font-size: 13px; color: var(--muted); }
+.bfield { display: grid; gap: 6px; }
+.bfield .blab { font-size: 14px; font-weight: 500; }
+.bfield .bin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.bfield input { width: 120px; font-family: var(--mono); }
+.bfield input[aria-invalid="true"] { border-color: var(--bad-line); }
+.bfield .gerr { margin: 0; font-size: 13px; color: var(--bad); }
+.budget .notissue { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.budget .notissue .sub { font-size: 13px; color: var(--muted); }
+.factory-sheet .ledger2 { display: grid; gap: 6px; }
+.factory-sheet .ledger2 > div { display: flex; justify-content: space-between; gap: 12px; }
+@container (max-width: 700px) { /* after the rules above: the same specificity, so the later one wins */
+  .factory .needs.withcost .need { grid-template-columns: minmax(0, 1fr) auto; }
+  .factory .needs .costcell { grid-column: 1; }
+  .factory .needs.withcost .need .btn { grid-row: 2 / span 3; }
+  .budget .bbody, .budget .notissue { padding-left: 16px; padding-right: 16px; }
+}
 .factory-sheet .dfacts code { font: 13px var(--mono); }
 .factory-sheet .dsec { display: grid; gap: 10px; padding: 16px var(--gx); border-bottom: 1px solid var(--line); }
 .factory-sheet .dsec h4 { margin: 0; font: 600 15px/1.3 var(--sans); }
