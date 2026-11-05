@@ -102,10 +102,17 @@ describe('the findings paragraph (#34)', () => {
 
   it('is one short paragraph that says when to write the block, to keep a review\'s ids, and what an empty block means', () => {
     expect(FINDINGS_ASK).toMatch(/^\n\n/); // set apart from the caller's task
-    expect(FINDINGS_ASK).toMatch(/reviewed or fixed code/);
     expect(FINDINGS_ASK).toMatch(/keep the ids/i);
     expect(FINDINGS_ASK).toMatch(/empty block/i);
     expect(FINDINGS_ASK.length).toBeLessThan(900);
+  });
+
+  it('asks only a review or a fix for the block, and tells any other agent to write none (#36)', () => {
+    // An Explore lookup that was told "write an empty block if you found nothing" wrote one, and read as a review that found nothing (2026-11-04).
+    expect(FINDINGS_ASK).toMatch(/only if your task was to review code or to fix review findings/i);
+    expect(FINDINGS_ASK).toMatch(/empty block if your review found nothing/);
+    expect(FINDINGS_ASK).not.toMatch(/empty block if you found nothing/);
+    expect(FINDINGS_ASK).toMatch(/\n```\nIf your task was anything else[^\n]*, write no block\.$/); // last, after the example, so it is the line read last
   });
 });
 

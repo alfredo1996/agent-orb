@@ -1503,7 +1503,7 @@ test('#34: a subagent is started with its prompt and the findings paragraph, onc
   await $.agent.spawn(spawnArgs({ subagentType: 'general-purpose' }))
   const [asked = ''] = w.engine.prompts
   expect(asked.startsWith('build it\n\n')).toBe(true) // the caller's task first, untouched
-  expect(asked).toMatch(/reviewed or fixed code/)
+  expect(asked).toMatch(/only if your task was to review code or to fix review findings/)
   expect(asked.match(/```orb-findings/g)).toHaveLength(1)
   w.engine.agentId = 'a-2'
   await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_2', prompt: asked })) // a re-dispatch of the brief the engine was given

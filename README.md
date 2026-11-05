@@ -85,7 +85,7 @@ All of them live in the plugin's settings in Claude Code.
 | Token | empty | `ORB_TOKEN` from `deploy/.env` |
 | Stall alert (minutes) | 15 | Flags a tool, or a silent agent mid-turn, after this long |
 | Model ceiling | `sonnet` | Agents with no model of their own (general-purpose, workflow agents, `model: inherit`) are flagged above this: `haiku`, `sonnet`, `opus`, or `off` to turn that part off. An agent whose file has a `model:` is always held to that |
-| Ask agents for findings | `on` | Adds one short paragraph to every subagent's prompt: an agent that reviewed or fixed code ends its report with an `orb-findings` block, which the Factory page reads. Nothing in your repo changes. `off` leaves prompts as they are |
+| Ask agents for findings | `on` | Adds one short paragraph to every subagent's prompt: an agent whose task was a review or a fix ends its report with an `orb-findings` block, which the Factory page reads, and any other is told to write none. Nothing in your repo changes. `off` leaves prompts as they are |
 | Content | `off` | `off` sends metadata only. `full` also keeps prompts, answers, thinking where Claude Code shares it, and tool input and output |
 | Never send content for | empty | Repo names, `owner/repo` or paths that stay metadata-only even with Content on `full` |
 
