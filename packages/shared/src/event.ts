@@ -84,6 +84,8 @@ export const Event = z.discriminatedUnion('kind', [
     data: z.object({ model: id, source: id, claude_version: id, plugin_version: id, content: z.enum(['off', 'full', 'excluded']).optional() }),
   }),
   Base.extend({ kind: z.literal('session.end'), data: z.object({ reason: id }) }),
+  // v0.4 slice 5 (#31): the studio's Stop reached the session. `aborted` says whether a turn was running to end; false is "nothing to stop". Clears the queued stop on the server.
+  Base.extend({ kind: z.literal('session.stopped'), data: z.object({ aborted: z.boolean() }) }),
   Base.extend({ kind: z.literal('session.compact'), data: z.object({ tokens_before: count, tokens_after: count }) }),
   Base.extend({ kind: z.literal('prompt.submit'), data: z.object({ length: count, text: content.optional() }) }),
   Base.extend({ kind: z.literal('turn.start'), ...inTurn, data: z.object({}) }),
@@ -117,6 +119,7 @@ export const Event = z.discriminatedUnion('kind', [
       // Present only when the agent runs on a pricier model than it should: what it is held to, and whether its file or the owner's ceiling says so.
       model_check: z.object({ allowed: z.enum(MODEL_FAMILIES), source: z.enum(['file', 'ceiling']) }).optional(),
       prompt: content.optional(), // the task the subagent was given
+      background: z.literal(true).optional(), // v0.4 slice 5 (#31): it runs apart from the turn, so the studio's Stop (which ends the main turn) does not reach it
     }),
   }),
   Base.extend({

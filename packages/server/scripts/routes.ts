@@ -11,6 +11,6 @@ export const getRoutes = ({ project, session, agent, now, tz = 'Europe/Rome' }: 
     `/api/worth?project=${p}&month=${new Date(now).toISOString().slice(0, 7)}&tz=${tz}`, `/api/patterns?project=${p}`, `/api/history?session=${s}&agent=${encodeURIComponent(agent)}`,
     `/api/goal?project=${p}&tz=${tz}`, `/api/budget?project=${p}&tz=${tz}`, `/api/skills?project=${p}&from=0&to=${now}`, `/api/analysis`, `/api/analysis/reads?project=${p}&from=0&to=${now}`,
     `/api/pipeline?project=${p}&from=0&to=${now}`, `/api/pipeline?project=${p}&session=${s}`, `/api/lanes?session=${s}`,
-    `/api/projects`, `/api/sessions?project=${p}`, '/api/machine', '/healthz',
+    `/api/projects`, `/api/sessions?project=${p}`, '/api/machine', `/api/stop?session=${s}`, '/healthz',
   ];
 };

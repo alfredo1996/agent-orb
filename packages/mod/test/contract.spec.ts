@@ -16,6 +16,8 @@ const built: Ev[] = [
   build.sessionStart({ ...ctx, project: { ...ctx.project, checkout: '/r/.claude/worktrees/w' } }, 'claude-haiku-5-5', '2.1.308', false), // a worktree session (v0.2 slice 3)
   build.sessionEnd(ctx, 'other'),
   build.sessionCompact(ctx, 180_000, 40_000),
+  build.sessionStopped(ctx, true), // v0.4 slice 5 (#31): the studio's Stop reached the session; one found nothing to stop
+  build.sessionStopped(ctx, false),
   build.prompt(ctx, 332, 'p-1'),
   build.turnStart(ctx, { turnId: 't-1' }, 'p-1'),
   build.turnStart(ctx, sub),
@@ -25,6 +27,7 @@ const built: Ev[] = [
   build.agentSpawn(ctx, { agentId: sub.agentId, toolUseId: 'toolu_a', type: 'Explore', description: 'Find ROLES', model: 'claude-haiku-5-5', promptLength: 261, declaredRole: 'researcher' }),
   build.agentSpawn(ctx, { agentId: 'a-3', toolUseId: 'toolu_c', type: 'implementer', description: 'Build it', model: 'claude-opus-5-5', promptLength: 8, declaredRole: 'developer', declaredModel: 'sonnet', modelCheck: { allowed: 'sonnet', source: 'file' } }),
   build.agentSpawn(ctx, { agentId: 'a-4', toolUseId: 'toolu_d', type: 'workflow-subagent', description: 'Review', model: 'claude-opus-5-5', promptLength: 8, modelCheck: { allowed: 'sonnet', source: 'ceiling' } }),
+  build.agentSpawn(ctx, { agentId: 'a-5', toolUseId: 'toolu_e', type: 'Explore', description: 'Scan', model: 'claude-haiku-5-5', promptLength: 8, background: true }), // runs apart from the turn (#31)
   build.agentComplete(ctx, sub.agentId, 5_962, { input: 4, output: 337, cache_read: 18_744, cache_creation: 20_152 }, 31),
   build.toolCall(ctx, sub, 'toolu_g', 'Grep', 40),
   build.toolResult(ctx, sub, { toolUseId: 'toolu_g', success: false, errorType: 'error', durationMs: 12, outputSize: 0, files: [] }),

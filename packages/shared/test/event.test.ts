@@ -51,6 +51,8 @@ const examples = [
     { name: 'quirky_curie', state: 'running', memory: 52_428_800, testcontainers: { session: '3f2a9b' } },
     { state: 'running', health: 'unhealthy', memory: 1_048_576, excluded: true },
   ] }),
+  // v0.4 slice 5 (#31): the session ended its turn because the studio asked
+  ev('session.stopped', { aborted: true }),
   ev('project.fingerprint', { files: [{ path: '.claude/agents/implementer.md', hash: '1'.repeat(40), scope: 'project' }, { path: '~/.claude/rules/git.md', hash: 'a'.repeat(64), scope: 'user' }] }),
   ev('skills.catalog', {
     skills: [{ name: 'alpha', source: 'projectSettings', tokens: 19, description: 'Runs beta', refs: { skills: ['beta'], agents: ['scout'] } }, { name: 'p:x', source: 'plugin', plugin: 'p', tokens: 40 }],
@@ -188,6 +190,16 @@ describe('Event schema', () => {
     expect(Event.safeParse(ev('machine.sample', { docker: 'ok', containers: Array.from({ length: 201 }, () => ({ state: 'running' })) })).success).toBe(false);
     const kept = Event.parse(sample({ name: 'db', command: 'postgres -c secret', env: ['PASSWORD=hunter2'], mounts: ['/Users/a/.ssh'], labels: { owner: 'x' }, image: 'sha256:abc', testcontainers: { session: 's', labels: 'x' } }));
     expect(JSON.stringify(kept)).not.toMatch(/postgres|hunter2|\.ssh|owner|sha256/);
+  });
+
+  it('session.stopped says whether a turn was ended; background marks an agent that runs apart from the turn (v0.4 slice 5, #31)', () => {
+    expect(Event.safeParse(ev('session.stopped', { aborted: false })).success).toBe(true);
+    for (const bad of [{}, { aborted: 'yes' }, { aborted: undefined }]) expect(Event.safeParse(ev('session.stopped', bad)).success, JSON.stringify(bad)).toBe(false);
+    const spawn = (extra: object) => ev('agent.spawn', { tool_use_id: 't', agent_type: 'Explore', model: 'm', prompt_length: 1, ...extra }, { agent_id: 'a' });
+    const bg = Event.parse(spawn({ background: true }));
+    expect(bg.kind === 'agent.spawn' && bg.data.background).toBe(true);
+    expect(Event.safeParse(spawn({ background: false })).success).toBe(false); // sent when true, left out otherwise
+    expect(Event.parse(spawn({}))).not.toHaveProperty('data.background');
   });
 
   it('project.checkout: the session\'s own working tree, optional, never empty (v0.2 slice 3)', () => {

@@ -176,7 +176,7 @@ tr:last-child td { border-bottom: 0; }
 .state.working { color: var(--ok); background: var(--ok-bg); --c-dot: var(--ok-dot); }
 .state.waiting, .state.model { color: var(--wait); background: var(--wait-bg); --c-dot: var(--wait-dot); }
 .state.stalled, .state.error, .state.claim { color: var(--bad); background: var(--bad-bg); --c-dot: var(--bad-dot); }
-.state.done { color: var(--done); background: var(--done-bg); --c-dot: var(--done-dot); }
+.state.done, .state.stopped { color: var(--done); background: var(--done-bg); --c-dot: var(--done-dot); }
 .av { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 600 13px/1 var(--sans); color: #fff; flex: none; }
 .av.opus { background: var(--opus); } .av.sonnet { background: var(--sonnet); } .av.haiku { background: var(--haiku); } .av.other { background: var(--faint); }
 .tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--border); }
@@ -581,6 +581,12 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .needs .need { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px 16px; padding: 12px 20px; }
 .needs .need + .need { border-top: 1px solid var(--line); }
 .needs .since { color: var(--muted); font-size: 14px; }
+.needs .what .sub { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.needs .acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.needs .confirm { grid-column: 1 / -1; display: grid; gap: 10px; padding: 12px 14px; background: var(--bad-bg); border-radius: 10px; font-size: 14px; }
+.needs .confirm .acts { justify-content: flex-start; }
+.btn.danger { background: var(--bad-dot); border-color: var(--bad-dot); color: #fff; }
+.btn.danger:hover:not(:disabled) { filter: brightness(1.05); color: #fff; border-color: var(--bad-dot); }
 .needs code, .sess .agent code { font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
 
 .sess { overflow: hidden; }
@@ -668,7 +674,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
   .needs .need { grid-template-columns: minmax(0, 1fr) auto; padding: 12px 16px; }
   .needs .need .state { grid-column: 1 / -1; justify-self: start; }
   .needs .need .since { grid-column: 1; }
-  .needs .need .btn { grid-column: 2; grid-row: 2 / span 2; }
+  .needs .need > .acts { grid-column: 2; grid-row: 2 / span 2; }
   .shead { grid-template-columns: minmax(0, 1fr); padding: 16px; }
   .skills { padding: 0 16px 12px; }
   .sess .cols { display: none; }

@@ -13,6 +13,8 @@ export type CardAgent = {
   tasks: { id: string; subject: string; status: string }[];
   model?: string; pricier?: { allowed: Family; source: 'file' | 'ceiling' };
   unbacked?: ClaimView[];
+  /** v0.4 slice 5 (#31): it runs apart from the turn, so Stop (which ends the main turn) does not reach it. */
+  background?: true;
 };
 export type Sentence = { verb: string; arg?: string; since?: number; extra?: string; tone?: 'wait' | 'bad' };
 
@@ -110,12 +112,28 @@ export const pricierSub = (a: CardAgent) =>
   isPricier(a) ? (a.pricier!.source === 'file' ? `its file says ${familyName(a.pricier!.allowed)}` : `no file, ceiling ${familyName(a.pricier!.allowed)}`) : undefined;
 
 export type Need = {
-  session: string; agent: string; type: string; tone: 'wait' | 'bad' | 'model' | 'claim'; tool?: string; arg?: string; since?: number;
+  session: string; agent: string; type: string; tone: 'wait' | 'bad' | 'model' | 'claim' | 'stopped'; tool?: string; arg?: string; since?: number;
+  /** A stalled agent that runs in the background: no Stop button (v0.4 slice 5, #31). */
+  background?: true;
+  /** A stopped session (tone `stopped`): whether a turn was running to end. */
+  aborted?: boolean;
   /** An unbacked claim: what the agent said and why its calls do not back it. */
   claim?: { phrase: string; reason: string };
   /** A pricier model: the sentence in parts, `A <b>workflow agent</b> in <b>mobile-app</b> runs on Opus; …`: `generic` says to lead with "A". */
   pricier?: { subject: string; generic: boolean; tail: string };
 };
+
+/** How long a "Stopped" row stays in Needs you (v0.4 slice 5, #31). */
+export const STOPPED_MS = 10 * 60_000;
+
+/** Asks the server to stop a session's turn; true when it took the request (queued, or one already waiting). */
+export async function sendStop(session: string, fetcher: typeof fetch = fetch): Promise<boolean> {
+  try {
+    return (await fetcher('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session }) })).ok;
+  } catch {
+    return false;
+  }
+}
 
 const pricierNeed = (a: CardAgent): NonNullable<Need['pricier']> => {
   const generic = a.type === 'workflow-subagent';
@@ -124,20 +142,23 @@ const pricierNeed = (a: CardAgent): NonNullable<Need['pricier']> => {
 };
 
 /**
- * What needs the person, across sessions: agents waiting for permission and stalled ones, the longest-waiting first, then agents whose last answer holds an unbacked claim
- * (v0.3 slice 4), the oldest first, then every agent still on a pricier model (once, unless it is already listed above), the longest-running first.
+ * What needs the person, across sessions: agents waiting for permission and stalled ones, the longest-waiting first, then a session the studio just stopped (v0.4 slice 5, #31;
+ * needs `now`), then agents whose last answer holds an unbacked claim (v0.3 slice 4), the oldest first, then every agent still on a pricier model (once, unless it is already listed above), the longest-running first.
  */
-export function needs(sessions: { id: string; agents: CardAgent[] }[]): Need[] {
+export function needs(sessions: { id: string; agents: CardAgent[]; stoppedAt?: number; stoppedAborted?: boolean }[], now?: number): Need[] {
   const blocked = (a: CardAgent) => a.state === 'stalled' || (a.state === 'waiting' && a.waitingFor === 'permission');
   const by = (key: (n: Need) => number) => (x: Need, y: Need) => key(x) - key(y);
   const list = sessions.flatMap((s) => s.agents.filter((a) => blocked(a) || claimed(a) || isPricier(a)).map((a): Need =>
     blocked(a)
-      ? { session: s.id, agent: a.id, type: a.type, tone: a.state === 'stalled' ? 'bad' : 'wait', ...(a.tool && { tool: a.tool.name, since: a.tool.since }), ...argOf(a) }
+      ? { session: s.id, agent: a.id, type: a.type, tone: a.state === 'stalled' ? 'bad' : 'wait', ...(a.tool && { tool: a.tool.name, since: a.tool.since }), ...argOf(a), ...(a.state === 'stalled' && a.background && { background: true as const }) }
       : claimed(a)
         ? { session: s.id, agent: a.id, type: a.type, tone: 'claim', since: a.unbacked![0]!.ts, claim: { phrase: a.unbacked![0]!.phrase, reason: claimReason(a.unbacked![0]!) } }
         : { session: s.id, agent: a.id, type: a.type, tone: 'model', since: a.startedAt, pricier: pricierNeed(a) }));
+  // A session the studio stopped stays for ten minutes, until the person's next turn takes `stoppedAt` away; with no clock it cannot be told how old it is.
+  const stopped = sessions.flatMap((s): Need[] => (s.stoppedAt !== undefined && now !== undefined && now - s.stoppedAt < STOPPED_MS
+    ? [{ session: s.id, agent: 'main', type: 'main', tone: 'stopped', since: s.stoppedAt, aborted: !!s.stoppedAborted }] : [])).sort(by((n) => n.since!));
   const group = (keep: (n: Need) => boolean) => list.filter(keep).sort(by((n) => n.since ?? Infinity));
-  return [...group((n) => n.tone === 'wait' || n.tone === 'bad'), ...group((n) => n.tone === 'claim'), ...group((n) => n.tone === 'model')];
+  return [...group((n) => n.tone === 'wait' || n.tone === 'bad'), ...stopped, ...group((n) => n.tone === 'claim'), ...group((n) => n.tone === 'model')];
 }
 
 /** A session's agents as rows: each parent, then its subagents beneath it. A parent that is not in the list makes its agent a root. */
