@@ -17,20 +17,23 @@ export type Session = {
 };
 
 /**
- * A link from the Factory board names a session (`#/live?session=<id>`, #32; the app reads it out of the hash and passes it as `wanted`): once its card is on the page it is brought into view
- * and focused, once. A session Live does not show, because it ended more than ten minutes ago, is given up on as soon as the list has loaded without it.
+ * What the hook below does at each render of the list: the card a Factory board link named (`#/live?session=<id>`, #32) is brought into view and focused, once. A session Live does not show, because
+ * it ended more than ten minutes ago, is given up on as soon as the list has loaded without it; before that (the stream has not spoken) the wish stays.
  */
+export function focusWanted(want: { current: string | null | undefined }, listed: number, doc: Pick<Document, 'getElementById'>, reducedMotion: boolean) {
+  if (!want.current) return;
+  const card = doc.getElementById(`session-${want.current}`);
+  if (!card && !listed) return; // the stream has not spoken yet
+  want.current = null;
+  card?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+  card?.focus({ preventScroll: true });
+}
+
+/** The session a link named (the app reads it out of the hash and passes it as `wanted`), taken as the view opens: not one that a later render is handed. */
 function useWantedSession(list: Session[], wanted: string | null) {
   const want = useRef<string | null | undefined>(undefined);
-  if (want.current === undefined) want.current = wanted; // as the view opens: the link's session, not one a later render is handed
-  useEffect(() => {
-    if (!want.current) return;
-    const card = document.getElementById(`session-${want.current}`);
-    if (!card && !list.length) return; // the stream has not spoken yet
-    want.current = null;
-    card?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
-    card?.focus({ preventScroll: true });
-  }, [list]);
+  if (want.current === undefined) want.current = wanted;
+  useEffect(() => focusWanted(want, list.length, document, matchMedia('(prefers-reduced-motion: reduce)').matches), [list]);
 }
 
 export function Live({ list, all, now, wanted = null }: { list: Session[]; all: Record<string, Session>; now: number; wanted?: string | null }) {

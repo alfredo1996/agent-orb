@@ -34,6 +34,21 @@ export function windowIssue(links: Link[], ts: number): number | null {
   return null;
 }
 
+/** An issue as the last reads left it. `goneAt` is null while the plugin's read lists it as open, else when it left the list (closed, or past gh's limit of 200): its milestone and title are kept (#32). */
+export type OpenIssue = { milestone: string | null; title: string | null; goneAt: number | null };
+
+/**
+ * The project's issues by number, as the plugin's reads of the open issues left them. Two project rows with the name (a repo seen from two machines, with no remote) may differ on one issue: the row
+ * of the project read last wins, whole, so an issue's milestone and its title are one row's, not the larger of each. Projects are told apart by their name, as the goal and the budgets are, so two
+ * repositories of one basename share their issues by number. The board (#32) reads its issues through the same list.
+ */
+export function openIssues(store: Store, project: string) {
+  const issues = new Map<number, OpenIssue>();
+  for (const r of each(store, `SELECT o.number AS number, o.milestone AS milestone, o.title AS title, o.gone_at AS goneAt FROM open_issues o JOIN projects p ON p.id = o.project_id
+    WHERE p.name = :project ORDER BY coalesce(p.prs_read_at, 0)`, { project })) issues.set(r.number, { milestone: r.milestone, title: r.title, goneAt: r.goneAt });
+  return issues;
+}
+
 /** `at80` from 80% of the budget, `at100` once it is reached; none without a budget. By products, not 0.8 * budget: 0.8 * 3 is 2.4000000000000004. */
 export const markOf = (spent: number, budget: number | null) => (budget === null ? null : spent >= budget ? 'at100' : spent * 5 >= budget * 4 ? 'at80' : null);
 
@@ -109,10 +124,14 @@ export function budget(app: FastifyInstance, { store, now = Date.now }: { store:
     const [start] = monthBounds(tz, Number(month.slice(0, 4)), Number(month.slice(5, 7)));
     const { issues, none } = issueCosts(store, project, start, at);
 
-    const milestoneOf = new Map<number, string>(); // two project rows with the name (two machines) may differ on one issue: the latest title by name
-    for (const r of all(store, 'SELECT o.number AS number, max(o.milestone) AS milestone FROM open_issues o JOIN projects p ON p.id = o.project_id WHERE p.name = :project GROUP BY o.number', { project })) {
-      if (r.milestone !== null) milestoneOf.set(r.number, r.milestone);
-      if (!issues.has(r.number)) issues.set(r.number, { whole: 0, windows: 0, partial: false });
+    // A closed issue keeps its milestone (#32), so what it cost is still held to the milestone's default; but only an open one is listed with no spend, and only an open one's milestone is offered.
+    const milestoneOf = new Map<number, string>();
+    const openNames = new Set<string>();
+    for (const [number, o] of openIssues(store, project)) {
+      if (o.milestone !== null) milestoneOf.set(number, o.milestone);
+      if (o.goneAt !== null) continue;
+      if (o.milestone !== null) openNames.add(o.milestone);
+      if (!issues.has(number)) issues.set(number, { whole: 0, windows: 0, partial: false });
     }
     const defaults = new Map<string, number>();
     const overrides = new Map<number, number>();
@@ -132,7 +151,7 @@ export function budget(app: FastifyInstance, { store, now = Date.now }: { store:
       const spent = b.whole + b.windows;
       return { number, milestone, usd: spent, partial: b.partial, whole: b.whole, windows: b.windows, budget, milestoneBudget: dflt ?? null, source: own !== undefined ? 'issue' : dflt !== undefined ? 'milestone' : null, mark: markOf(spent, budget) };
     });
-    const names = [...new Set([...milestoneOf.values(), ...defaults.keys()])].toSorted();
+    const names = [...new Set([...openNames, ...defaults.keys()])].toSorted();
     return { project, month, issues: rows, notOnIssue: none, milestones: names.map((name) => ({ name, budget: defaults.get(name) ?? null })) };
   });
 

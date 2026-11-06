@@ -721,7 +721,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 }
 /* The Board band (v0.4 slice 6, #32; design/v0.4-factory.html, the Board). Like the other bands, it narrows with its container: on a phone each row is a stack with its labels shown. */
 .board .nothing { margin: 0; padding: 14px 20px; color: var(--muted); font-size: 14px; }
-.board .bcols, .board .brow { display: grid; grid-template-columns: minmax(200px, 2fr) 160px minmax(170px, 1.3fr) 150px 112px; gap: 16px; align-items: center; padding: 12px 20px; }
+.board .bcols, .board .brow { display: grid; grid-template-columns: minmax(200px, 2fr) 160px minmax(170px, 1.3fr) 150px 112px; /* the mockup's 140px holds "$118 of $150"; the real cell prints cents, and "$118.00 of $150.00" wraps in 140 */ gap: 16px; align-items: center; padding: 12px 20px; }
 .board .bcols { padding-block: 8px; background: var(--sunk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
 .board .brow + .brow { border-top: 1px solid var(--line); }
 .board .brow.merged { color: var(--muted); }
@@ -738,6 +738,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .trk i { flex: 1; height: 6px; border-radius: 2px; background: var(--border-strong); }
 .trk i.on { background: var(--data); }
 .trk i.now { background: var(--accent); }
+.trk.bad i.now { background: var(--bad-dot); }
 .trk.good i.now, .trk.good i.on { background: var(--ok-dot); }
 .board .why { font-size: 13px; overflow-wrap: anywhere; }
 .board .why.no { color: var(--wait); }
@@ -749,7 +750,9 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .board .links .none { color: var(--faint); }
 .board .notissue { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 14px; }
 .board .notissue .sub { font-size: 13px; color: var(--muted); }
-.board .bnote { padding: 10px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); border-radius: 0 0 14px 14px; }
+.board .bnote { padding: 10px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); }
+.board .bnote:last-child { border-radius: 0 0 14px 14px; }
+.board .bnote code { font: 12px var(--mono); }
 @container (max-width: 700px) {
   .board .bcols { display: none; }
   .board .brow { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 16px; }

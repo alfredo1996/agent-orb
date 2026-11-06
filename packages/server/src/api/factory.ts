@@ -95,9 +95,10 @@ const STALE_MS = 10 * 60_000; // two reads missed (the plugin reads every 5 minu
 
 /**
  * The open PRs of a project as the plugin last read them, each with its verdict: what GET /api/factory answers, and what the board (#32) takes each issue's readiness from. `projectId` and
- * `gate` (the latest test run on the head, and when it ran) are for the board; the route leaves them out.
+ * `gate` (the latest test run on the head, and when it ran) are for the board; the route leaves them out. `detail: false` leaves out the findings' list, which needs the text store
+ * for each one's title: the board wants only the verdict, and builds it from the same findings without reading a title.
  */
-export function openPrs(store: Store, content: ContentStore, now: number, project: string, remote: string | null) {
+export function openPrs(store: Store, content: ContentStore, now: number, project: string, remote: string | null, detail = true) {
   // Every project row with the name, like the goal (a repo seen from two machines is two rows when it has no remote); with a remote, that repository's rows alone.
   const readAt = get(store, 'SELECT max(prs_read_at) AS at FROM projects WHERE name = :project AND (:remote IS NULL OR git_remote = :remote)', { project, remote })?.at ?? null;
   // #28: the issue each PR closes is on its pull_requests row (the open-PR read put it there), which the cost on the page is matched to.
@@ -118,8 +119,8 @@ export function openPrs(store: Store, content: ContentStore, now: number, projec
     const list = [...latest.values()];
     const gate = get(store, 'SELECT result, ts FROM gates WHERE project_id = :p AND substr(:oid, 1, length(commit_sha)) = commit_sha ORDER BY ts DESC LIMIT 1', { p: r.project_id, oid: r.head_oid });
     // A title may have come with either ref's report (a branch round with Content on, then a numbered one): the latest ref's first. A reason only with the latest fate.
-    const text = content.get(list.flatMap((f) => [refs.pr, refs.b].map((ref) => ({ node: 'finding' as const, id: findingId(r.project_id, ref, f.id) }))));
-    const findings = list
+    const text = detail ? content.get(list.flatMap((f) => [refs.pr, refs.b].map((ref) => ({ node: 'finding' as const, id: findingId(r.project_id, ref, f.id) })))) : new Map<string, Record<string, string>>();
+    const findings = (detail ? list : [])
       .toSorted((a, b) => FATE_ORDER.indexOf(a.fate) - FATE_ORDER.indexOf(b.fate) || rank(a.severity) - rank(b.severity) || (a.id < b.id ? -1 : 1))
       .map((f) => {
         const t = text.get(`finding:${findingId(r.project_id, f.ref, f.id)}`);

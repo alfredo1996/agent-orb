@@ -851,7 +851,7 @@ export const openIssuesArgv = ['gh', 'issue', 'list', '--state', 'open', '--limi
 const OPEN_ISSUES_MAX = 500;
 
 // The issue a branch names, as shared/src/issue.ts reads it (the plugin imports nothing from shared; contract.spec.ts holds the two to one table).
-const BRANCH_ISSUE = /^(?:[^/]+\/)*([1-9]\d{0,8})(?:[-_]|$)/;
+const BRANCH_ISSUE = /^(?:[^/]+\/)*(?!(?:19|20)\d{2}-(?:0[1-9]|1[0-2])(?!\d))([1-9]\d{0,4})(?:[-_]|$)/;
 export const branchIssue = (branch: string | null | undefined): number | null => {
   const m = branch ? BRANCH_ISSUE.exec(branch) : null;
   return m ? Number(m[1]) : null;
