@@ -99,6 +99,17 @@ describe('live state', () => {
     expect(state(s, 'main')).toBe('stalled');
   });
 
+  it('#31 R11: a stall carries the time it began onto its agent, with a tool or without one, and the agent\'s progress takes it away', () => {
+    const s = newLive();
+    applyEvents(s, [...session(), stall(), ev('stall.start', { since: T - 5 * 60_000 }, { agent_id: 'a1' })]); // a1's is a stall with no tool: a hung model step
+    expect(agents(s).find((a: any) => a.id === 'main')).toMatchObject({ stalled: true, stalledSince: T });
+    expect(agents(s).find((a: any) => a.id === 'a1')).toMatchObject({ stalled: true, stalledSince: T - 5 * 60_000 });
+    applyEvents(s, [ev('turn.step', { model: 'claude-opus-5-5', usage, stop_reason: 'end_turn', tool_use_ids: [] }, { agent_id: 'a1', turn_id: 't-9' }, T + 60_000)]);
+    expect(agents(s).find((a: any) => a.id === 'a1').stalledSince).toBeUndefined();
+    applyEvents(s, [ev('stall.end', { tool_use_id: 'toolu_w', tool: 'WebFetch', since: T })]);
+    expect(agents(s).find((a: any) => a.id === 'main').stalledSince).toBeUndefined();
+  });
+
   it('stall.end still clears a stall', () => {
     const s = newLive();
     applyEvents(s, [...session(), stall()]);

@@ -81,7 +81,7 @@ console.log(`${urls.length} route${urls.length === 1 ? '' : 's'} x ${rounds} rou
 
 for (let round = 1; round <= rounds; round++) {
   for (const url of urls) {
-    const res = await fetch(address + url);
+    const res = await fetch(address + url, { headers: { authorization: 'Bearer soak' } }); // GET /api/stop takes the plugin's token
     await res.text();
     if (res.status !== 200) bad.add(`${res.status} ${url.split('?')[0]}`);
   }

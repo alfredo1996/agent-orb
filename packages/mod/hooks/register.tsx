@@ -443,14 +443,17 @@ async function fetchGoal($: $) {
 
 /**
  * v0.4 slice 5 (#31): the open PRs as the server judged them, at session start and then every minute from the tick, never on a hook's path. This is the merge refusal's whole memory (`ready()`
- * stays the server's: the plugin keeps each PR's four conditions and when GitHub was read, and judges nothing itself). A failure, or an answer that is not the server's, changes nothing: the last memory stays.
+ * stays the server's: the plugin keeps each PR's four conditions and when GitHub was read, and judges nothing itself). Asked by the repository's remote, so another project that bears the same name is not mixed in.
+ * A failure, or an answer that is not the server's, changes nothing: the last memory stays.
  */
 async function fetchFactory($: $) {
   if (!ctx || !token || factoryBusy) return
+  const remote = ctx.project.git_remote
+  if (!remote) return // without a remote the server cannot tell this repository's PRs from another project's of the same name (#31 R3): no memory, and nothing refused
   factoryBusy = true
   try {
     factoryAt = await $.clock.now()
-    const res = await $.http.fetch(`${endpoint}/api/factory?${new URLSearchParams({ project: ctx.project.name })}`)
+    const res = await $.http.fetch(`${endpoint}/api/factory?${new URLSearchParams({ project: ctx.project.name, remote })}`)
     const answer = res.ok ? parseFactory(res.text) : undefined
     if (answer) factory = answer
   } finally {
@@ -470,34 +473,53 @@ async function currentBranch($: $): Promise<string | undefined> {
 }
 
 /**
+ * v0.4 slice 5 (#31 R8): the heads of the local branches the memory's PRs are on, from `refs/heads/<branch>` or `packed-refs` of the main working tree's `.git` (a worktree's branches live there too): file reads,
+ * no process. A branch that is not here has no entry, so there is nothing to compare for it.
+ */
+async function localHeads($: $): Promise<Record<string, string | undefined>> {
+  const read = async (path: string) => String(await $.fs.read(path).catch(() => ''))
+  const git = `${root}/.git`
+  const packed = (await read(`${git}/packed-refs`)).split('\n').map((l) => l.split(' '))
+  const heads = [...new Set((factory?.prs ?? []).flatMap((p) => (p.head && !p.head.includes('..') ? [p.head] : [])))]
+  return Object.fromEntries(await Promise.all(heads.map(async (b) => {
+    const loose = (await read(`${git}/refs/heads/${b}`)).trim()
+    return [b, /^[0-9a-f]{40,64}$/.test(loose) ? loose : packed.find(([sha, ref]) => ref === `refs/heads/${b}` && /^[0-9a-f]{40,64}$/.test(sha!))?.[0]]
+  })))
+}
+
+/**
  * v0.4 slice 5 (#31): what a Bash command's `gh pr merge` earns, from the memory the poll of GET /api/factory left and nothing else: `deny` (the one place the mod blocks Claude Code, PROJECT.md §2) or the lines
  * to print while it goes ahead. A command with no merge in it costs one parse. A chain with several merges is refused whole if any one is.
  */
 async function mergeVerdict($: $, command: string): Promise<{ deny?: string; say: string[] } | undefined> {
   const asks = mergesIn(command)
   if (!asks.length || !ctx) return undefined
-  const where = { remote: ctx.project.git_remote, branch: asks.some((a) => !a.selector) ? await currentBranch($) : undefined }
+  const where = { remote: ctx.project.git_remote, branch: asks.some((a) => !a.selector) ? await currentBranch($) : undefined, local: await localHeads($) }
   const verdicts = asks.flatMap((a) => judgeMerge(a, where, factory, stamp()) ?? [])
   const deny = verdicts.flatMap((v) => ('deny' in v ? [v.deny] : []))
   return { ...(deny.length ? { deny: deny.join('\n\n') } : {}), say: verdicts.flatMap((v) => ('say' in v ? [v.say] : [])) }
 }
 
 /**
- * v0.4 slice 5 (#31): the studio's Stop. Asks the server whether this session has a stop waiting, every minute from the tick. One does: the main loop's running turn (the id its `turn.start` handed,
- * a subagent's is not it) is ended with `$.turn.abort`, which stops the tools a foreground subagent runs under it (proved on 2026-11-06, #31); one `session.stopped` event says so and clears the
- * request; the session is told in its transcript and by a notification, as a stall is. With no turn running (or one the engine says has ended) there is nothing to stop, and the event says so.
+ * v0.4 slice 5 (#31): the studio's Stop. Asks the server whether this session has a stop waiting, every minute from the tick. One does, for a stall (an agent and the time the stall began): if that stall still
+ * holds, the main loop's running turn (the id its `turn.start` handed, a subagent's is not it) is ended with `$.turn.abort`, which stops the tools a foreground subagent runs under it (proved on 2026-11-06, #31);
+ * one `session.stopped` event says so and clears the request; the session is told in its transcript and by a notification, as a stall is. With the stall over, no turn running, or one the engine says has ended,
+ * there is nothing to stop, and the event says so.
  */
 async function takeStop($: $) {
   if (!ctx || !token || stopBusy) return
   stopBusy = true
   try {
     stopAt = await $.clock.now()
-    const res = await $.http.fetch(`${endpoint}/api/stop?${new URLSearchParams({ session: ctx.session_id })}`)
-    if (!res.ok || !stopWaits(res.text) || !ctx) return
-    const turnId = t.agents.get('main')?.inTurn ? turnOf.get('main') : undefined
+    const res = await $.http.fetch(`${endpoint}/api/stop?${new URLSearchParams({ session: ctx.session_id })}`, { headers: { authorization: `Bearer ${token}` } }) // the token: taking a stop changes it
+    const asked = res.ok ? stopWaits(res.text) : undefined
+    if (!asked || !ctx) return
+    // #31 R1: the stop was clicked for one stall. If it is over, or another has begun, what runs now is not what the person saw stuck, and nothing is ended.
+    const holds = [...t.stalled.values()].some((s) => s.agent === asked.agent && s.since === asked.since)
+    const turnId = holds && t.agents.get('main')?.inTurn ? turnOf.get('main') : undefined
     const aborted = turnId !== undefined && (await $.turn.abort({ turnId }).then(() => true, () => false))
-    push($, build.sessionStopped(ctx, aborted), { agent: 'main', kind: 'session.stopped', detail: aborted ? 'turn ended' : 'nothing running', tone: 'dim' })
-    const line = aborted ? 'this turn was stopped from the studio' : 'a stop came from the studio, but no turn was running'
+    push($, build.sessionStopped(ctx, aborted), { agent: 'main', kind: 'session.stopped', detail: aborted ? 'turn ended' : 'nothing stopped', tone: 'dim' })
+    const line = aborted ? 'this turn was stopped from the studio' : holds ? 'a stop came from the studio, but no turn was running' : 'a stop came from the studio, but the stall had ended; nothing was stopped'
     $.ui.log(`agent-orb: ${line}`)
     void $.ui.notify(line, { title: 'agent-orb: stopped' }).catch(() => {})
     void flush($) // the studio shows Stopped at once
@@ -723,7 +745,7 @@ export const register: Register = (on, options) => {
       // v0.4 slice 5 (#31): the one place the mod blocks Claude Code (PROJECT.md §2). A `gh pr merge` the memory says is a definite no is refused with the reason; one it cannot judge goes ahead
       // with a line in the session. Any failure here lets the call through, as a guard that fails is skipped.
       const verdict = tool === 'Bash' && typeof input.command === 'string' ? await mergeVerdict($, input.command).catch(() => undefined) : undefined
-      for (const line of verdict?.say ?? []) $.ui.log(line)
+      for (const line of verdict?.say ?? []) $.ui.log(line) // the person's; the agent reads it too, as context after the result (below)
       const r = verdict?.deny !== undefined ? ({ deny: verdict.deny } as Awaited<ReturnType<typeof next>>) : await next(e)
       const success = r.deny === undefined && r.isError !== true
       const out = contentMode === 'full' ? toolContent(String(tool), input, r.text ?? r.deny ?? '') : undefined
@@ -747,7 +769,8 @@ export const register: Register = (on, options) => {
           push($, build.sessionPr(c, n), { agent: label(k), kind: 'session.pr', detail: `#${n}` })
         }
       }
-      return r
+      // #31 R14: a merge let through tells the agent so. `context` is what the model reads after the tool's result (`text` is core's own copy of it, kept by `ref`).
+      return verdict?.say.length && r.deny === undefined ? { ...r, context: [...(r.context ?? []), ...verdict.say] } : r
     } finally {
       t.tools.delete(id)
       agent(k)

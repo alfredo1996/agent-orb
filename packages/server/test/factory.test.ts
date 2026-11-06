@@ -194,6 +194,23 @@ describe('GET /api/factory', () => {
     expect((await the416()).ready).toBe(true);
   });
 
+  // #31 R3: the merge refusal answers from this, so two repositories that bear one name must not be read as one: its #12 is not the other's.
+  it('R3: with a remote it is that repository\'s PRs and read time alone; without one, every project of the name, as before', async () => {
+    const API_A: Project = { cwd: '/Users/a/api', name: 'api', git_remote: 'github.com/o/api' };
+    const API_B: Project = { cwd: '/Users/b/api', name: 'api', git_remote: 'github.com/p/api' };
+    const at = (project: Project, ts: number, prs: object[]) => ev(ts, 'project.open_prs', { prs }, { session_id: `s-${project.cwd.split('/')[2]}` }, project); // each repository has its own session
+    await send(at(API_A, T0 + 7 * MIN, [open416({ number: 12, head: 'feat/a', merge_state: 'CLEAN' })]), at(API_B, T0 + MIN, [open416({ number: 12, head: 'feat/b', merge_state: 'DIRTY' })]));
+    const asked = async (query: string) => (await app.inject({ url: `/api/factory?project=api${query}` })).json();
+    const a = await asked('&remote=github.com%2Fo%2Fapi');
+    expect(a.prs.map((p: { head: string; conditions: { clean: { ok: boolean } } }) => [p.head, p.conditions.clean.ok])).toEqual([['feat/a', true]]);
+    expect(a.readAt).toBe(T0 + 7 * MIN); // its own read, not the newest of the name
+    const b = await asked('&remote=github.com%2Fp%2Fapi');
+    expect(b.prs.map((p: { head: string }) => p.head)).toEqual(['feat/b']);
+    expect(b.readAt).toBe(T0 + MIN);
+    expect((await asked('&remote=github.com%2Fq%2Fnone'))).toMatchObject({ readAt: null, prs: [] });
+    expect((await asked('')).prs.map((p: { head: string }) => p.head).toSorted()).toEqual(['feat/a', 'feat/b']); // the studio's own request is unchanged
+  });
+
   it('data older than 10 minutes is never ready: it says when it was', async () => {
     await send(read(T0 + MIN, [open416()]), findings(T0 + MIN, []), gate(T0 + MIN, 'pass', HEAD));
     NOW = T0 + 11 * MIN;

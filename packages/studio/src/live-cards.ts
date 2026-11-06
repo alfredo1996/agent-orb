@@ -13,8 +13,11 @@ export type CardAgent = {
   tasks: { id: string; subject: string; status: string }[];
   model?: string; pricier?: { allowed: Family; source: 'file' | 'ceiling' };
   unbacked?: ClaimView[];
-  /** v0.4 slice 5 (#31): it runs apart from the turn, so Stop (which ends the main turn) does not reach it. */
+  /** v0.4 slice 5 (#31): it runs apart from the turn, so Stop (which ends the main turn) does not reach it; and so does whatever it starts (`parent` walks up to it). */
   background?: true;
+  parent?: string;
+  /** v0.4 slice 5 (#31): when the stall began (the plugin's stall.start), whether or not a tool is running: what the Stop is tied to, and how long it has lasted. */
+  stalledSince?: number;
 };
 export type Sentence = { verb: string; arg?: string; since?: number; extra?: string; tone?: 'wait' | 'bad' };
 
@@ -113,10 +116,12 @@ export const pricierSub = (a: CardAgent) =>
 
 export type Need = {
   session: string; agent: string; type: string; tone: 'wait' | 'bad' | 'model' | 'claim' | 'stopped'; tool?: string; arg?: string; since?: number;
-  /** A stalled agent that runs in the background: no Stop button (v0.4 slice 5, #31). */
+  /** A stalled agent that runs in the background, itself or under one: no Stop button (v0.4 slice 5, #31). */
   background?: true;
-  /** A stopped session (tone `stopped`): whether a turn was running to end. */
+  /** A stopped session (tone `stopped`): whether a turn was ended. */
   aborted?: boolean;
+  /** A stopped session that has since ended. */
+  ended?: true;
   /** An unbacked claim: what the agent said and why its calls do not back it. */
   claim?: { phrase: string; reason: string };
   /** A pricier model: the sentence in parts, `A <b>workflow agent</b> in <b>mobile-app</b> runs on Opus; …`: `generic` says to lead with "A". */
@@ -126,13 +131,79 @@ export type Need = {
 /** How long a "Stopped" row stays in Needs you (v0.4 slice 5, #31). */
 export const STOPPED_MS = 10 * 60_000;
 
-/** Asks the server to stop a session's turn; true when it took the request (queued, or one already waiting). */
-export async function sendStop(session: string, fetcher: typeof fetch = fetch): Promise<boolean> {
+// ── Stop (v0.4 slice 5, #31) ──
+
+/** Where a stalled row's Stop turn stands: not asked, asking in place, sent and waiting for the session, the server not reached, the server not knowing the session, or sent and never taken. */
+export type StopMode = 'ask' | 'confirm' | 'sent' | 'failed' | 'gone' | 'lapsed';
+/** What the page remembers of one row's click: its mode, and when it was sent. */
+export type StopState = { mode: StopMode; at?: number };
+/** The stall a stop is tied to: the session, the stalled agent and when its stall began. The plugin ends the turn only if that stall still holds (R1). */
+export type StopAsk = { session: string; agent: string; since: number };
+/** A stop the server has held this long is dead (api/stop.ts): nobody took it. */
+export const STOP_LAPSE_MS = 10 * 60_000;
+
+/** One click state per stall: the session, the agent and when its stall began, so a later stall of the same agent starts from the button again (R11). */
+export const stopKey = (n: Pick<Need, 'session' | 'agent' | 'since'>) => `${n.session}:${n.agent}:${n.since ?? 0}`;
+/** The React key of a row: a stopped session and a claim of its main agent are two rows of one session and agent (R23). */
+export const needKey = (n: Pick<Need, 'session' | 'agent' | 'tone'>) => `${n.session}:${n.agent}:${n.tone}`;
+/** What a row shows: a stop sent ten minutes ago, which the server no longer hands out, has lapsed (R12). */
+export const stopMode = (s: StopState | undefined, now: number): StopMode => (s?.mode === 'sent' && now - (s.at ?? 0) >= STOP_LAPSE_MS ? 'lapsed' : (s?.mode ?? 'ask'));
+
+/** Asks the server to stop a session's turn: sent when it took the request (queued, or one already waiting), gone for a session it has no record of, failed otherwise. */
+export async function sendStop(ask: StopAsk, fetcher: typeof fetch = fetch): Promise<'sent' | 'gone' | 'failed'> {
   try {
-    return (await fetcher('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session }) })).ok;
+    const res = await fetcher('/api/stop', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ask) });
+    return res.ok ? 'sent' : res.status === 404 ? 'gone' : 'failed';
   } catch {
-    return false;
+    return 'failed';
   }
+}
+
+/** One click on a stalled row's Stop: asks in place (`confirm`), backs out (`ask`), or, from the confirm's own button, sends, and shows Stopping until the request says otherwise. */
+export function stopClick(to: 'ask' | 'confirm' | 'sent', ask: StopAsk, set: (s: StopState) => void, now: () => number, send: typeof sendStop = sendStop) {
+  if (to !== 'sent') return set({ mode: to });
+  set({ mode: 'sent', at: now() });
+  void send(ask).then((result) => result !== 'sent' && set({ mode: result }));
+}
+
+const STOPS_KEY = 'orb.stops';
+const tab = () => {
+  try {
+    return globalThis.sessionStorage;
+  } catch {
+    return undefined; // blocked storage
+  }
+};
+/** What a reload of the page keeps: the stops that were sent and that the server still holds. Nothing when the storage is missing, blocked or not ours. */
+export function loadStops(now: number, storage: Storage | undefined = tab()): Record<string, StopState> {
+  try {
+    const saved = JSON.parse(storage?.getItem(STOPS_KEY) ?? 'null') as Record<string, { mode?: unknown; at?: unknown }> | null;
+    const out: Record<string, StopState> = {};
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+      for (const [key, s] of Object.entries(saved)) if (s?.mode === 'sent' && typeof s.at === 'number' && now - s.at < STOP_LAPSE_MS) out[key] = { mode: 'sent', at: s.at };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+/** Remembers the stops that were sent, for a reload (the tab's own storage: the Stopping row is the tab's). */
+export function saveStops(stops: Record<string, StopState>, storage: Storage | undefined = tab()) {
+  try {
+    storage?.setItem(STOPS_KEY, JSON.stringify(stops)); // loadStops keeps what was sent, and nothing else
+  } catch {
+    // storage full or blocked: the click state stays in the page, as before
+  }
+}
+
+/** Whether the agent, or any agent above it, runs in the background (R5). A loop in the parents ends the walk. */
+function underBackground(a: CardAgent, byId: Map<string, CardAgent>) {
+  const seen = new Set<string>();
+  for (let x: CardAgent | undefined = a; x && !seen.has(x.id); x = x.parent ? byId.get(x.parent) : undefined) {
+    if (x.background) return true;
+    seen.add(x.id);
+  }
+  return false;
 }
 
 const pricierNeed = (a: CardAgent): NonNullable<Need['pricier']> => {
@@ -145,18 +216,24 @@ const pricierNeed = (a: CardAgent): NonNullable<Need['pricier']> => {
  * What needs the person, across sessions: agents waiting for permission and stalled ones, the longest-waiting first, then a session the studio just stopped (v0.4 slice 5, #31;
  * needs `now`), then agents whose last answer holds an unbacked claim (v0.3 slice 4), the oldest first, then every agent still on a pricier model (once, unless it is already listed above), the longest-running first.
  */
-export function needs(sessions: { id: string; agents: CardAgent[]; stoppedAt?: number; stoppedAborted?: boolean }[], now?: number): Need[] {
+export function needs(sessions: { id: string; agents: CardAgent[]; stoppedAt?: number; stoppedAborted?: boolean; endedAt?: number }[], now?: number): Need[] {
   const blocked = (a: CardAgent) => a.state === 'stalled' || (a.state === 'waiting' && a.waitingFor === 'permission');
   const by = (key: (n: Need) => number) => (x: Need, y: Need) => key(x) - key(y);
-  const list = sessions.flatMap((s) => s.agents.filter((a) => blocked(a) || claimed(a) || isPricier(a)).map((a): Need =>
-    blocked(a)
-      ? { session: s.id, agent: a.id, type: a.type, tone: a.state === 'stalled' ? 'bad' : 'wait', ...(a.tool && { tool: a.tool.name, since: a.tool.since }), ...argOf(a), ...(a.state === 'stalled' && a.background && { background: true as const }) }
+  const list = sessions.flatMap((s) => {
+    const byId = new Map(s.agents.map((x) => [x.id, x]));
+    return s.agents.filter((a) => blocked(a) || claimed(a) || isPricier(a)).map((a): Need => {
+    // A stall counts from when the plugin raised it (R11: there is no tool to count from when a model step hangs); a wait, from its tool.
+    const since = a.state === 'stalled' ? (a.stalledSince ?? a.tool?.since) : a.tool?.since;
+    return blocked(a)
+      ? { session: s.id, agent: a.id, type: a.type, tone: a.state === 'stalled' ? 'bad' : 'wait', ...(a.tool && { tool: a.tool.name }), ...(since !== undefined && { since }), ...argOf(a), ...(a.state === 'stalled' && underBackground(a, byId) && { background: true as const }) }
       : claimed(a)
         ? { session: s.id, agent: a.id, type: a.type, tone: 'claim', since: a.unbacked![0]!.ts, claim: { phrase: a.unbacked![0]!.phrase, reason: claimReason(a.unbacked![0]!) } }
-        : { session: s.id, agent: a.id, type: a.type, tone: 'model', since: a.startedAt, pricier: pricierNeed(a) }));
+        : { session: s.id, agent: a.id, type: a.type, tone: 'model', since: a.startedAt, pricier: pricierNeed(a) };
+    });
+  });
   // A session the studio stopped stays for ten minutes, until the person's next turn takes `stoppedAt` away; with no clock it cannot be told how old it is.
   const stopped = sessions.flatMap((s): Need[] => (s.stoppedAt !== undefined && now !== undefined && now - s.stoppedAt < STOPPED_MS
-    ? [{ session: s.id, agent: 'main', type: 'main', tone: 'stopped', since: s.stoppedAt, aborted: !!s.stoppedAborted }] : [])).sort(by((n) => n.since!));
+    ? [{ session: s.id, agent: 'main', type: 'main', tone: 'stopped', since: s.stoppedAt, aborted: !!s.stoppedAborted, ...(s.endedAt && { ended: true as const }) }] : [])).sort(by((n) => n.since!));
   const group = (keep: (n: Need) => boolean) => list.filter(keep).sort(by((n) => n.since ?? Infinity));
   return [...group((n) => n.tone === 'wait' || n.tone === 'bad'), ...stopped, ...group((n) => n.tone === 'claim'), ...group((n) => n.tone === 'model')];
 }

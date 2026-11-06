@@ -127,9 +127,10 @@ CREATE TABLE IF NOT EXISTS gates (project_id TEXT NOT NULL, commit_sha TEXT NOT 
 CREATE TABLE IF NOT EXISTS machine_samples (host TEXT PRIMARY KEY, ts INTEGER NOT NULL, mem_free INTEGER, mem_total INTEGER, docker TEXT NOT NULL, containers TEXT NOT NULL) WITHOUT ROWID;
 
 -- v0.4 slice 5 (#31, Stop). One queued stop per session, asked for by the studio (POST /api/stop) and taken by the session's plugin on its poll (GET /api/stop, which sets picked_at);
--- the session's session.stopped event deletes the row. A stop is live for 10 minutes from requested_at: past that it is never handed out and a new one replaces it, so a session that
--- is resumed hours later is not stopped by a request nobody remembers.
-CREATE TABLE IF NOT EXISTS stops (session_id TEXT PRIMARY KEY, requested_at INTEGER NOT NULL, picked_at INTEGER) WITHOUT ROWID;
+-- the session's session.stopped event deletes the row. It is tied to the stall it was clicked on, `agent` and `stall_since` (the stall.start's `since`): the plugin ends the turn only if
+-- that stall still holds. A stop is live for 10 minutes from requested_at: past that it is never handed out, and the next request (anyone's) prunes it, so a session that is resumed hours
+-- later is not stopped by a request nobody remembers.
+CREATE TABLE IF NOT EXISTS stops (session_id TEXT PRIMARY KEY, requested_at INTEGER NOT NULL, picked_at INTEGER, agent TEXT NOT NULL, stall_since INTEGER NOT NULL) WITHOUT ROWID;
 
 -- The indexes the writer's own lookups and the reads walk. A read goes from a project down to its calls (projects, sessions, agents, turns), and what it counts
 -- must come from an index, not from a table row fetched for every call: that, not the joins, was the cost (#83, slice 2). So calls_turn carries `success`,
