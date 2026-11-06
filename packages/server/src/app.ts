@@ -14,6 +14,7 @@ import { ledger } from './api/ledger.ts';
 import { patterns } from './api/patterns.ts';
 import { pipeline } from './api/pipeline.ts';
 import { skills } from './api/skills.ts';
+import { stop } from './api/stop.ts';
 import { trends } from './api/trends.ts';
 import { worth } from './api/worth.ts';
 import { ingest } from './ingest.ts';
@@ -81,5 +82,6 @@ export function buildApp({ store = openStore(':memory:'), token, logger = false,
   factory(app, { store, content, now }); // v0.4 slice 1 (#27): ready() per open PR, and its findings; a finding's title and reason are in the text store
   budget(app, { store, now }); // v0.4 slice 2 (#28): what each issue cost against its budget, and the budgets the owner sets
   machine(app, { store, now }); // v0.4 slice 3 (#29): the Mac's latest sample per host, its containers grouped and flagged
+  stop(app, { store, token, now }); // v0.4 slice 5 (#31): Live's Stop, queued here and taken by the session's plugin; the clock is the one a stop's ten minutes run by
   return app;
 }

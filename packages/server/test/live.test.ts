@@ -45,6 +45,32 @@ describe('live state', () => {
     expect(agents(s)[1].state).toBe('working');
   });
 
+  // v0.4 slice 5 (#31): Live's Stop. The event is the session's, not an agent's; the card shows Stopped until the person's next turn.
+  it('session.stopped marks the session stopped, and the main agent\'s next turn ends it', () => {
+    const s = newLive();
+    applyEvents(s, session());
+    expect((visible(s, T + 60_000)[0] as any).stoppedAt).toBeUndefined();
+    applyEvents(s, [ev('session.stopped', { aborted: true }, {}, T + 30_000)]);
+    expect((visible(s, T + 60_000)[0] as any)).toMatchObject({ stoppedAt: T + 30_000, stoppedAborted: true });
+    applyEvents(s, [ev('turn.start', {}, { agent_id: 'a1', turn_id: 't-9' }, T + 40_000)]);
+    expect((visible(s, T + 60_000)[0] as any).stoppedAt).toBe(T + 30_000); // a subagent's turn is not the person's
+    applyEvents(s, [ev('turn.start', {}, { turn_id: 't-10' }, T + 50_000)]);
+    expect((visible(s, T + 60_000)[0] as any).stoppedAt).toBeUndefined();
+  });
+
+  it('a stop that found nothing running says so', () => {
+    const s = newLive();
+    applyEvents(s, [...session(), ev('session.stopped', { aborted: false }, {}, T + 30_000)]);
+    expect((visible(s, T + 60_000)[0] as any)).toMatchObject({ stoppedAt: T + 30_000, stoppedAborted: false });
+  });
+
+  it('agent.spawn carries background onto the agent; a foreground agent has none', () => {
+    const s = newLive();
+    applyEvents(s, [...session(), ev('agent.spawn', { tool_use_id: 'toolu_b', agent_type: 'Explore', model: 'claude-haiku-5-5', prompt_length: 9, background: true }, { agent_id: 'a2' })]);
+    expect(agents(s).find((a: any) => a.id === 'a2').background).toBe(true);
+    expect(agents(s).find((a: any) => a.id === 'a1').background).toBeUndefined();
+  });
+
   // #109: a stall one process raised is never ended by the next process of the same session, so the agent's own progress ends it.
   const stall = (agent_id?: string) => ev('stall.start', { tool_use_id: 'toolu_w', tool: 'WebFetch', since: T }, agent_id ? { agent_id } : {});
   const state = (s: ReturnType<typeof newLive>, id: string) => agents(s).find((a: any) => a.id === id).state;
@@ -71,6 +97,17 @@ describe('live state', () => {
     const step = ev('turn.step', { model: 'claude-opus-5-5', usage, stop_reason: 'end_turn', tool_use_ids: [] }, { turn_id: 't-1' });
     applyEvents(s, [stall(), step]); // stall is later by ts, but arrives first
     expect(state(s, 'main')).toBe('stalled');
+  });
+
+  it('#31 R11: a stall carries the time it began onto its agent, with a tool or without one, and the agent\'s progress takes it away', () => {
+    const s = newLive();
+    applyEvents(s, [...session(), stall(), ev('stall.start', { since: T - 5 * 60_000 }, { agent_id: 'a1' })]); // a1's is a stall with no tool: a hung model step
+    expect(agents(s).find((a: any) => a.id === 'main')).toMatchObject({ stalled: true, stalledSince: T });
+    expect(agents(s).find((a: any) => a.id === 'a1')).toMatchObject({ stalled: true, stalledSince: T - 5 * 60_000 });
+    applyEvents(s, [ev('turn.step', { model: 'claude-opus-5-5', usage, stop_reason: 'end_turn', tool_use_ids: [] }, { agent_id: 'a1', turn_id: 't-9' }, T + 60_000)]);
+    expect(agents(s).find((a: any) => a.id === 'a1').stalledSince).toBeUndefined();
+    applyEvents(s, [ev('stall.end', { tool_use_id: 'toolu_w', tool: 'WebFetch', since: T })]);
+    expect(agents(s).find((a: any) => a.id === 'main').stalledSince).toBeUndefined();
   });
 
   it('stall.end still clears a stall', () => {

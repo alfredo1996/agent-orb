@@ -4,8 +4,8 @@ import type { EngineInterface as $, Register } from 'claude-code'
 import type { OrbAgentRow, OrbEventRow, OrbView } from '../types'
 import {
   BATCH, build, capText, changesArgv, checkStalls, commandClass, enqueue, errorClass, errorShape, filesTouched, fingerprintFiles, fingerprintsFrom, fmtTokens, goalNotice, hostName, isExcluded, mask, modelLabel, newOutbox, newTracker,
-  normalizeRemote, openIssuesArgv, openPrsArgv, parseChanges, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, toolContent, type ContentMode, type Goal, type GoalSent,
-  familyOf, modelCheck, modelFromFrontmatter, pricierNotice, rejectedIn, roleFromFrontmatter, settle, statusText, takeBatch, tokensOf, usageOf,
+  normalizeRemote, openIssuesArgv, openPrsArgv, parseChanges, parseFactory, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, toolContent, type ContentMode, type FactoryMemory, type Goal, type GoalSent,
+  backgroundFromFrontmatter, familyOf, judgeMerge, mergesIn, modelCheck, modelFromFrontmatter, pricierNotice, remoteNamed, rejectedIn, roleFromFrontmatter, settle, statusText, stopWaits, takeBatch, tokensOf, usageOf,
   descriptionOf, FINDINGS_ASK, preloadOf, refsIn, type CatalogAgent, type CatalogSkill, type Ctx, type Ev, type Refs, type Role, type SkillLoad,
 } from './core.ts'
 
@@ -15,7 +15,7 @@ import {
 const PANE = 'orb'
 const TICK_MS = 2_000
 const ORPHAN_MS = 60_000 // another session's outbox untouched this long is taken over
-const GOAL_MS = 60_000 // v0.2 slice 3: the goal is asked again this often
+const GOAL_MS = 60_000 // v0.2 slice 3: the goal is asked again this often; v0.4 slice 5 (#31): and the open PRs' readiness, for the merge refusal, and the studio's stop
 const OPEN_PRS_MS = 5 * 60_000 // v0.4 slice 1 (#27): the open PRs are read from GitHub again this often
 const MACHINE_MS = 10 * 60_000 // v0.4 slice 3 (#29): the machine is sampled at most this often, by whichever session finds the last sample this old
 const MACHINE_CHECK_MS = 60_000 // and a running session looks at the store this often
@@ -66,6 +66,12 @@ let goalBusy = false
 // v0.4 slice 1 (#27): when the open PRs were last asked for, and whether a gh call is out.
 let openPrsAt = 0
 let openPrsBusy = false
+// v0.4 slice 5 (#31): the open PRs as the server judged them (GET /api/factory), which the merge refusal reads and nothing else; when they were last asked for, whether a call is out, and the same for the studio's stop.
+let factory: FactoryMemory | undefined
+let factoryAt = 0
+let factoryBusy = false
+let stopAt = 0
+let stopBusy = false
 // v0.4 slice 3 (#29): when this session last looked at the store's machine timestamp, and excludeProjects as start() expanded it.
 let machineAt = 0
 let excludeEntries = ''
@@ -80,7 +86,7 @@ const agentUsage = new Map<string, Usage>()
 const agentModel = new Map<string, string>()
 const parentOf = new Map<string, string>()
 // What an agent file says, read once per type: whether a file was found, its orb-role and its model.
-type AgentFile = { found: boolean; role?: Role; model?: string }
+type AgentFile = { found: boolean; role?: Role; model?: string; background?: true }
 const agentFiles = new Map<string, AgentFile>()
 const skillCalls: string[] = []
 // Slice 5: the session's skill and agent names (to match references against), a typed /name waiting for its turn,
@@ -159,6 +165,8 @@ async function tick($: $) {
 
   if (ticks++ % 5 === 0) ctxPercent = (await $.session.usage().catch(() => undefined))?.context?.percent ?? ctxPercent
   if (now - goalAt >= GOAL_MS) void fetchGoal($).catch(() => {}) // off the tick's path: a slow server holds nothing up
+  if (now - factoryAt >= GOAL_MS) void fetchFactory($).catch(() => {}) // and the same poll, for the merge refusal's memory
+  if (now - stopAt >= GOAL_MS) void takeStop($).catch(() => {}) // and the studio's stop: a stalled session is stopped within the minute
   if (now - openPrsAt >= OPEN_PRS_MS) void readOpenPrs($).catch(() => {}) // and a slow gh too
   if (now - machineAt >= MACHINE_CHECK_MS) void sampleMachine($, now).catch(() => {}) // and docker
   const text = !token ? 'agent-orb: no token (see /orb)' : statusText(t, ctxPercent, now, goal)
@@ -218,7 +226,7 @@ async function agentFile($: $, type: string): Promise<AgentFile> {
     const path = dir && `${dir}/${type}.md`
     if (path && (await $.fs.exists(path).catch(() => false))) {
       const text = String(await $.fs.read(path).catch(() => ''))
-      file = { found: true, role: roleFromFrontmatter(text), model: modelFromFrontmatter(text) }
+      file = { found: true, role: roleFromFrontmatter(text), model: modelFromFrontmatter(text), background: backgroundFromFrontmatter(text) }
       break
     }
   }
@@ -433,6 +441,97 @@ async function fetchGoal($: $) {
   }
 }
 
+/**
+ * v0.4 slice 5 (#31): the open PRs as the server judged them, at session start and then every minute from the tick, never on a hook's path. This is the merge refusal's whole memory (`ready()`
+ * stays the server's: the plugin keeps each PR's four conditions and when GitHub was read, and judges nothing itself). Asked by the repository's remote, so another project that bears the same name is not mixed in.
+ * A failure, or an answer that is not the server's, changes nothing: the last memory stays.
+ */
+async function fetchFactory($: $) {
+  if (!ctx || !token || factoryBusy) return
+  const remote = ctx.project.git_remote
+  if (!remote) return // without a remote the server cannot tell this repository's PRs from another project's of the same name (#31 R3): no memory, and nothing refused
+  factoryBusy = true
+  try {
+    factoryAt = await $.clock.now()
+    const res = await $.http.fetch(`${endpoint}/api/factory?${new URLSearchParams({ project: ctx.project.name, remote })}`)
+    const answer = res.ok ? parseFactory(res.text) : undefined
+    if (answer) factory = answer
+  } finally {
+    factoryBusy = false
+  }
+}
+
+/**
+ * v0.4 slice 5 (#31): the branch the session's checkout is on now, from `.git/HEAD`, a file read and no process (a worktree's `.git` is a file that names its own gitdir). Nothing for a detached HEAD.
+ * ponytail: the session's checkout, not wherever an earlier `cd` in the command went.
+ */
+async function currentBranch($: $): Promise<string | undefined> {
+  const read = async (path: string) => String(await $.fs.read(path).catch(() => ''))
+  const link = /^gitdir: (.+)$/m.exec(await read(`${checkout}/.git`))?.[1]?.trim()
+  const dir = link ? (link.startsWith('/') ? link : `${checkout}/${link}`) : `${checkout}/.git`
+  return /^ref: refs\/heads\/(.+)$/m.exec(await read(`${dir}/HEAD`))?.[1]?.trim()
+}
+
+/**
+ * v0.4 slice 5 (#31 R8): the heads this checkout last saw on the remote for the branches the memory's PRs are on, from `refs/remotes/<remote>/<branch>` (a loose file, or `packed-refs`) of the main working
+ * tree's `.git` (a worktree shares it): file reads, no process. `<remote>` is the one in `.git/config` whose url is the session's. A branch with no such ref has no entry, so there is nothing to compare for it.
+ * It is the remote-tracking ref, not the local branch, because `gh pr merge` merges the PR's remote head: an unpushed commit moves nothing, and a push from this checkout moves it.
+ * ponytail: the ref is as new as this checkout's last push or fetch; a push from elsewhere shows once it is fetched.
+ */
+async function trackedHeads($: $): Promise<Record<string, string | undefined>> {
+  const read = async (path: string) => String(await $.fs.read(path).catch(() => ''))
+  const git = `${root}/.git`
+  const remote = remoteNamed(await read(`${git}/config`), ctx?.project.git_remote)
+  if (!remote) return {}
+  const packed = (await read(`${git}/packed-refs`)).split('\n').map((l) => l.split(' '))
+  const heads = [...new Set((factory?.prs ?? []).flatMap((p) => (p.head && !p.head.includes('..') ? [p.head] : [])))]
+  return Object.fromEntries(await Promise.all(heads.map(async (b) => {
+    const loose = (await read(`${git}/refs/remotes/${remote}/${b}`)).trim()
+    return [b, /^[0-9a-f]{40,64}$/.test(loose) ? loose : packed.find(([sha, ref]) => ref === `refs/remotes/${remote}/${b}` && /^[0-9a-f]{40,64}$/.test(sha!))?.[0]]
+  })))
+}
+
+/**
+ * v0.4 slice 5 (#31): what a Bash command's `gh pr merge` earns, from the memory the poll of GET /api/factory left and nothing else: `deny` (the one place the mod blocks Claude Code, PROJECT.md §2) or the lines
+ * to print while it goes ahead. A command with no merge in it costs one parse. A chain with several merges is refused whole if any one is.
+ */
+async function mergeVerdict($: $, command: string): Promise<{ deny?: string; say: string[] } | undefined> {
+  const asks = mergesIn(command, root)
+  if (!asks.length || !ctx) return undefined
+  const where = { remote: ctx.project.git_remote, branch: asks.some((a) => !a.selector) ? await currentBranch($) : undefined, tracking: await trackedHeads($) }
+  const verdicts = asks.flatMap((a) => judgeMerge(a, where, factory, stamp()) ?? [])
+  const deny = verdicts.flatMap((v) => ('deny' in v ? [v.deny] : []))
+  return { ...(deny.length ? { deny: deny.join('\n\n') } : {}), say: verdicts.flatMap((v) => ('say' in v ? [v.say] : [])) }
+}
+
+/**
+ * v0.4 slice 5 (#31): the studio's Stop. Asks the server whether this session has a stop waiting, every minute from the tick. One does, for a stall (an agent and the time the stall began): if that stall still
+ * holds, the main loop's running turn (the id its `turn.start` handed, a subagent's is not it) is ended with `$.turn.abort`, which stops the tools a foreground subagent runs under it (proved on 2026-11-06, #31);
+ * one `session.stopped` event says so and clears the request; the session is told in its transcript and by a notification, as a stall is. With the stall over, no turn running, or one the engine says has ended,
+ * there is nothing to stop, and the event says so.
+ */
+async function takeStop($: $) {
+  if (!ctx || !token || stopBusy) return
+  stopBusy = true
+  try {
+    stopAt = await $.clock.now()
+    const res = await $.http.fetch(`${endpoint}/api/stop?${new URLSearchParams({ session: ctx.session_id })}`, { headers: { authorization: `Bearer ${token}` } }) // the token: taking a stop changes it
+    const asked = res.ok ? stopWaits(res.text) : undefined
+    if (!asked || !ctx) return
+    // #31 R1: the stop was clicked for one stall. If it is over, or another has begun, what runs now is not what the person saw stuck, and nothing is ended.
+    const holds = [...t.stalled.values()].some((s) => s.agent === asked.agent && s.since === asked.since)
+    const turnId = holds && t.agents.get('main')?.inTurn ? turnOf.get('main') : undefined
+    const aborted = turnId !== undefined && (await $.turn.abort({ turnId }).then(() => true, () => false))
+    push($, build.sessionStopped(ctx, aborted), { agent: 'main', kind: 'session.stopped', detail: aborted ? 'turn ended' : 'nothing stopped', tone: 'dim' })
+    const line = aborted ? 'this turn was stopped from the studio' : holds ? 'a stop came from the studio, but no turn was running' : 'a stop came from the studio, but the stall had ended; nothing was stopped'
+    $.ui.log(`agent-orb: ${line}`)
+    void $.ui.notify(line, { title: 'agent-orb: stopped' }).catch(() => {})
+    void flush($) // the studio shows Stopped at once
+  } finally {
+    stopBusy = false
+  }
+}
+
 async function start($: $, interactive: boolean, cwd: string) {
   const [sessionId, version, repo, model, host] = await Promise.all([
     $.session.id(), $.session.version(), $.session.repo().catch(() => null), $.session.model(),
@@ -479,6 +578,7 @@ async function start($: $, interactive: boolean, cwd: string) {
   void sendFingerprint($, home).catch(() => {}) // and this one lists the watched folders and hashes every file in them
   void sendPrs($, excluded).catch(() => {}) // and gh is a network call
   void fetchGoal($).catch(() => {}) // the goal is asked now, not at the first tick
+  void fetchFactory($).catch(() => {}) // and so is the memory a merge is judged by
   void readOpenPrs($).catch(() => {}) // and the open PRs too
   void sampleMachine($, now).catch(() => {}) // and the machine, if no session has sampled it these 10 minutes
   if (interactive) await $.command.register({ name: 'orb', description: 'agent-orb: active agents, tokens and the last events' })
@@ -594,6 +694,7 @@ export const register: Register = (on, options) => {
         agentId: child, parentAgentId: e.parentAgentId, toolUseId: e.tool_use_id, type: e.subagentType,
         description: e.description, model: r.model, promptLength: e.prompt.length, prompt: text(e.prompt),
       }
+      // #31: the request says background, or the agent's own file does (the engine forces it on). ponytail: remote isolation also forces it on and shows in neither.
       // The frontmatter read happens off the hook's path, so the spawn is never held up by it.
       void agentFile($, e.subagentType).catch((): AgentFile => ({ found: false })).then((file) => {
         // v0.2 slice 2: a fork always inherits its parent's model (the engine ignores one given for it), so it is never checked.
@@ -606,7 +707,7 @@ export const register: Register = (on, options) => {
             void $.ui.notify(pricierNotice(a.pricier), { title: 'agent-orb: pricier model' }).catch(() => {})
           }
         }
-        push($, build.agentSpawn(c, { ...fields, declaredRole: file.role, ...(flag && { declaredModel: file.model, modelCheck: flag }) }),
+        push($, build.agentSpawn(c, { ...fields, declaredRole: file.role, background: e.background || !!file.background, ...(flag && { declaredModel: file.model, modelCheck: flag }) }),
           { agent: label(key(e.parentAgentId)), kind: 'agent.spawn', detail: `${e.subagentType} · ${modelLabel(r.model)}` })
         void flush($) // a new agent shows at once too
       }).catch(() => {})
@@ -645,7 +746,11 @@ export const register: Register = (on, options) => {
     const command = tool === 'Bash' && typeof input.command === 'string' ? commandClass(input.command) : undefined
     push($, build.toolCall(c, w, id, String(tool), JSON.stringify(input).length, content?.input, command), { agent: label(k), kind: 'tool.call', detail: String(tool) })
     try {
-      const r = await next(e)
+      // v0.4 slice 5 (#31): the one place the mod blocks Claude Code (PROJECT.md §2). A `gh pr merge` the memory says is a definite no is refused with the reason; one it cannot judge goes ahead
+      // with a line in the session. Any failure here lets the call through, as a guard that fails is skipped.
+      const verdict = tool === 'Bash' && typeof input.command === 'string' ? await mergeVerdict($, input.command).catch(() => undefined) : undefined
+      for (const line of verdict?.say ?? []) $.ui.log(line) // the person's; the agent reads it too, as context after the result (below)
+      const r = verdict?.deny !== undefined ? ({ deny: verdict.deny } as Awaited<ReturnType<typeof next>>) : await next(e)
       const success = r.deny === undefined && r.isError !== true
       const out = contentMode === 'full' ? toolContent(String(tool), input, r.text ?? r.deny ?? '') : undefined
       const failure = success ? undefined : errorClass(String(tool), r.deny ?? r.text ?? '', r.deny !== undefined)
@@ -668,7 +773,8 @@ export const register: Register = (on, options) => {
           push($, build.sessionPr(c, n), { agent: label(k), kind: 'session.pr', detail: `#${n}` })
         }
       }
-      return r
+      // #31 R14: a merge let through tells the agent so. `context` is what the model reads after the tool's result (`text` is core's own copy of it, kept by `ref`).
+      return verdict?.say.length && r.deny === undefined ? { ...r, context: [...(r.context ?? []), ...verdict.say] } : r
     } finally {
       t.tools.delete(id)
       agent(k)

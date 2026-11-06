@@ -322,11 +322,26 @@ function nameClass(name: string | undefined, args: string[], script = true): Com
 
 const testScript = (path: string | undefined) => path !== undefined && path.length < 300 && /(?:^|\/)(?:test|[^/]*[._-]tests?)(?:[._-][^/]*)?\.\w+$/.test(path); // test.sh, check.test.sh, run-tests.sh
 
-/** One simple command → its class. */
-function classOf(words: string[]): CommandClass {
+/** Where a simple command's own word is: past what a shell lets stand before it (`sudo`, `env`, `FOO=1`, a flag, `timeout 120`). */
+function headIndex(words: string[]): number {
   let i = 0;
   while (i < words.length && (BEFORE.has(words[i]!) || /^[A-Za-z_]\w*=/.test(words[i]!) || /^-|^\d+[smhd]?$/.test(words[i]!))) i++;
   if (words[i] === 'timeout') i += 2; // timeout 120 cmd
+  return i;
+}
+
+const SHELL = /^(?:ba|z)?sh$/;
+/** The script a shell runs when the simple command at `i` is `bash -c '…'`, `sh -c` or `zsh -lc`: one reading of -c, for the class and for the merge refusal. */
+function shellScript(words: string[], i: number): string | undefined {
+  if (!SHELL.test(words[i]?.split('/').at(-1) ?? '')) return undefined;
+  const rest = words.slice(i + 1);
+  const c = rest.findIndex((a) => /^-[a-z]*c$/.test(a));
+  return c >= 0 ? rest[c + 1] : undefined;
+}
+
+/** One simple command → its class. */
+function classOf(words: string[]): CommandClass {
+  const i = headIndex(words);
   const head = words[i]?.split('/').at(-1);
   const rest = words.slice(i + 1);
   if (!head) return 'other';
@@ -334,9 +349,9 @@ function classOf(words: string[]): CommandClass {
   if (head === 'git') return 'git';
   if (head === 'gh') return 'gh';
   if (head === 'docker' || head === 'docker-compose' || head === 'podman') return args.slice(0, 3).includes('build') ? 'build' : 'docker';
-  if (/^(?:ba|z)?sh$/.test(head)) {
-    const c = rest.findIndex((a) => /^-[a-z]*c$/.test(a));
-    return c >= 0 && rest[c + 1] !== undefined ? commandClass(rest[c + 1]!) : testScript(args[0]) ? 'test' : 'other';
+  if (SHELL.test(head)) {
+    const script = shellScript(words, i);
+    return script !== undefined ? commandClass(script) : testScript(args[0]) ? 'test' : 'other';
   }
   if (testScript(words[i])) return 'test'; // ./scripts/test.sh
   if (/^python3?$|^py$/.test(head)) return rest.includes('-m') ? classOf(rest.slice(rest.indexOf('-m') + 1)) : 'other';
@@ -364,6 +379,191 @@ export function commandClass(command: string): CommandClass {
   let best = CLASS_RANK.length - 1;
   for (const words of commands(command)) best = Math.min(best, CLASS_RANK.indexOf(classOf(words)));
   return CLASS_RANK[best]!;
+}
+
+// ── The merge refusal (v0.4 slice 5, #31; PROJECT.md §2: the one place the mod blocks Claude Code) ──────────────────
+
+/** The server's Cond (api/factory.ts): ok true holds, false is a definite no, null is not known. */
+export type Cond = { ok: boolean | null; note: string };
+/** What the plugin keeps of an open PR from GET /api/factory: enough to judge a merge, nothing it would have to fetch. `open`: its open findings, when the server named them (#31 R22). */
+export type PrMemory = { number: number; head: string | null; headOid: string; conditions: Record<'findings' | 'gate' | 'bots' | 'clean', Cond>; open?: { id: string; severity: string }[] };
+/** `readAt` is when GitHub was read (epoch ms), 0 when it never was. */
+export type FactoryMemory = { readAt: number; prs: PrMemory[] };
+export const REFUSE_MS = 10 * 60_000; // as the server's STALE_MS (api/factory.ts): older data is not trusted to refuse
+
+const CONDS = ['findings', 'gate', 'bots', 'clean'] as const;
+const condOf = (c: unknown): Cond | undefined => {
+  const x = c as { ok?: unknown; note?: unknown } | null | undefined;
+  return x && typeof x === 'object' && (x.ok === true || x.ok === false || x.ok === null) && typeof x.note === 'string' ? { ok: x.ok, note: x.note } : undefined;
+};
+const TOKEN = /^[\w.#-]{1,24}$/; // a finding's id or severity is a short token: anything longer is text, which a refusal the model reads does not repeat
+
+/** The open findings of one served PR, as ids and severities; nothing when there are none or any is not a plain token (the server's note says it then). */
+const openFindings = (findings: unknown): PrMemory['open'] => {
+  const open = (Array.isArray(findings) ? findings : []).filter((f: { fate?: unknown } | null) => f?.fate === 'open') as { id?: unknown; severity?: unknown }[];
+  return open.length && open.every((f) => typeof f.id === 'string' && TOKEN.test(f.id) && typeof f.severity === 'string' && TOKEN.test(f.severity)) ? open.map((f) => ({ id: f.id as string, severity: f.severity as string })) : undefined;
+};
+
+/**
+ * The server's answer to GET /api/factory, reduced to what a merge is judged by: each open PR's number, branch, head, four conditions and open findings, and when GitHub was read. Nothing when the
+ * text is not that answer (the last memory stays); a PR that is malformed is left out.
+ */
+export function parseFactory(text: string): FactoryMemory | undefined {
+  let body: { readAt?: unknown; prs?: unknown } | null;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!body || typeof body !== 'object' || !Array.isArray(body.prs) || !(body.readAt === null || typeof body.readAt === 'number')) return undefined;
+  if (body.readAt === null) return { readAt: 0, prs: [] }; // GitHub was never read for this project: it has no PRs to judge
+  const prs = body.prs.flatMap((p: Record<string, any> | null): PrMemory[] => {
+    const conds = CONDS.map((k) => condOf(p?.conditions?.[k]));
+    if (!p || !Number.isInteger(p.number) || p.number < 1 || typeof p.headOid !== 'string' || !(p.head === null || p.head === undefined || typeof p.head === 'string') || !conds.every(Boolean)) return [];
+    const open = openFindings(p.findings);
+    return [{ number: p.number, head: p.head ?? null, headOid: p.headOid, conditions: Object.fromEntries(CONDS.map((k, i) => [k, conds[i]])) as PrMemory['conditions'], ...(open && { open }) }];
+  });
+  return { readAt: body.readAt, prs };
+}
+
+/**
+ * What `gh pr merge` was asked for: the selector as written (a number, a URL or a branch; none means the current branch), the repository `--repo` named, and `uncertain` when the command
+ * leaves the repository open to doubt (a `cd` earlier in it, or GH_REPO set for it: #31 R6), which only matters when no `--repo` names it.
+ */
+export type MergeAsk = { selector?: string; repo?: string; uncertain?: 'cd' | 'GH_REPO' };
+
+/**
+ * Whether a `cd` or `pushd` stays in the session's repository (#31 R6): to an absolute path equal to, or inside, `root`, or to a relative path with no `..` part (it starts where the session did, or
+ * where an earlier cd that stayed went). A `..`, `~`, `$VAR`, `-`, a glob, no argument, several arguments or an absolute path outside the root does not.
+ * ponytail: as path strings, no process and no filesystem: a symlink or a nested repository inside the root reads as the root's. Resolve the path if one is ever seen.
+ */
+function cdStays(args: string[], root: string | undefined): boolean {
+  const dir = args[0];
+  if (args.length !== 1 || dir === undefined || dir.startsWith('-') || /[$`~*?[{]/.test(dir) || dir.split('/').includes('..')) return false;
+  if (!dir.startsWith('/')) return true;
+  const strip = (p: string) => p.replace(/\/+$/, '');
+  return !!root && (strip(dir) === strip(root) || dir.startsWith(`${strip(root)}/`));
+}
+const MERGE_VALUE_FLAGS = new Set(['-R', '--repo', '-b', '--body', '-F', '--body-file', '-t', '--subject', '-A', '--author-email', '--match-head-commit']); // `gh pr merge` flags that take a value
+const SHORT_VALUE = new Set(['R', 'b', 'F', 't', 'A']); // and their short letters, which pflag reads in a cluster: -sR o/x, -sRo/x, -sR=o/x
+
+/**
+ * Every `gh pr merge` in a Bash command, found by its argv: in each part of a chain (`&&`, `||`, `;`, `|`), inside `bash -c '…'` (the -c reading commandClass has), after a prefix a shell allows,
+ * with the flags before or after the selector. `--disable-auto` turns auto-merge off and is no merge (#31 R7); `--auto` is one. Only a command's own word counts, so `echo gh pr merge 12`
+ * and a commit message that says it are not one, and neither is `gh pr view 12` or `gh api …/merge` (left out on purpose, #31).
+ * `root` is the session's repository root, which a `cd` to it or inside it keeps in the repository (#31 R6); `moved` says an earlier `cd` did not (a `bash -c` script reads the outer command's).
+ * ponytail: a naive reading of the shell, as commandClass is: no variables, aliases, `eval`, backticks, `xargs`, `watch` or script run by name (README, Known limits).
+ */
+export function mergesIn(command: string, root?: string, moved = false): MergeAsk[] {
+  const out: MergeAsk[] = [];
+  for (const words of commands(command)) {
+    const i = headIndex(words);
+    const head = words[i]?.split('/').at(-1);
+    const script = shellScript(words, i);
+    if (script !== undefined) out.push(...mergesIn(script, root, moved));
+    if (head === 'cd' || head === 'pushd') moved ||= !cdStays(words.slice(i + 1), root);
+    else if (head === 'popd') moved = true; // back to a directory this reading did not follow
+    if (head !== 'gh') continue;
+    const args = words.slice(i + 1);
+    const positional: string[] = [];
+    let repo: string | undefined;
+    for (let j = 0; j < args.length; j++) {
+      const a = args[j]!;
+      if (!a.startsWith('-')) {
+        positional.push(a);
+        continue;
+      }
+      const eq = /^(--[\w-]+)=([\s\S]*)$/.exec(a);
+      const flag = eq ? eq[1]! : a;
+      if (MERGE_VALUE_FLAGS.has(flag)) {
+        const value = eq ? eq[2] : args[++j];
+        if (flag === '-R' || flag === '--repo') repo = value;
+      } else if (/^-[A-Za-z]/.test(a)) {
+        // A cluster of short flags: the first that takes a value takes the rest of the cluster (after an `=`), or else the next word.
+        const k = [...a].findIndex((c, n) => n > 0 && SHORT_VALUE.has(c));
+        if (k > 0) {
+          const rest = a.slice(k + 1);
+          const value = rest.startsWith('=') ? rest.slice(1) : rest || args[++j];
+          if (a[k] === 'R') repo = value;
+        }
+      }
+    }
+    if (positional[0] !== 'pr' || positional[1] !== 'merge' || args.includes('--disable-auto')) continue;
+    const uncertain = repo ? undefined : moved ? 'cd' : words.slice(0, i).some((w) => w.startsWith('GH_REPO=')) ? 'GH_REPO' : undefined;
+    out.push({ ...(positional[2] ? { selector: positional[2] } : {}), ...(repo ? { repo } : {}), ...(uncertain ? { uncertain } : {}) });
+  }
+  return out;
+}
+
+/**
+ * The name of the remote in a `.git/config` whose url is the session's remote (#31 R8), where git keeps that remote's tracking refs (`refs/remotes/<name>/…`): the first that matches, nothing when none does.
+ * ponytail: two remotes with one url read as the first; `include`d config files are not read.
+ */
+export function remoteNamed(config: string, remote: string | undefined): string | undefined {
+  if (!remote) return undefined;
+  let name: string | undefined;
+  for (const line of config.split('\n')) {
+    const section = /^\s*\[(.*)\]/.exec(line);
+    if (section) name = /^remote "([^"]+)"$/.exec(section[1]!.trim())?.[1];
+    else if (name && !name.includes('..') && normalizeRemote(/^\s*url\s*=\s*(.+?)\s*$/i.exec(line)?.[1])?.toLowerCase() === remote.toLowerCase()) return name; // as repoKey compares: host and path are not case-sensitive here
+  }
+  return undefined;
+}
+
+/** `o/r`, `github.com/o/r`, an https URL or an scp remote → `github.com/o/r`, lower-cased, to compare repositories. */
+const repoKey = (s: string) => (/^[a-z][a-z0-9+.-]*:\/\/|^[^@/]+@[^:/]+:/i.test(s) ? normalizeRemote(s) : s.split('/').length === 2 ? `github.com/${s}` : s)?.replace(/\.git$/, '').toLowerCase();
+const minutesOld = (ms: number) => (ms < 60_000 ? 'under a minute' : `${Math.floor(ms / 60_000)} min`);
+const UNCERTAIN = { cd: 'a `cd` earlier in the command may have changed the repository', GH_REPO: 'GH_REPO is set for it, so the repository may not be this one' };
+// The agent reads this, and its "terminal" is the Bash tool: it is told not to go round the refusal by another door (#31 R4).
+const DENY_TAIL = "Don't merge it another way (`bash -c`, `gh api`, the web page). Tell the person why it was refused; to merge anyway, they run it in their own terminal.";
+
+/** One refused PR's reasons: the findings by id when the server named them ("2 findings are open: F12 major, F14 minor."), otherwise each condition's note. */
+function reasons(pr: PrMemory): string[] {
+  return Object.values(pr.conditions).filter((c) => c.ok === false).map((c) => {
+    if (c !== pr.conditions.findings || !pr.open) return c.note;
+    const n = pr.open.length;
+    return `${n} finding${n === 1 ? ' is' : 's are'} open: ${pr.open.map((f) => `${f.id} ${f.severity}`).join(', ')}.`;
+  });
+}
+
+/**
+ * Whether one `gh pr merge` goes ahead, from the plugin's memory alone (no process, no fetch). `deny` on a definite no (a condition that is false) in data 10 minutes old or less; `say` when the
+ * plugin cannot tell (a condition not known, data older than that or dated in the future, a PR or a repository it has not read, a branch that moved since GitHub was read), which lets the merge go
+ * ahead and prints why; nothing for a PR that is ready. `where.branch` is the session's current branch, the PR when the command names none; `where.tracking` the heads this checkout last saw on
+ * the remote, by branch (`refs/remotes/<remote>/<branch>`, #31 R8): `gh pr merge` merges the PR's remote head, so an unpushed local commit is not a move, and a push from here is.
+ */
+export function judgeMerge(ask: MergeAsk, where: { remote?: string; branch?: string; tracking?: Record<string, string | undefined> }, memory: FactoryMemory | undefined, now: number): { deny: string } | { say: string } | undefined {
+  const say = (label: string, why: string) => ({ say: `agent-orb can't say ${label} is ready: ${why}. The merge goes ahead.` });
+  let number: number | undefined;
+  let branch: string | undefined;
+  let repo = ask.repo;
+  const url = ask.selector && /^(https?:\/\/[^/]+\/[^/]+\/[^/]+)\/pull\/(\d+)/.exec(ask.selector);
+  if (url) [repo, number] = [normalizeRemote(url[1]), Number(url[2])];
+  else if (ask.selector && /^#?\d+$/.test(ask.selector)) number = Number(ask.selector.replace('#', ''));
+  else branch = ask.selector ?? where.branch;
+  if (number === undefined && !branch) return { say: "agent-orb can't say which PR this is: no branch to name it. The merge goes ahead." };
+  const named = number !== undefined ? `PR #${number}` : `the PR on ${branch}`;
+  if (repo === undefined && ask.uncertain) return say(named, UNCERTAIN[ask.uncertain]);
+  if (repo !== undefined) {
+    if (!where.remote) return say(named, `it is in ${repo}, and this project has no remote to compare it with`);
+    if (repoKey(repo) !== where.remote.toLowerCase()) return say(named, `it is in ${repo}, and the plugin reads ${where.remote} only`);
+  }
+  const found = memory?.prs.filter((p) => (number !== undefined ? p.number === number : p.head === branch)) ?? [];
+  if (found.length > 1) return say(named, `${found.length} open PRs have that head branch`); // a fork's `main` or `patch-1`: the name does not say which (#31 R21)
+  const pr = found[0];
+  if (!memory || !pr) return say(named, 'the plugin has not read it');
+  const age = now - memory.readAt;
+  if (age < 0) return say(`PR #${pr.number}`, 'its GitHub data is dated in the future'); // a clock that moved: its age is not known
+  if (age > REFUSE_MS) return say(`PR #${pr.number}`, `its GitHub data is ${age < REFUSE_MS + 60_000 ? 'over 10 min' : minutesOld(age)} old`);
+  const tracked = pr.head ? where.tracking?.[pr.head] : undefined;
+  if (tracked !== undefined && tracked !== pr.headOid) return say(`PR #${pr.number}`, 'the branch moved since GitHub was read'); // what was read is the old head's, in either direction (#31 R8)
+  const conditions = Object.values(pr.conditions);
+  if (conditions.some((c) => c.ok === false)) {
+    return { deny: [`agent-orb refused this merge: PR #${pr.number} isn't ready.`, ...reasons(pr).map((r) => `- ${r}`), `GitHub data ${minutesOld(age)} old, head ${pr.headOid.slice(0, 7)}.`, DENY_TAIL].join('\n') };
+  }
+  const unknown = conditions.filter((c) => c.ok === null);
+  // "No test run on e4f5a6b" reads on after a colon as "no test run…"; a note that starts with a name (GitHub) or an acronym keeps its capital.
+  return unknown.length ? say(`PR #${pr.number}`, unknown.map((c) => c.note.replace(/^[A-Z](?=[a-z]+\s)/, (m) => m.toLowerCase())).join('; ')) : undefined;
 }
 
 // ── Changes: the git history of what a change watches (v0.2 slice 1) ─────────
@@ -934,14 +1134,18 @@ export type Stall = { key: string; agent: string; tool_use_id?: string; tool?: s
 export type Tracker = { agents: Map<string, AgentLive>; tools: Map<string, ToolLive>; stalled: Map<string, Stall> };
 export const newTracker = (): Tracker => ({ agents: new Map(), tools: new Map(), stalled: new Map() });
 
+const DELEGATING = new Set(['Agent', 'Task']);
+
 /**
  * §13: a tool running past the threshold, or an agent mid-turn with no tool running and no event, is stalled.
- * A tool at the permission prompt, and an agent between turns, wait for the person and never stall.
+ * A tool at the permission prompt, and an agent between turns, wait for the person and never stall; neither does an agent's own Agent/Task call (#31 R2).
  */
 export function checkStalls(t: Tracker, now: number, thresholdMs: number) {
   const current = new Map<string, Stall>();
   for (const tool of t.tools.values()) {
-    if (!tool.waiting && now - tool.since >= thresholdMs) {
+    // An agent's own Agent/Task call lasts as long as the subagent it started, which is watched for its own stall; main reads "stuck on Agent" for a healthy 20-minute subagent otherwise (#31 R2).
+    // ponytail: a spawn that hangs before any subagent exists is never flagged; the engine's own timeouts are what end it.
+    if (!tool.waiting && !DELEGATING.has(tool.tool) && now - tool.since >= thresholdMs) {
       current.set(tool.id, { key: tool.id, agent: tool.agent, tool_use_id: tool.id, tool: tool.tool, since: tool.since });
     }
   }
@@ -1054,6 +1258,25 @@ export function modelFromFrontmatter(text: string): string | undefined {
   return (front && /^model:\s*["']?([^\s"']+)["']?\s*(?:#.*)?$/m.exec(front)?.[1]) || undefined;
 }
 
+/** `background: true` in an agent definition's frontmatter: every spawn of the agent runs in the background (the engine forces it on, whatever the call asked). */
+export function backgroundFromFrontmatter(text: string): true | undefined {
+  const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
+  return front && /^background:\s*["']?true["']?\s*(?:#.*)?$/m.test(front) ? true : undefined;
+}
+
+/**
+ * The server's answer to the plugin's poll of GET /api/stop: a stop waiting for this session names the stall it was clicked for (the agent and the stall's `since`, as stall.start carried
+ * them), once. Anything else is no stop (#31 R1).
+ */
+export function stopWaits(text: string): { agent: string; since: number } | undefined {
+  try {
+    const x = JSON.parse(text) as { stop?: unknown; agent?: unknown; since?: unknown } | null;
+    return x?.stop === true && typeof x.agent === 'string' && x.agent !== '' && Number.isInteger(x.since) ? { agent: x.agent, since: x.since as number } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // The server's MODEL_FAMILIES (packages/shared), kept here so the plugin needs no import; a contract test keeps the two equal.
 export const FAMILIES = ['haiku', 'sonnet', 'opus', 'fable', 'mythos'] as const;
 export type Family = (typeof FAMILIES)[number];
@@ -1094,6 +1317,7 @@ export const build = {
   sessionStart: (c: Ctx, model: string, claudeVersion: string, interactive: boolean, content: ContentMode = 'off') =>
     makeEvent(c, 'session.start', { model, source: interactive ? 'interactive' : 'headless', claude_version: claudeVersion, plugin_version: VERSION, content }),
   sessionEnd: (c: Ctx, reason: string) => makeEvent(c, 'session.end', { reason }),
+  sessionStopped: (c: Ctx, aborted: boolean) => makeEvent(c, 'session.stopped', { aborted }), // the session's, not an agent's
   sessionCompact: (c: Ctx, before: number, after: number) => makeEvent(c, 'session.compact', { tokens_before: before, tokens_after: after }),
   prompt: (c: Ctx, length: number, promptId: string, text?: string) =>
     makeEvent(c, 'prompt.submit', { length, ...(text === undefined ? {} : { text }) }, { prompt_id: promptId }),
@@ -1105,11 +1329,11 @@ export const build = {
       duration_ms: durationMs, usage_total: usageOf(usage), reason, answer_length: answerLength,
       ...(contextPercent === undefined ? {} : { context_percent: Math.min(100, Math.max(0, contextPercent)) }),
     }, who(w)),
-  agentSpawn: (c: Ctx, a: { agentId: string; parentAgentId?: string; toolUseId: string; type: string; description: string; model: string; promptLength: number; declaredRole?: Role; declaredModel?: string; modelCheck?: { allowed: Family; source: 'file' | 'ceiling' }; prompt?: string }) =>
+  agentSpawn: (c: Ctx, a: { agentId: string; parentAgentId?: string; toolUseId: string; type: string; description: string; model: string; promptLength: number; declaredRole?: Role; declaredModel?: string; modelCheck?: { allowed: Family; source: 'file' | 'ceiling' }; prompt?: string; background?: boolean }) =>
     makeEvent(c, 'agent.spawn', {
       tool_use_id: a.toolUseId, agent_type: a.type, description: a.description, model: a.model, prompt_length: a.promptLength,
       ...(a.declaredRole ? { declared_role: a.declaredRole } : {}), ...defined({ declared_model: a.declaredModel, prompt: a.prompt }),
-      ...(a.modelCheck ? { model_check: a.modelCheck } : {}),
+      ...(a.modelCheck ? { model_check: a.modelCheck } : {}), ...(a.background ? { background: true } : {}),
     }, { agent_id: a.agentId, parent_agent_id: a.parentAgentId }),
   agentComplete: (c: Ctx, agentId: string, durationMs: number, usage: ReturnType<typeof usageOf>, reportLength: number) =>
     makeEvent(c, 'agent.complete', { duration_ms: durationMs, usage_total: usage, report_length: reportLength }, { agent_id: agentId }),

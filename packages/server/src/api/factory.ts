@@ -5,7 +5,8 @@ import { findingId, type ContentStore } from '../content-store.ts';
 import { all, get, type Row, type Store } from '../store/store.ts';
 
 // v0.4 slice 1 (#27, Factory; PROJECT.md §15, 2026-11-03): whether each open PR is ready for the owner's ok, from what the plugin sent.
-//   GET /api/factory?project=<name>  the open PRs as last read, each with ready(), its four conditions and its findings (latest fate each), and when GitHub was read
+//   GET /api/factory?project=<name>[&remote=<repo>]  the open PRs as last read, each with ready(), its four conditions and its findings (latest fate each), and when GitHub was read;
+//                                    with `remote` only that repository's (the merge refusal asks so, #31: two projects can bear one name)
 // Ready means ready for the owner's ok: nothing here merges, and nothing reaches the machine.
 
 export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };
@@ -89,7 +90,7 @@ export function ready(pr: PrState, ledger: Ledger, gate: { result: 'pass' | 'fai
 }
 
 const FATE_ORDER: Fate[] = ['open', 'dismissed', 'fixed']; // the sheet's order: what blocks, what you read before merging, what was done
-const Query = z.object({ project: z.string().min(1) });
+const Query = z.object({ project: z.string().min(1), remote: z.string().min(1).optional() });
 const STALE_MS = 10 * 60_000; // two reads missed (the plugin reads every 5 minutes): no session reads this repo now, and the merge refusal (#31) stops trusting it too
 
 export function factory(app: FastifyInstance, { store, content, now = Date.now }: { store: Store; content: ContentStore; now?: () => number }) {
@@ -97,11 +98,12 @@ export function factory(app: FastifyInstance, { store, content, now = Date.now }
     const q = Query.safeParse(req.query);
     if (!q.success) return reply.code(400).send({ error: 'give a project', issues: q.error.issues });
     const { project } = q.data;
-    // Every project row with the name, like the goal: a repo seen from two machines is two rows.
-    const readAt = get(store, 'SELECT max(prs_read_at) AS at FROM projects WHERE name = :project', { project })?.at ?? null;
+    const remote = q.data.remote ?? null;
+    // Every project row with the name, like the goal (a repo seen from two machines is two rows when it has no remote); with a remote, that repository's rows alone.
+    const readAt = get(store, 'SELECT max(prs_read_at) AS at FROM projects WHERE name = :project AND (:remote IS NULL OR git_remote = :remote)', { project, remote })?.at ?? null;
     // #28: the issue each PR closes is on its pull_requests row (the open-PR read put it there), which the cost on the page is matched to.
     const rows = all(store, `SELECT o.*, pr.issue AS issue FROM open_prs o JOIN projects p ON p.id = o.project_id
-      LEFT JOIN pull_requests pr ON pr.id = o.project_id || ':' || o.number WHERE p.name = :project`, { project });
+      LEFT JOIN pull_requests pr ON pr.id = o.project_id || ':' || o.number WHERE p.name = :project AND (:remote IS NULL OR p.git_remote = :remote)`, { project, remote });
     const prs = rows.map((r) => {
       const pr: PrState = { headOid: r.head_oid, mergeState: r.merge_state, lastCommitAt: r.last_commit_at ?? undefined, checks: JSON.parse(r.checks), bots: JSON.parse(r.bots) };
       // A PR's findings are the reports that named it (```orb-findings #416) and those made on its head branch, the latest fate of each id winning across both. Its

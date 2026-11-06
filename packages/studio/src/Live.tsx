@@ -1,7 +1,8 @@
-import { ago, contextMeter, duration, modelLabel, readTokens, stateLabel, usd } from './format.ts';
+import { useEffect, useState } from 'react';
+import { ago, contextMeter, duration, modelLabel, plural, readTokens, stateLabel, usd } from './format.ts';
 import { rowKey, useHistory, type Open, type Picked } from './History.tsx';
 import { Explain, PageHeader } from './kit.tsx';
-import { agentName, liveSentence, needs, pricierSub, progress, rowState, runFor, sentence, skillHow, startedLabel, tree, type CardAgent } from './live-cards.ts';
+import { agentName, liveSentence, loadStops, needKey, needs, pricierSub, progress, rowState, runFor, saveStops, sentence, skillHow, startedLabel, stopClick, stopKey, stopMode, tree, type CardAgent, type Need, type StopMode } from './live-cards.ts';
 
 // The Live view (PROJECT.md §8.1), drawn as approved in design/pages.html (the v3 rows, §15), fed by /stream.
 
@@ -12,7 +13,7 @@ export type Agent = CardAgent & {
 export type Session = {
   id: string; project: string; branch?: string; host: string; startedAt: number; lastTs: number; endedAt?: number;
   tokens: number; cost: number; costPartial: boolean; contextPercent?: number; agents: Agent[];
-  content?: 'off' | 'full' | 'excluded'; skills?: { skill: string; count: number; by: { who: string; count: number }[] }[];
+  content?: 'off' | 'full' | 'excluded'; stoppedAt?: number; stoppedAborted?: boolean; skills?: { skill: string; count: number; by: { who: string; count: number }[] }[];
 };
 
 export function Live({ list, all, now }: { list: Session[]; all: Record<string, Session>; now: number }) {
@@ -56,34 +57,86 @@ export function Live({ list, all, now }: { list: Session[]; all: Record<string, 
   );
 }
 
-/** Every agent waiting for you or stalled, oldest first, then every one whose last answer holds an unbacked claim (v0.3 slice 4), then every one on a pricier model (v0.2 slice 2), whichever session it is in. */
+/**
+ * Every agent waiting for you or stalled, oldest first, then a session the studio just stopped (v0.4 slice 5, #31), then every one whose last answer holds an unbacked claim (v0.3 slice 4), then every one on a pricier
+ * model (v0.2 slice 2), whichever session it is in. A stalled row has a Stop turn button: it asks in place, shows Stopping once sent, and the row becomes Stopped when the session's event arrives.
+ * A click belongs to one stall (the session, the agent and when its stall began), so a later stall of the same agent starts from the button again. A Stopping row is kept for the tab (a reload keeps it) and lapses
+ * after the ten minutes the server holds a stop.
+ */
 function NeedsYou({ list, now, onOpen }: { list: Session[]; now: number; onOpen: Open }) {
-  const need = needs(list);
+  const need = needs(list, now);
+  const [stops, setStops] = useState(() => loadStops(now));
+  useEffect(() => saveStops(stops), [stops]);
   if (!need.length) return null;
+  const stopped = need.filter((n) => n.tone === 'stopped').length; // a stopped session is not an agent
+  const hint = [need.length > stopped && plural(need.length - stopped, 'agent'), stopped > 0 && `${stopped} stopped`].filter(Boolean).join(' · ');
   return (
     <section className="card needs" aria-labelledby="needs-h">
-      <h2 id="needs-h">Needs you <span className="hint">{need.length} agent{need.length === 1 ? '' : 's'}</span></h2>
+      <h2 id="needs-h">Needs you <span className="hint">{hint}</span></h2>
       {need.map((n) => {
-        const wait = n.tone === 'wait';
-        const state = n.tone === 'model' ? 'model' : n.tone === 'claim' ? 'claim' : wait ? 'waiting' : 'stalled';
-        const project = list.find((s) => s.id === n.session)?.project;
-        return (
-          <div key={rowKey(n.session, n.agent)} className="need">
-            <span className={`state ${state}`}>{stateLabel(state)}</span>
-            <span className="what">
-              {n.claim ? <><b>{agentName(n.type)}</b> in <b>{project}</b> said {n.claim.phrase}; {n.claim.reason}</>
-              : n.pricier ? <>{n.pricier.generic && 'A '}<b>{n.pricier.subject}</b> in <b>{project}</b> {n.pricier.tail}</> : <>
-                <b>{agentName(n.type)}</b> in <b>{project}</b>{' '}
-                {wait ? <>wants to run <span className="num">{n.tool ?? 'a tool'}</span>{n.arg && <> <code>{n.arg}</code></>}</>
-                  : <>is stuck on <span className="num">{n.tool ?? 'its last step'}</span></>}
-              </>}
-            </span>
-            <span className="since num">{n.since !== undefined && duration(now - n.since)}</span>
-            <button type="button" className="btn" aria-label={`Open the history of ${agentName(n.type)}`} onClick={(e) => onOpen(n.session, n.agent, e.currentTarget)}>Open</button>
-          </div>
-        );
+        const s = list.find((x) => x.id === n.session);
+        const key = stopKey(n);
+        const mine = stops[key];
+        const ask = { session: n.session, agent: n.agent, since: n.since ?? 0 };
+        const onStop = (to: 'ask' | 'confirm' | 'sent') => stopClick(to, ask, (next) => setStops((all) => ({ ...all, [key]: next })), Date.now);
+        return <NeedRow key={needKey(n)} n={n} project={s?.project} branch={s?.branch} now={now} mode={stopMode(mine, now)} sentAt={mine?.at} onOpen={onOpen} onStop={onStop} />;
       })}
     </section>
+  );
+}
+
+type NeedRowProps = { n: Need; project?: string; branch?: string; now: number; mode: StopMode; sentAt?: number; onOpen: Open; onStop: (to: 'ask' | 'confirm' | 'sent') => void };
+
+/** One row of Needs you. A pure function of its props (the clicks are `onStop`'s), so a test can read the buttons off what it returns. */
+export function NeedRow({ n, project, branch, now, mode, sentAt, onOpen, onStop }: NeedRowProps) {
+  const wait = n.tone === 'wait';
+  const stopped = n.tone === 'stopped';
+  const stall = n.tone === 'bad';
+  const state = n.tone === 'model' ? 'model' : n.tone === 'claim' ? 'claim' : stopped ? 'stopped' : wait ? 'waiting' : 'stalled';
+  const stoppable = stall && !n.background && n.since !== undefined; // a background agent is not in the main turn that Stop ends
+  const retry = stoppable && (mode === 'ask' || mode === 'failed' || mode === 'gone' || mode === 'lapsed');
+  const where = <b>{project}{branch && ` · ${branch}`}</b>; // the mockup's title for the session's rows
+  const doing = n.arg ?? n.tool;
+  const since = stopped ? 'now' : stoppable && mode === 'sent' && sentAt !== undefined ? duration(now - sentAt) : n.since !== undefined ? duration(now - n.since) : undefined; // Stopping counts from the click
+  return (
+    <div className="need">
+      <span className={`state ${state}`}>{stateLabel(state)}</span>
+      <span className="what">
+        {stopped ? <>
+          {where}
+          <span className="sub">{!n.aborted ? 'The stall had ended before the stop arrived; nothing was stopped.' : n.ended ? 'Stopped from the studio. The session has ended.' : 'Stopped from the studio. The session is open and idle.'}</span>
+        </>
+        : n.claim ? <><b>{agentName(n.type)}</b> in <b>{project}</b> said {n.claim.phrase}; {n.claim.reason}</>
+        : n.pricier ? <>{n.pricier.generic && 'A '}<b>{n.pricier.subject}</b> in <b>{project}</b> {n.pricier.tail}</>
+        : stall ? <>
+          {where}
+          {n.background ? <span className="sub">A background agent can&apos;t be stopped from here. Use agent view.</span>
+            : stoppable && mode === 'sent' ? <span className="sub">Stop sent, waiting for the session to pick it up</span>
+            : <span className="sub">{agentName(n.type)} on {doing ? <code>{doing}</code> : 'its last step'}</span>}
+          {stoppable && mode === 'failed' && <span className="sub">The stop did not reach the server. Try again.</span>}
+          {stoppable && mode === 'gone' && <span className="sub">The server has no record of this session. Reload the page, or stop it at its terminal.</span>}
+          {stoppable && mode === 'lapsed' && <span className="sub">The session did not pick the stop up. Try again.</span>}
+        </> : <>
+          <b>{agentName(n.type)}</b> in <b>{project}</b> wants to run <span className="num">{n.tool ?? 'a tool'}</span>{n.arg && <> <code>{n.arg}</code></>}
+        </>}
+      </span>
+      <span className="since num">{since}</span>
+      <span className="acts">
+        {!stopped && <button type="button" className="btn" aria-label={`Open the history of ${agentName(n.type)}`} onClick={(e) => onOpen(n.session, n.agent, e.currentTarget)}>Open</button>}
+        {stoppable && mode === 'sent' && <button type="button" className="btn" disabled>Stopping</button>}
+        {retry && <button type="button" className="btn" onClick={() => onStop('confirm')}>Stop turn</button>}
+      </span>
+      {stoppable && mode === 'confirm' && (
+        <div className="confirm" role="group" aria-label="Stop this session's turn?">
+          <b>Stop this session&apos;s turn?</b>
+          <span>Its running tools stop and the session stays open. It reaches the session within a minute.</span>
+          <div className="acts">
+            <button type="button" className="btn danger" onClick={() => onStop('sent')}>Stop turn</button>
+            <button type="button" className="btn" onClick={() => onStop('ask')}>Keep waiting</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

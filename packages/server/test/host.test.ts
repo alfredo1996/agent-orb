@@ -105,6 +105,7 @@ describe('writes from another site are refused before any route runs, /ingest as
     ['POST', '/api/analysis/estimate', { project: 'mobile-app', from: 0, to: 1, model: 'claude-opus-5-5' }],
     ['POST', '/api/analysis/run', { estimate: 'e-1' }],
     ['PUT', '/api/analysis/cap', { usd: 999 }],
+    ['POST', '/api/stop', { session: 's-1' }],
   ];
 
   it.each(writes)('%s %s: 403 with the app\'s reason, so no route ran', async (method, url, payload) => {

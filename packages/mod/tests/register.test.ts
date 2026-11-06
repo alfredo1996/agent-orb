@@ -65,7 +65,22 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   // can lean on its text) and `sh -c 'command -v docker'` finds none, 'stopped' exits 1 as a daemon that is down does, 'hang' never answers. `vm_stat`, `sysctl -n hw.memsize` and
   // `cat /proc/meminfo` answer the three memory fields. Every call is recorded.
   const dock = { mode: 'absent' as 'ok' | 'absent' | 'stopped' | 'hang', ps: '', stats: '', vmStat: '', memsize: '', meminfo: '', calls: [] as string[][] }
+  // v0.4 slice 5 (#31): GET /api/factory answers `factory` (the open PRs as the server judged them) and GET /api/stop answers `stop.queued` once; every process and fetch is recorded, for the test that
+  // proves a refusal ran none, and so are the `ui.log` lines and the turns `turn.abort` was asked to end (`abort.reject`: the turn is not the running one).
+  const factory = { prs: [] as any[], readAt: T0 as number | null, mode: 'ok' as 'ok' | 'throw' | 'garbage', calls: [] as string[] }
+  // The stop the studio queued names the stall it was clicked for (#31 R1: `agent` and the stall's `since`); the poll's requests are recorded with the headers they carried (R10).
+  const stop = { queued: false, agent: 'main', since: 0, mode: 'ok' as 'ok' | 'throw', calls: [] as string[], headers: [] as Record<string, string>[] }
+  const abort = { calls: [] as string[], reject: false }
+  const logs: string[] = []
+  const spy = { procs: [] as string[][], fetches: [] as string[], reads: [] as string[] }
+  on('ui.log', (_$: any, e: any) => (logs.push(e.text), { value: undefined }))
+  on('turn.abort', (_$: any, e: any) => {
+    abort.calls.push(e.turnId)
+    if (abort.reject) throw new Error(`turn ${e.turnId} is not the running turn`)
+    return { value: undefined }
+  })
   on('process.run', (_$: any, e: any) => {
+    spy.procs.push(e.argv)
     if (e.argv[0] === 'sh' && e.argv[2] === 'command -v docker') {
       dock.calls.push(e.argv)
       return { value: { exitCode: dock.mode === 'absent' ? 1 : 0, stdout: dock.mode === 'absent' ? '' : '/usr/local/bin/docker\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
@@ -121,12 +136,27 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
     if (!entries.size) return { deny: `ENOENT: ${e.path}` }
     return { value: [...entries].map(([name, kind]) => ({ name, kind, size: 0, mtimeMs: 0, isLink: false })) }
   })
-  on('fs.read', (_$: any, e: any) => ({ value: files[e.path] ?? '' }))
+  on('fs.read', (_$: any, e: any) => (spy.reads.push(e.path), { value: files[e.path] ?? '' }))
   on('ui.status', (_$: any, e: any) => (statuses.push(e.text), { value: undefined }))
   on('ui.notify', (_$: any, e: any) => (notes.push(e.text), titles.push(e.title), { value: { isSent: true, channel: 'test' } }))
   // v0.2 slice 3: GET /api/goal answers what `goal` says; a test sets it before or while the session runs.
   const goal = { goal: null as number | null, spent: 0, month: '2026-10', status: 200, mode: 'ok' as 'ok' | 'throw' | 'hang' | 'garbage', calls: [] as string[] }
   on('http.fetch', (_$: any, e: any) => {
+    spy.fetches.push(String(e.url))
+    if (String(e.url).includes('/api/factory')) {
+      factory.calls.push(e.url)
+      if (factory.mode === 'throw') throw new Error('connection refused')
+      const text = factory.mode === 'garbage' ? '<html>a proxy answered</html>' : JSON.stringify({ project: 'r', readAt: factory.readAt, prs: factory.prs })
+      return { value: { status: 200, ok: true, headers: {}, text } }
+    }
+    if (String(e.url).includes('/api/stop')) {
+      stop.calls.push(e.url)
+      stop.headers.push(e.init?.headers ?? {})
+      if (stop.mode === 'throw') throw new Error('connection refused')
+      const taken = stop.queued
+      stop.queued = false // handed out once
+      return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ session: 's-1', stop: taken, ...(taken ? { agent: stop.agent, since: stop.since } : {}) }) } }
+    }
     if (String(e.url).includes('/api/goal')) {
       goal.calls.push(e.url)
       if (goal.mode === 'hang') return new Promise(() => {})
@@ -148,7 +178,7 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   const engine = { model: 'claude-sonnet-5-5', agentId: 'a-child', prompts: [] as string[] }
   on('agent.spawn', (_$: any, e: any) => (engine.prompts.push(e.prompt), { model: engine.model, agentId: engine.agentId }))
   const sent = () => posts.flat()
-  return { clock, posts, sent, statuses, notes, titles, git, files, engine, hash, goal, tree, gh, repo, machine, dock, store }
+  return { clock, posts, sent, statuses, notes, titles, git, files, engine, hash, goal, tree, gh, repo, machine, dock, store, factory, stop, abort, logs, spy }
 }
 
 // A stand-in for a git blob id: 40 hex characters that are a function of the text.
@@ -1851,4 +1881,593 @@ test('#29: with no token nothing is sampled or queued for the network', { option
   await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
   await w.clock.advance(2_000)
   expect(w.dock.calls).toEqual([])
+})
+
+// ── v0.4 slice 5 (#31): the merge refusal ──
+// `gh pr merge` is refused on a definite no and let through, with a line, on anything unknown. The answer comes from what the 60-second poll of GET /api/factory left in the plugin's memory: the hook
+// itself runs no process and makes no request. PROJECT.md §2: this is the one place the mod blocks Claude Code.
+const fine = { ok: true, note: 'fine' }
+const served = (conditions: object = {}, rest: object = {}) => ({
+  number: 416, head: 'fix/409-token-retry', issue: 409, headOid: 'e4f5a6b'.padEnd(40, '0'), ready: false, reason: null, findings: [], dropped: 0,
+  conditions: { findings: fine, gate: fine, bots: fine, clean: { ok: true, note: 'CLEAN' }, ...conditions }, ...rest,
+})
+const merge = ($: any, command: string, id = 'toolu_m', agentId?: string) => $.tool.call({ tool: 'Bash', tool_use_id: id, command, ...(agentId ? { agentId } : {}) })
+/** The engine beneath: counts the merges that reach it. */
+const beneath = (on: any) => {
+  const reached = { n: 0 }
+  on('tool.call', () => (reached.n++, { result: 'merged', text: 'Merged #416' }))
+  return reached
+}
+/** Boots a session whose first read of /api/factory has landed. */
+const withMemory = async ($: any, w: ReturnType<typeof world>, prs: object[], readAt: number | null = T0) => {
+  w.factory.prs = prs
+  w.factory.readAt = readAt
+  await boot($)
+  await w.clock.advance(2_000)
+}
+const DENY_HEAD = "agent-orb refused this merge: PR #416 isn't ready."
+// R4: the agent reads this, and its "terminal" is the Bash tool.
+const DENY_TAIL = "Don't merge it another way (`bash -c`, `gh api`, the web page). Tell the person why it was refused; to merge anyway, they run it in their own terminal."
+
+for (const [name, conditions, note] of [
+  ['an open finding', { findings: { ok: false, note: '2 findings open: 1 major, 1 minor' } }, '2 findings open: 1 major, 1 minor'],
+  ['a failed check', { gate: { ok: false, note: 'Unit tests failed' } }, 'Unit tests failed'],
+  ['a bot comment newer than the last commit', { bots: { ok: false, note: 'coderabbitai commented after the last commit, and no findings report since' } }, 'coderabbitai commented after the last commit, and no findings report since'],
+  ['a merge state that is not clean', { clean: { ok: false, note: 'UNSTABLE: a check is not passing' } }, 'UNSTABLE: a check is not passing'],
+] as const) {
+  test(`#31: gh pr merge is refused on ${name}, with the reason, and never reaches the tool`, opts, async ($: any, on: any) => {
+    const reached = beneath(on)
+    const w = world(on)
+    await withMemory($, w, [served(conditions)])
+    const r = await merge($, 'gh pr merge 416 --squash')
+    expect(r.deny).toBe([DENY_HEAD, `- ${note}`, 'GitHub data under a minute old, head e4f5a6b.', DENY_TAIL].join('\n'))
+    expect(reached.n).toBe(0)
+    await w.clock.advance(2_000)
+    // the history shows the attempt as a refused call, not as a merge that ran
+    const result = w.sent().find((e) => e.kind === 'tool.result' && e.data.tool_use_id === 'toolu_m')
+    expect(result.data).toMatchObject({ success: false, error_type: 'denied', error_class: 'refused' })
+    expect(w.sent().find((e) => e.kind === 'tool.call' && e.data.tool_use_id === 'toolu_m').data.command_class).toBe('gh')
+  })
+}
+
+for (const [name, conditions, line] of [
+  ['no test run seen on the head', { gate: { ok: null, note: 'No test run on e4f5a6b' } }, 'no test run on e4f5a6b'],
+  ['a repo with no findings block', { findings: { ok: null, note: 'No findings reported yet' } }, 'no findings reported yet'],
+  ['a merge state GitHub has not worked out', { clean: { ok: null, note: "GitHub hasn't worked out the merge state yet" } }, "GitHub hasn't worked out the merge state yet"],
+] as const) {
+  test(`#31: gh pr merge goes ahead on ${name}, and the session is told it was not judged`, opts, async ($: any, on: any) => {
+    const reached = beneath(on)
+    const w = world(on)
+    await withMemory($, w, [served(conditions)])
+    const r = await merge($, 'gh pr merge 416 --squash')
+    expect(r.deny).toBeUndefined()
+    expect(r.text).toBe('Merged #416')
+    expect(reached.n).toBe(1)
+    expect(w.logs).toEqual([`agent-orb can't say PR #416 is ready: ${line}. The merge goes ahead.`]) // the person's
+    expect(r.context).toEqual([`agent-orb can't say PR #416 is ready: ${line}. The merge goes ahead.`]) // R14: and what the agent reads after the result
+  })
+}
+
+test('#31: a PR that is ready merges without a word', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served()])
+  const r = await merge($, 'gh pr merge 416')
+  expect(r.text).toBe('Merged #416')
+  expect(r).not.toHaveProperty('context')
+  expect(reached.n).toBe(1)
+  expect(w.logs).toEqual([])
+})
+
+test('#31: data older than 10 minutes lets the merge through and says how old; at 9 minutes the same PR is refused', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ gate: { ok: false, note: 'Unit tests failed' } })], T0) // GitHub was read at T0 and, in this test, never again
+  await w.clock.advance(9 * MIN)
+  expect((await merge($, 'gh pr merge 416', 'toolu_a')).deny).toContain('GitHub data 9 min old')
+  await w.clock.advance(2 * MIN)
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).text).toBe('Merged #416')
+  expect(reached.n).toBe(1)
+  expect(w.logs).toEqual(["agent-orb can't say PR #416 is ready: its GitHub data is 11 min old. The merge goes ahead."])
+})
+
+test('#31: the refusal answers from memory: with the server unreachable and no process allowed, a merge is refused all the same', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: '1 finding open: 1 major' } })])
+  w.factory.mode = 'throw'
+  w.stop.mode = 'throw'
+  w.goal.mode = 'throw'
+  await w.clock.advance(60_000) // the poll fails: the memory it had stays
+  const procs = w.spy.procs.length
+  const fetches = w.spy.fetches.length
+  const r = await merge($, 'git status && gh pr merge 416 --squash --delete-branch')
+  expect(r.deny).toContain('- 1 finding open: 1 major')
+  expect(w.spy.procs.length).toBe(procs) // no git, no gh, no docker
+  expect(w.spy.fetches.length).toBe(fetches) // and no request
+  expect(reached.n).toBe(0)
+})
+
+test('#31: a poll that answers with something that is not the server\'s keeps the memory, and so does one that never came', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ clean: { ok: false, note: 'DIRTY: it conflicts with its base' } })])
+  w.factory.mode = 'garbage'
+  await w.clock.advance(60_000)
+  expect((await merge($, 'gh pr merge 416')).deny).toContain('DIRTY')
+})
+
+test('#31: the poll asks for this project\'s PRs at session start and then every minute', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  await withMemory($, w, [])
+  expect(w.factory.calls).toEqual(['http://127.0.0.1:4040/api/factory?project=r&remote=github.com%2Fo%2Fr']) // R3: this repository's, not every project that bears the name
+  await w.clock.advance(60_000)
+  expect(w.factory.calls.length).toBe(2)
+  await w.clock.advance(60_000)
+  expect(w.factory.calls.length).toBe(3)
+})
+
+test('#31: a PR the memory does not hold, and a memory that never came, let the merge through and say so', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.factory.mode = 'throw'
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  expect((await merge($, 'gh pr merge 416', 'toolu_a')).text).toBe('Merged #416') // the server never answered
+  w.factory.mode = 'ok'
+  await w.clock.advance(60_000)
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).deny).toBeDefined() // it has now
+  expect((await merge($, 'gh pr merge 99', 'toolu_c')).text).toBe('Merged #416') // but not 99
+  expect(reached.n).toBe(2)
+  expect(w.logs).toEqual(["agent-orb can't say PR #416 is ready: the plugin has not read it. The merge goes ahead.", "agent-orb can't say PR #99 is ready: the plugin has not read it. The merge goes ahead."])
+})
+
+test('#31: it matches `gh pr merge 12`, one with its flags first and --repo, and one chained after &&, and not `gh pr view 12` or gh api', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  for (const command of ['gh pr merge 12', 'gh pr merge --squash --repo o/r 12', 'git push && gh pr merge 12 --squash', 'pnpm test || true; gh pr merge -d 12']) {
+    expect((await merge($, command)).deny, command).toContain("PR #12 isn't ready")
+  }
+  expect(reached.n).toBe(0)
+  for (const command of ['gh pr view 12', 'gh api repos/o/r/pulls/12/merge -X PUT', 'echo gh pr merge 12', 'git commit -m "gh pr merge 12"']) {
+    expect((await merge($, command)).text, command).toBe('Merged #416')
+  }
+  expect(reached.n).toBe(4)
+  expect(w.logs).toEqual([])
+})
+
+test('#31: a merge in a chain is refused whole, and a subagent\'s is refused like the main agent\'s', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 }), served({}, { number: 13, head: 'feat/13' })])
+  expect((await merge($, 'gh pr merge 13 && gh pr merge 12')).deny).toContain("PR #12 isn't ready") // 13 is ready, 12 is not: nothing merges
+  expect((await merge($, 'gh pr merge 12', 'toolu_s', 'a-sub')).deny).toContain("PR #12 isn't ready")
+  expect(reached.n).toBe(0)
+})
+
+test('#31: --repo naming another repository lets the merge through and says so', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  expect((await merge($, 'gh pr merge 12 --repo someone/else')).text).toBe('Merged #416')
+  expect(reached.n).toBe(1)
+  expect(w.logs).toEqual(["agent-orb can't say PR #12 is ready: it is in someone/else, and the plugin reads github.com/o/r only. The merge goes ahead."])
+})
+
+test('#31: a branch name, and no selector at all (the branch the session is on now), find the PR', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/HEAD'] = 'ref: refs/heads/feat/13\n' // moved since the session started on `dev`
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12, head: 'fix/12-x' }), served({}, { number: 13, head: 'feat/13' })])
+  expect((await merge($, 'gh pr merge fix/12-x --squash')).deny).toContain("PR #12 isn't ready")
+  expect((await merge($, 'gh pr merge --squash')).text).toBe('Merged #416') // on feat/13, which is ready
+  w.files['/repo/.git/HEAD'] = 'ref: refs/heads/fix/12-x\n'
+  expect((await merge($, 'gh pr merge --squash')).deny).toContain("PR #12 isn't ready")
+  expect(reached.n).toBe(1)
+})
+
+test('#31: in a worktree the current branch is read from the worktree\'s own HEAD', opts, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  inWorktree(w)
+  w.files[`${WT}/.git`] = 'gitdir: /repo/.git/worktrees/w\n'
+  w.files['/repo/.git/worktrees/w/HEAD'] = 'ref: refs/heads/fix/12-x\n'
+  w.files['/repo/.git/HEAD'] = 'ref: refs/heads/release/0.15\n' // the main tree is on another branch
+  w.factory.prs = [served({ findings: { ok: false, note: 'open' } }, { number: 12, head: 'fix/12-x' })]
+  w.factory.readAt = T0
+  await startIn($, WT)
+  await $.turn.start({ text: 'go', turnId: 't-1' })
+  await w.clock.advance(2_000)
+  expect((await merge($, 'gh pr merge --squash')).deny).toContain("PR #12 isn't ready")
+})
+
+test('#31: a detached HEAD with no selector has no PR to name: the merge goes ahead, and says why', opts, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/HEAD'] = 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0\n'
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  expect((await merge($, 'gh pr merge --squash')).text).toBe('Merged #416')
+  expect(w.logs).toEqual(["agent-orb can't say which PR this is: no branch to name it. The merge goes ahead."])
+})
+
+test('#31: a merge nothing is asked to judge costs nothing: a Bash call that is not one reads no file and makes no request', opts, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served()])
+  const fetches = w.spy.fetches.length
+  const procs = w.spy.procs.length
+  const reads = w.spy.reads.length
+  expect((await merge($, 'ls -la')).text).toBe('Merged #416')
+  expect(w.spy.fetches.length).toBe(fetches)
+  expect(w.spy.procs.length).toBe(procs)
+  expect(w.spy.reads.length).toBe(reads) // #31 R18: no file either
+  expect(w.logs).toEqual([])
+})
+
+test('#31 R18: a merge reads files and nothing else: no process, no request, with a selector or without one', opts, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  const procs = w.spy.procs.length
+  const fetches = w.spy.fetches.length
+  const before = w.spy.reads.length
+  await merge($, 'gh pr merge 416', 'toolu_a')
+  const withSelector = w.spy.reads.slice(before)
+  expect(withSelector).not.toContain('/repo/.git/HEAD') // the number names the PR: the current branch is not asked
+  expect(withSelector.length).toBeGreaterThan(0) // the branch's head is (R8)
+  w.files['/repo/.git/HEAD'] = 'ref: refs/heads/fix/409-token-retry\n'
+  await merge($, 'gh pr merge --squash', 'toolu_b')
+  expect(w.spy.reads).toContain('/repo/.git/HEAD')
+  expect(w.spy.procs.length).toBe(procs)
+  expect(w.spy.fetches.length).toBe(fetches)
+})
+
+test('#31 R3: the memory is this repository\'s: a project with no remote asks for none and refuses nothing', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.repo.remote = null
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  expect(w.factory.calls).toEqual([])
+  expect((await merge($, 'gh pr merge 416')).text).toBe('Merged #416')
+  expect(reached.n).toBe(1)
+})
+
+test('#31 R4: `bash -c` and `sh -c` are read like the command inside them; backticks, xargs and watch are not (the README says so)', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  for (const command of ['bash -c "gh pr merge 12"', "sh -c 'git push && gh pr merge 12 --squash'", 'zsh -lc "gh pr merge 12"']) {
+    expect((await merge($, command)).deny, command).toContain("PR #12 isn't ready")
+  }
+  expect(reached.n).toBe(0)
+  for (const command of ['echo `gh pr merge 12`', 'echo 12 | xargs gh pr merge', 'watch gh pr merge 12']) expect((await merge($, command)).text, command).toBe('Merged #416')
+})
+
+test('#31 R6: a cd earlier in the command, or GH_REPO set for it, may mean another repository: it goes ahead, and says so', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  for (const command of ['cd ../other && gh pr merge 12', 'GH_REPO=other/repo gh pr merge 12', 'env GH_REPO=other/repo gh pr merge 12', '(cd ../other; gh pr merge 12)']) {
+    expect((await merge($, command)).text, command).toBe('Merged #416')
+  }
+  expect(reached.n).toBe(4)
+  expect(w.logs.map((l) => l.replace(/^.*is ready: /, ''))).toEqual([
+    'a `cd` earlier in the command may have changed the repository. The merge goes ahead.', 'GH_REPO is set for it, so the repository may not be this one. The merge goes ahead.',
+    'GH_REPO is set for it, so the repository may not be this one. The merge goes ahead.', 'a `cd` earlier in the command may have changed the repository. The merge goes ahead.'])
+  expect((await merge($, 'cd ../other && gh pr merge 12 --repo o/r')).deny).toContain("PR #12 isn't ready") // --repo names it: this one, judged
+})
+
+test('#31 R6 round 2: `cd /abs/path/to/repo && gh pr merge 12` is this repository: it is judged. A cd anywhere else still goes ahead', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on) // the session's root is /repo
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  for (const command of ['cd /repo && gh pr merge 12', 'cd /repo/packages/mod && gh pr merge 12 --squash', 'cd packages/mod && gh pr merge 12', 'cd /repo/ && git push && gh pr merge 12', 'bash -c "cd /repo && gh pr merge 12"']) {
+    expect((await merge($, command)).deny, command).toContain("PR #12 isn't ready")
+  }
+  expect(reached.n).toBe(0)
+  expect(w.logs).toEqual([])
+  for (const command of ['cd /repo-old && gh pr merge 12', 'cd /other/repo && gh pr merge 12', 'cd /repo/../other && gh pr merge 12', 'cd ~/repo && gh pr merge 12', 'cd $REPO && gh pr merge 12', 'cd /repo && cd .. && gh pr merge 12']) {
+    expect((await merge($, command)).text, command).toBe('Merged #416')
+  }
+  expect(reached.n).toBe(6)
+  expect(w.logs.every((l) => l.endsWith('a `cd` earlier in the command may have changed the repository. The merge goes ahead.'))).toBe(true)
+  expect(w.logs.length).toBe(6)
+})
+
+test('#31 R7: --disable-auto is not a merge (it turns auto-merge off), and --auto is judged like any other', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  expect((await merge($, 'gh pr merge 12 --disable-auto', 'toolu_a')).text).toBe('Merged #416')
+  expect(w.logs).toEqual([]) // no verdict at all: not even a line
+  expect((await merge($, 'gh pr merge 12 --auto --squash', 'toolu_b')).deny).toContain("PR #12 isn't ready")
+  expect(reached.n).toBe(1)
+})
+
+// #31 R8, round 2: `gh pr merge` merges the PR's remote head, so it is the remote-tracking ref (`refs/remotes/<remote>/<branch>`, the remote that is the session's) the memory's head is compared with:
+// an unpushed local commit does not move it, and a push from this checkout does.
+const CONFIG = '[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n'
+const TRACKING = '/repo/.git/refs/remotes/origin/fix/409-token-retry'
+
+test('#31 R8: a push since GitHub was read moves the remote-tracking ref, and the merge is not judged by the head that was read; loose or packed, with no process', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/config'] = CONFIG
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  const procs = w.spy.procs.length
+  const head = 'e4f5a6b'.padEnd(40, '0')
+  w.files[TRACKING] = `${'b'.repeat(40)}\n` // pushed again from this checkout since: the memory's "open finding" is the old head's
+  expect((await merge($, 'gh pr merge 416', 'toolu_a')).text).toBe('Merged #416')
+  expect(w.logs).toEqual(["agent-orb can't say PR #416 is ready: the branch moved since GitHub was read. The merge goes ahead."])
+  w.files[TRACKING] = `${head}\n` // the same head GitHub was read at: judged
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).deny).toContain("PR #416 isn't ready")
+  delete w.files[TRACKING] // packed, as git leaves a ref after `git pack-refs` or a clone
+  w.files['/repo/.git/packed-refs'] = `# pack-refs with: peeled fully-peeled sorted\n${'c'.repeat(40)} refs/remotes/origin/fix/409-token-retry\n${head} refs/remotes/origin/other\n`
+  expect((await merge($, 'gh pr merge 416', 'toolu_c')).text).toBe('Merged #416')
+  w.files['/repo/.git/packed-refs'] = `${head} refs/remotes/origin/fix/409-token-retry\n`
+  expect((await merge($, 'gh pr merge 416', 'toolu_d')).deny).toContain("PR #416 isn't ready")
+  w.files['/repo/.git/packed-refs'] = ''
+  expect((await merge($, 'gh pr merge 416', 'toolu_e')).deny).toContain("PR #416 isn't ready") // no such ref here: nothing to compare
+  expect(reached.n).toBe(2)
+  expect(w.spy.procs.length).toBe(procs)
+})
+
+test('#31 R8 round 2: an unpushed local commit is not "moved": gh merges the remote head, which has not changed', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/config'] = CONFIG
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  w.files[TRACKING] = `${'e4f5a6b'.padEnd(40, '0')}\n` // what GitHub holds, as this checkout last knew it
+  w.files['/repo/.git/refs/heads/fix/409-token-retry'] = `${'d'.repeat(40)}\n` // a local commit that was never pushed
+  expect((await merge($, 'gh pr merge 416')).deny).toContain("PR #416 isn't ready")
+  w.files['/repo/.git/packed-refs'] = `${'d'.repeat(40)} refs/heads/fix/409-token-retry\n`
+  delete w.files['/repo/.git/refs/heads/fix/409-token-retry']
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).deny).toContain("PR #416 isn't ready") // packed, too
+  expect(reached.n).toBe(0)
+  expect(w.logs).toEqual([])
+})
+
+test('#31 R8 round 2: the remote is the one whose url is the session\'s, not a name guessed; with none, or its ref missing, nothing is compared and the merge is judged', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/config'] = '[remote "fork"]\n\turl = git@github.com:me/r.git\n[remote "gh"]\n\turl = https://github.com/o/r.git\n'
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  w.files['/repo/.git/refs/remotes/fork/fix/409-token-retry'] = `${'b'.repeat(40)}\n` // another remote's ref says nothing about this repository's PR
+  w.files['/repo/.git/refs/remotes/origin/fix/409-token-retry'] = `${'b'.repeat(40)}\n` // and nor does one named origin that is not the session's remote
+  expect((await merge($, 'gh pr merge 416', 'toolu_a')).deny).toContain("PR #416 isn't ready")
+  w.files['/repo/.git/refs/remotes/gh/fix/409-token-retry'] = `${'b'.repeat(40)}\n` // the session's remote is called gh
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).text).toBe('Merged #416')
+  w.files['/repo/.git/config'] = '' // no config to read: no remote to name
+  expect((await merge($, 'gh pr merge 416', 'toolu_c')).deny).toContain("PR #416 isn't ready")
+  expect(reached.n).toBe(1)
+})
+
+test('#31 R14: a merge let through tells the agent so, after the tool\'s own result, and the person in the transcript; the result itself is untouched', opts, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ gate: { ok: null, note: 'No test run on e4f5a6b' } })])
+  const r = await merge($, 'gh pr merge 416 --squash')
+  expect(r).toMatchObject({ result: 'merged', text: 'Merged #416', context: ["agent-orb can't say PR #416 is ready: no test run on e4f5a6b. The merge goes ahead."] })
+  expect(w.logs).toEqual(["agent-orb can't say PR #416 is ready: no test run on e4f5a6b. The merge goes ahead."])
+  await w.clock.advance(2_000)
+  const result = w.sent().find((e) => e.kind === 'tool.result' && e.data.tool_use_id === 'toolu_m').data
+  expect(result.output_size).toBe('Merged #416'.length) // what the history counts is the tool's, not the note
+})
+
+// ── v0.4 slice 5 (#31): Live's Stop ──
+// The studio queues a stop for one stall (the agent and the stall's `since`); the plugin asks for it on its 60-second poll (GET /api/stop, with its token), and ends the main turn with $.turn.abort only
+// if that stall still holds. It sends one session.stopped event either way and says so in the session.
+const stopped = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'session.stopped')
+
+/** A tool beneath the mod that does not return until `finish()`. Registered before the test's first `$` call, as the engine's hooks are. */
+const hangs = (on: any) => {
+  let release: (() => void) | undefined
+  on('tool.call', () => new Promise((resolve) => { release = () => resolve({ result: 'ok', text: 'ok' }) }))
+  return { finish: () => release?.() }
+}
+/** A WebFetch of main's (or of `agentId`'s) runs 20 minutes on `hang` (the stall is at 15; the mock clock starts when the file loaded, which the real clock the mod stamps with has left behind by the time a late test runs). Gives the stall's `since` as stall.start carried it, and a way to let the tool return. */
+async function stalls($: any, w: ReturnType<typeof world>, hang: ReturnType<typeof hangs>, agentId?: string) {
+  const call = $.tool.call({ tool: 'WebFetch', tool_use_id: 'toolu_w', url: 'https://x', ...(agentId ? { agentId } : {}) })
+  call.catch(() => {}) // a call still pending at teardown is rejected by the kit, as the tests above say
+  await w.clock.advance(20 * MIN)
+  const since = w.sent().find((e) => e.kind === 'stall.start').data.since as number
+  return { since, finish: async () => (hang.finish(), await call, await w.clock.advance(2_000)) }
+}
+const STALE = 'agent-orb: a stop came from the studio, but the stall had ended; nothing was stopped'
+
+test('#31: a stop for the stall that still holds ends the main turn the plugin holds, sends session.stopped, and says so in the session', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($) // main's turn t-1 is running
+  const { since } = await stalls($, w, hang)
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual(['t-1'])
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: true }])
+  expect(stopped(w)[0]).not.toHaveProperty('agent_id') // the session's, not an agent's
+  expect(w.logs).toEqual(['agent-orb: this turn was stopped from the studio'])
+  expect(w.notes.at(-1)).toBe('this turn was stopped from the studio')
+  expect(w.titles.at(-1)).toBe('agent-orb: stopped')
+  expect(w.stop.calls.every((u) => u === 'http://127.0.0.1:4040/api/stop?session=s-1')).toBe(true)
+})
+
+test('#31 R10: the poll carries the plugin\'s token, so a page or another process cannot take a stop', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.stop.headers.length).toBeGreaterThan(0)
+  expect(w.stop.headers.every((h) => h.authorization === 'Bearer tok')).toBe(true)
+})
+
+test('#31 R1: a stop clicked for a stall that has since ended stops nothing: the work that carried on is not killed', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  const { since, finish } = await stalls($, w, hang)
+  await finish() // the e2e tests finished at T+20 s and the agent carries on
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000) // the poll takes the stop at T+50 s
+  expect(w.abort.calls).toEqual([])
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: false }])
+  expect(w.logs).toEqual([STALE])
+})
+
+test('#31 R1: nor does it stop the new turn of a person who pressed Esc and typed again within the minute', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  const { since, finish } = await stalls($, w, hang)
+  await finish()
+  await $.turn.start({ text: 'carry on instead', turnId: 't-2' })
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual([]) // t-2 is running, and is not the stalled turn
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: false }])
+})
+
+test('#31 R1: a stop names the agent and the stall: another agent\'s stall, or a later stall of the same agent, is not the one that was clicked', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  const { since } = await stalls($, w, hang)
+  w.stop.since = since + 1 // a stall that began a moment later is another stall
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  w.stop.since = since
+  w.stop.agent = 'a-child' // main is the one that stalls
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual([])
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: false }, { aborted: false }])
+})
+
+test('#31: it ends the main turn, not a subagent\'s that started after it', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  const { since } = await stalls($, w, hang)
+  await $.turn.start({ text: 'sub', turnId: 't-sub', agentId: 'a-child' })
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual(['t-1'])
+})
+
+test('#31: a stalled subagent is stopped by ending the main turn it runs under (the proof on #31), and the stall is the subagent\'s', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  await $.turn.start({ text: 'sub', turnId: 't-sub', agentId: 'a-child' })
+  const { since } = await stalls($, w, hang, 'a-child')
+  w.stop.agent = 'a-child'
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual(['t-1'])
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: true }])
+})
+
+test('#31: with no main turn running there is nothing to stop: the event is sent all the same (it clears the request), and the session is told so', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  await boot($)
+  await $.turn.start({ text: 'sub', turnId: 't-sub', agentId: 'a-child' })
+  const { since } = await stalls($, w, hang, 'a-child') // a-child stalls...
+  await $.turn.complete({ turnId: 't-1', answer: 'done', durationMs: 1_000, isAborted: false, reason: 'answer' }) // ...and main's turn has ended
+  w.stop.agent = 'a-child'
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual([])
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: false }])
+  expect(w.logs).toEqual(['agent-orb: a stop came from the studio, but no turn was running'])
+})
+
+test('#31: a turn the engine says is not the running one (it ended a moment ago) is "nothing to stop" too, not an error', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  w.abort.reject = true
+  await boot($)
+  const { since } = await stalls($, w, hang)
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: false }])
+  expect(w.logs).toEqual(['agent-orb: a stop came from the studio, but no turn was running'])
+})
+
+test('#31: one stop is one event: the next polls find nothing, and the poll is once a minute', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  const { since } = await stalls($, w, hang)
+  w.stop.since = since
+  w.stop.queued = true
+  const polls = w.stop.calls.length
+  await w.clock.advance(3 * MIN)
+  expect(stopped(w)).toHaveLength(1)
+  expect(w.abort.calls).toEqual(['t-1'])
+  expect(w.stop.calls.length - polls).toBeGreaterThanOrEqual(2)
+  expect(w.stop.calls.length - polls).toBeLessThanOrEqual(4) // not at every 2-second tick
+})
+
+test('#31: a server that cannot be reached stops nothing, says nothing, and is asked again a minute later', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  w.stop.mode = 'throw'
+  await boot($)
+  const { since } = await stalls($, w, hang)
+  expect(w.abort.calls).toEqual([])
+  expect(stopped(w)).toEqual([])
+  expect(w.logs).toEqual([])
+  w.stop.mode = 'ok'
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual(['t-1'])
+})
+
+test('#31 R2: main waiting on a long Agent call is not stalled; the subagent it started is, on its own', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  on('tool.call', () => new Promise(() => {})) // the foreground subagent runs, and its Agent call with it
+  await boot($)
+  void $.tool.call({ tool: 'Agent', tool_use_id: 'toolu_a', description: 'd', prompt: 'p', subagent_type: 'implementer' }).catch(() => {})
+  await $.turn.start({ text: 'sub', turnId: 't-sub', agentId: 'a-child' }) // and then it goes quiet
+  await w.clock.advance(20 * MIN) // (see `stalls` for the margin)
+  const starts = w.sent().filter((e) => e.kind === 'stall.start')
+  expect(starts.map((e) => e.agent_id)).toEqual(['a-child']) // no stall for main, which would read "stuck on Agent" and offer a Stop that kills working work
+  expect(w.notes).toHaveLength(1)
+})
+
+test('#31 R17: a background agent is also one whose own file says `background: true`', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.files['/repo/.claude/agents/watcher.md'] = '---\nname: watcher\nbackground: true\n---\nWatch.'
+  await boot($)
+  const spawn = (type: string, id: string) => $.agent.spawn({ tool_use_id: `toolu_${id}`, prompt: 'p', description: 'd', subagentType: type, provider: { plugin: 'engine', tier: 'core' }, parentModel: 'claude-opus-5-5', background: false, fork: false })
+  w.engine.agentId = 'a-file'
+  await spawn('watcher', 'file') // the request says foreground; its file says background
+  w.engine.agentId = 'a-plain'
+  await spawn('implementer', 'plain')
+  await w.clock.advance(2_000)
+  const spawned = w.sent().filter((e) => e.kind === 'agent.spawn')
+  expect(spawned.find((e) => e.agent_id === 'a-file').data.background).toBe(true)
+  expect(spawned.find((e) => e.agent_id === 'a-plain').data).not.toHaveProperty('background')
+})
+
+test('#31: a background agent is marked on its agent.spawn, and a foreground one is not', opts, async ($: any, on: any) => {
+  const w = world(on)
+  await boot($)
+  const spawn = (id: string, background: boolean) => $.agent.spawn({ tool_use_id: `toolu_${id}`, prompt: 'p', description: 'd', subagentType: 'Explore', provider: { plugin: 'engine', tier: 'core' }, parentModel: 'claude-opus-5-5', background, fork: false })
+  w.engine.agentId = 'a-bg'
+  await spawn('bg', true)
+  w.engine.agentId = 'a-fg'
+  await spawn('fg', false)
+  await w.clock.advance(2_000)
+  const spawned = w.sent().filter((e) => e.kind === 'agent.spawn')
+  expect(spawned.find((e) => e.agent_id === 'a-bg').data.background).toBe(true)
+  expect(spawned.find((e) => e.agent_id === 'a-fg').data).not.toHaveProperty('background')
 })

@@ -272,6 +272,9 @@ function writeRows(db: Store, ev: Event[], source: Source) {
     { host: e.host, ts: e.ts, free: e.data.mem_free, total: e.data.mem_total, docker: e.data.docker, containers: JSON.stringify(e.data.containers) });
   }
 
+  // v0.4 slice 5 (#31): the session answered the studio's Stop, so the queued stop is done: the one asked for before the answer was made (a late answer, from the plugin's outbox, is not for a newer stop).
+  for (const e of only(ev, 'session.stopped')) run(db, 'DELETE FROM stops WHERE session_id = :id AND requested_at <= :ts', { id: e.session_id, ts: e.ts });
+
   // Slice 5: the skills and custom agents a session lists, one SkillDef per project, kind, origin and name. A field a later event leaves out keeps
   // what an earlier one said (a plugin skill's references arrive with its first load). tokens is 0 until one says.
   const def = (e: Event, kind: 'skill' | 'agent', d: { name: string; source: string; plugin?: string; tokens?: number; description?: string; refs?: { skills: string[]; agents: string[] }; preload?: string[] }) => ({

@@ -41,7 +41,7 @@ it('every GET route finds all its statements in the cache on its second call', a
   for (const round of [1, 2]) {
     for (const url of urls) {
       const before = prepares;
-      const res = await app.inject({ url });
+      const res = await app.inject({ url, headers: { authorization: 'Bearer t' } }); // GET /api/stop takes the plugin's token
       expect([url.split('?')[0], res.statusCode]).toEqual([url.split('?')[0], 200]);
       if (round === 2 && prepares > before) again[url.split('?')[0]!] = (again[url.split('?')[0]!] ?? 0) + prepares - before;
     }
