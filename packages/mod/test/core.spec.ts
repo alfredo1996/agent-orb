@@ -207,6 +207,29 @@ describe('checkStalls', () => {
     t.tools.set('toolu_3', { id: 'toolu_3', tool: 'Bash', agent: 'a1', since: 10 * MIN, waiting: false });
     expect(checkStalls(t, 20 * MIN, 15 * MIN).started).toEqual([]);
   });
+
+  // #31 R2: a foreground subagent that runs past the threshold left main reading as "stuck on Agent", with a Stop turn that would kill working work.
+  it('an agent\'s own Agent or Task call is never a stall, and the agent is not silent either: the subagent it started is watched for its own', () => {
+    for (const tool of ['Agent', 'Task']) {
+      const t = tracker();
+      t.agents.get('a1')!.lastTs = 20 * MIN; // the subagent is working
+      t.tools.set('toolu_4', { id: 'toolu_4', tool, agent: 'main', since: 0, waiting: false });
+      expect(checkStalls(t, 20 * MIN, 15 * MIN).started, tool).toEqual([]);
+    }
+  });
+
+  it('the subagent it started is flagged when it stalls, and main is not flagged with it', () => {
+    const t = tracker();
+    t.tools.set('toolu_4', { id: 'toolu_4', tool: 'Agent', agent: 'main', since: 0, waiting: false });
+    expect(checkStalls(t, 20 * MIN, 15 * MIN).started.map((s) => s.key)).toEqual(['agent:a1']);
+  });
+
+  it('any other tool main runs past the threshold still stalls it', () => {
+    const t = tracker();
+    t.agents.get('a1')!.lastTs = 20 * MIN;
+    t.tools.set('toolu_5', { id: 'toolu_5', tool: 'Bash', agent: 'main', since: 0, waiting: false });
+    expect(checkStalls(t, 20 * MIN, 15 * MIN).started.map((s) => s.agent)).toEqual(['main']);
+  });
 });
 
 describe('statusText', () => {

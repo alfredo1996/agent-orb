@@ -1,5 +1,6 @@
 import type { Event, EventKind } from '@agent-orb/shared';
 import roles from '@agent-orb/shared/roles.json' with { type: 'json' };
+import { findingRef } from '../content-store.ts';
 import { costUsd } from '../cost.ts';
 import { all, get, run, type Store } from './store.ts';
 
@@ -118,9 +119,10 @@ function writeRows(db: Store, ev: Event[], source: Source) {
                claude_version = CASE WHEN :imp THEN coalesce(claude_version, :version) ELSE :version END,
                content = CASE WHEN :imp THEN coalesce(content, :content) ELSE coalesce(:content, content) END,
                source = CASE WHEN :imp AND started_at IS NOT NULL THEN source ELSE coalesce(source, :source) END,
-               recorded = CASE WHEN :imp THEN recorded ELSE 1 END
+               recorded = CASE WHEN :imp THEN recorded ELSE 1 END,
+               branch = coalesce(branch, :branch)
              WHERE id = :id`,
-    { id: e.session_id, ts: e.ts, model: e.data.model, version: e.data.claude_version, content: e.data.content, source: e.data.source, imp });
+    { id: e.session_id, ts: e.ts, model: e.data.model, version: e.data.claude_version, content: e.data.content, source: e.data.source, imp, branch: e.project.git_branch });
     run(db, `UPDATE agents SET model = coalesce(model, :model), started_at = ${earliest('started_at', 'ts')} WHERE id = :id`, { id: agentKey(e), ts: e.ts, model: e.data.model });
   }
 
@@ -217,6 +219,70 @@ function writeRows(db: Store, ev: Event[], source: Source) {
              ON CONFLICT (session_id, pr_id) DO UPDATE SET ts = ${earliest('session_prs.ts', 'ts')}`, { session: e.session_id, id, ts: e.ts });
   }
 
+  // v0.4 slice 1 (#27, Factory): the open PRs replace the project's last read when they are newer than it (an older read arriving late changes nothing); a finding and a gate
+  // keep the latest report's word, whatever order the reports arrive in. A finding's title and reason go to the text store (content-store.ts), never here.
+  for (const e of only(ev, 'project.open_prs')) {
+    const project = projectId(e);
+    if (!Number(run(db, 'UPDATE projects SET prs_read_at = :ts WHERE id = :project AND (prs_read_at IS NULL OR prs_read_at < :ts)', { project, ts: e.ts }).changes)) continue;
+    run(db, 'DELETE FROM open_prs WHERE project_id = :project', { project });
+    for (const p of e.data.prs) {
+      run(db, `INSERT INTO open_prs (project_id, number, head, head_oid, merge_state, last_commit_at, checks, bots) VALUES (:project, :number, :head, :oid, :state, :at, :checks, :bots)
+               ON CONFLICT (project_id, number) DO UPDATE SET head = excluded.head, head_oid = excluded.head_oid, merge_state = excluded.merge_state, last_commit_at = excluded.last_commit_at,
+                 checks = excluded.checks, bots = excluded.bots`,
+      { project, number: p.number, head: p.head, oid: p.head_oid, state: p.merge_state, at: p.last_commit_at, checks: JSON.stringify(p.checks), bots: JSON.stringify(p.bots) });
+      // #28: when it opened and the issue it closes, kept on the PR (which outlives the snapshot above) for the cost windows. Neither is ever erased by a read that lacks it.
+      run(db, `INSERT INTO pull_requests (id, number, created_at, issue) VALUES (:id, :number, :created_at, :issue)
+               ON CONFLICT (id) DO UPDATE SET created_at = coalesce(excluded.created_at, pull_requests.created_at), issue = coalesce(excluded.issue, pull_requests.issue)`,
+      { id: `${project}:${p.number}`, number: p.number, created_at: p.created_at, issue: p.issue });
+    }
+    if (e.data.issues) { // absent says nothing about the issues: the last read stands
+      // #32: an issue the read no longer lists is closed (or past gh's limit): it keeps its milestone and title and is marked gone, so the board can show it as Merged on its milestone. The ones listed are open.
+      run(db, 'UPDATE open_issues SET gone_at = coalesce(gone_at, :ts) WHERE project_id = :project', { project, ts: e.ts });
+      for (const i of e.data.issues) {
+        run(db, `INSERT INTO open_issues (project_id, number, milestone, title, gone_at) VALUES (:project, :number, :milestone, :title, NULL)
+                 ON CONFLICT (project_id, number) DO UPDATE SET milestone = excluded.milestone, title = excluded.title, gone_at = NULL`, { project, number: i.number, milestone: i.milestone, title: i.title });
+      }
+      // A title travels only with Content on full: a read of issues that carries none (Content off, or an excluded project) clears the closed rows' titles too, as it just cleared the open ones'.
+      // ponytail: a read of no issues at all says nothing either way (Content on full sends the same), so the issue that just closed keeps its title until a read of others carries none.
+      if (e.data.issues.length && !e.data.issues.some((i) => i.title)) run(db, 'UPDATE open_issues SET title = NULL WHERE project_id = :project', { project });
+    }
+  }
+  // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it
+  // handled, not what the review found. The role is the reporting agent's, from its spawn; with none (#34: orb-role is optional), an agent that wrote no file is the reviewer.
+  // ponytail: a fixer that changed code through Bash alone (sed, a script) wrote no file here and counts as a reviewer. Read its Bash calls if that is ever seen.
+  for (const e of only(ev, 'findings.report')) {
+    const key = { project: projectId(e), ref: findingRef(e.data), ts: e.ts }; // its PR when the fence named one, else its branch
+    const role = get(db, 'SELECT role FROM agents WHERE id = :id', { id: agentKey(e) })?.role;
+    const reviewer = role === 'reviewer' || (role !== 'developer' && !get(db, `SELECT 1 AS x FROM turns t JOIN tool_calls c ON c.turn_id = t.id
+      JOIN files_touched f ON f.tool_use_id = c.tool_use_id AND f.mode = 'write' WHERE t.agent_id = :id LIMIT 1`, { id: agentKey(e) }));
+    run(db, `INSERT INTO finding_reports (project_id, ref, ts, dropped) VALUES (:project, :ref, :ts, :dropped)
+             ON CONFLICT (project_id, ref) DO UPDATE SET ts = excluded.ts,
+               dropped = CASE WHEN :reviewer THEN excluded.dropped ELSE max(finding_reports.dropped, excluded.dropped) END WHERE excluded.ts >= finding_reports.ts`,
+    { ...key, dropped: e.data.dropped, reviewer });
+    if (reviewer) run(db, 'UPDATE finding_reports SET reviewed_at = max(coalesce(reviewed_at, 0), :ts) WHERE project_id = :project AND ref = :ref', key); // #32: a fixer's report is not the review
+    for (const f of e.data.findings) {
+      run(db, `INSERT INTO findings (project_id, ref, id, severity, file, fate, ts) VALUES (:project, :ref, :id, :severity, :file, :fate, :ts)
+               ON CONFLICT (project_id, ref, id) DO UPDATE SET severity = excluded.severity, file = excluded.file, fate = excluded.fate, ts = excluded.ts WHERE excluded.ts >= findings.ts`,
+      { ...key, id: f.id, severity: f.severity, file: f.file, fate: f.fate });
+    }
+  }
+  for (const e of only(ev, 'gate.report')) {
+    run(db, `INSERT INTO gates (project_id, commit_sha, result, ts) VALUES (:project, :commit, :result, :ts)
+             ON CONFLICT (project_id, commit_sha) DO UPDATE SET result = excluded.result, ts = excluded.ts WHERE excluded.ts >= gates.ts`,
+    { project: projectId(e), commit: e.data.commit, result: e.data.result, ts: e.ts });
+  }
+
+  // v0.4 slice 3 (#29): the latest sample of each host replaces the one before; an older one, arriving late, changes nothing. The sample is about the host, so it is kept by host alone.
+  for (const e of only(ev, 'machine.sample')) {
+    run(db, `INSERT INTO machine_samples (host, ts, mem_free, mem_total, docker, containers) VALUES (:host, :ts, :free, :total, :docker, :containers)
+             ON CONFLICT (host) DO UPDATE SET ts = excluded.ts, mem_free = excluded.mem_free, mem_total = excluded.mem_total, docker = excluded.docker, containers = excluded.containers
+             WHERE excluded.ts >= machine_samples.ts`,
+    { host: e.host, ts: e.ts, free: e.data.mem_free, total: e.data.mem_total, docker: e.data.docker, containers: JSON.stringify(e.data.containers) });
+  }
+
+  // v0.4 slice 5 (#31): the session answered the studio's Stop, so the queued stop is done: the one asked for before the answer was made (a late answer, from the plugin's outbox, is not for a newer stop).
+  for (const e of only(ev, 'session.stopped')) run(db, 'DELETE FROM stops WHERE session_id = :id AND requested_at <= :ts', { id: e.session_id, ts: e.ts });
+
   // Slice 5: the skills and custom agents a session lists, one SkillDef per project, kind, origin and name. A field a later event leaves out keeps
   // what an earlier one said (a plugin skill's references arrive with its first load). tokens is 0 until one says.
   const def = (e: Event, kind: 'skill' | 'agent', d: { name: string; source: string; plugin?: string; tokens?: number; description?: string; refs?: { skills: string[]; agents: string[] }; preload?: string[] }) => ({
@@ -267,6 +333,12 @@ function writeRows(db: Store, ev: Event[], source: Source) {
       run(db, 'UPDATE sessions SET plugin_first = min(coalesce(plugin_first, :lo), :lo), plugin_last = max(coalesce(plugin_last, :hi), :hi) WHERE id = :id', { id, lo, hi });
     }
   }
+
+  // v0.4 slice 3 (#29): the last ts of any event of each session, whichever kind and source (a machine sample, a read of the open PRs): "Left running" reads a project's quiet from it. Apart from
+  // plugin_last, which is the stretch the import fills around and so counts only the prompts, requests and calls.
+  const heard = new Map<string, number>();
+  for (const e of ev) heard.set(e.session_id, Math.max(heard.get(e.session_id) ?? 0, e.ts));
+  for (const [id, ts] of heard) run(db, 'UPDATE sessions SET seen_at = max(coalesce(seen_at, 0), :ts) WHERE id = :id', { id, ts });
 }
 
 type Fp = { id: string; project: string; cwd: string | null; path: string; scope: 'project' | 'user'; hash: string; ts: number };

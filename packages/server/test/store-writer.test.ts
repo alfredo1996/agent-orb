@@ -490,6 +490,53 @@ describe('the plugin\'s stretch', () => {
   });
 });
 
+describe('a session\'s last event (#29)', () => {
+  const sample = (ts: number, session = 's-1') => ev('machine.sample', { docker: 'stopped', containers: [] }, { session, ts });
+  const seen = (session = 's-1') => q('SELECT seen_at AS seen, plugin_last AS last FROM sessions WHERE id = :id', { id: session })[0];
+
+  it('is the latest ts of any event of the session, of any kind: a start, a machine sample, a read of the open PRs', () => {
+    plugin([start('startup', { ts: T })]);
+    expect(seen()!.seen).toBe(T);
+    plugin([sample(T + 5000)]);
+    expect(seen()!.seen).toBe(T + 5000);
+    plugin([ev('project.open_prs', { prs: [] }, { ts: T + 9000, remote: REMOTE })]);
+    expect(seen()!.seen).toBe(T + 9000);
+  });
+
+  it('only moves forward: an older event arriving late changes nothing; and it is its own per session', () => {
+    plugin([sample(T + 20_000), sample(T + 1000, 's-2')]);
+    plugin([sample(T + 10_000)]);
+    expect([seen('s-1')!.seen, seen('s-2')!.seen]).toEqual([T + 20_000, T + 1000]);
+  });
+
+  it('is not the plugin\'s stretch, which a machine sample must not widen: the import fills around that', () => {
+    plugin([start('startup', { ts: T }), sample(T + 5000)]);
+    expect(seen()).toEqual({ seen: T + 5000, last: null });
+  });
+});
+
+describe('project.open_prs issues (#32): a title travels only with Content on full, and the next read clears it', () => {
+  const BILLING = 'github.com/alfredo1996/billing';
+  const read = (issues: object[], o: Opts = {}) => ev('project.open_prs', { prs: [], issues }, { remote: REMOTE, ...o });
+  const rows = (project: string) => q('SELECT number, title, gone_at IS NOT NULL AS gone FROM open_issues WHERE project_id = :project ORDER BY number', { project });
+
+  it('a read that carries no titles clears them from the open rows and from the gone ones, of its own project only; a read that carries titles leaves a gone row\'s as it is', () => {
+    plugin([read([{ number: 1, milestone: 'v1', title: 'One' }, { number: 2, milestone: 'v1', title: 'Two' }, { number: 3, milestone: 'v1', title: 'Three' }], { ts: T }),
+      read([{ number: 9, milestone: 'v1', title: 'Billing nine' }, { number: 8, milestone: 'v1', title: 'Billing eight' }], { remote: BILLING, session: 's-b', ts: T }),
+      read([{ number: 9, milestone: 'v1', title: 'Billing nine' }], { remote: BILLING, session: 's-b', ts: T + 1000 })]); // billing's 8 is gone, with its title
+    plugin([read([{ number: 2, milestone: 'v1', title: 'Two, again' }, { number: 3, milestone: 'v1', title: 'Three' }], { ts: T + 2000 })]); // 1 is gone; the read carries titles
+    expect(rows(REMOTE)).toEqual([{ number: 1, title: 'One', gone: 1 }, { number: 2, title: 'Two, again', gone: 0 }, { number: 3, title: 'Three', gone: 0 }]);
+    plugin([read([{ number: 3, milestone: 'v1' }], { ts: T + 3000 })]); // Content was turned off: 2 is gone now, and no title is sent
+    expect(rows(REMOTE)).toEqual([{ number: 1, title: null, gone: 1 }, { number: 2, title: null, gone: 1 }, { number: 3, title: null, gone: 0 }]);
+    expect(rows(BILLING)).toEqual([{ number: 8, title: 'Billing eight', gone: 1 }, { number: 9, title: 'Billing nine', gone: 0 }]);
+  });
+
+  it('a read of no issues at all says nothing about titles: the issue that just closed keeps its own', () => {
+    plugin([read([{ number: 1, milestone: 'v1', title: 'One' }], { ts: T }), read([], { ts: T + 1000 })]);
+    expect(rows(REMOTE)).toEqual([{ number: 1, title: 'One', gone: 1 }]);
+  });
+});
+
 describe('project.changes', () => {
   const sha = (c: string) => c.repeat(40);
   const changes = (commits: object[], o: Opts = {}) => ev('project.changes', { commits }, { remote: REMOTE, ...o });

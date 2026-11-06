@@ -322,11 +322,26 @@ function nameClass(name: string | undefined, args: string[], script = true): Com
 
 const testScript = (path: string | undefined) => path !== undefined && path.length < 300 && /(?:^|\/)(?:test|[^/]*[._-]tests?)(?:[._-][^/]*)?\.\w+$/.test(path); // test.sh, check.test.sh, run-tests.sh
 
-/** One simple command → its class. */
-function classOf(words: string[]): CommandClass {
+/** Where a simple command's own word is: past what a shell lets stand before it (`sudo`, `env`, `FOO=1`, a flag, `timeout 120`). */
+function headIndex(words: string[]): number {
   let i = 0;
   while (i < words.length && (BEFORE.has(words[i]!) || /^[A-Za-z_]\w*=/.test(words[i]!) || /^-|^\d+[smhd]?$/.test(words[i]!))) i++;
   if (words[i] === 'timeout') i += 2; // timeout 120 cmd
+  return i;
+}
+
+const SHELL = /^(?:ba|z)?sh$/;
+/** The script a shell runs when the simple command at `i` is `bash -c '…'`, `sh -c` or `zsh -lc`: one reading of -c, for the class and for the merge refusal. */
+function shellScript(words: string[], i: number): string | undefined {
+  if (!SHELL.test(words[i]?.split('/').at(-1) ?? '')) return undefined;
+  const rest = words.slice(i + 1);
+  const c = rest.findIndex((a) => /^-[a-z]*c$/.test(a));
+  return c >= 0 ? rest[c + 1] : undefined;
+}
+
+/** One simple command → its class. */
+function classOf(words: string[]): CommandClass {
+  const i = headIndex(words);
   const head = words[i]?.split('/').at(-1);
   const rest = words.slice(i + 1);
   if (!head) return 'other';
@@ -334,9 +349,9 @@ function classOf(words: string[]): CommandClass {
   if (head === 'git') return 'git';
   if (head === 'gh') return 'gh';
   if (head === 'docker' || head === 'docker-compose' || head === 'podman') return args.slice(0, 3).includes('build') ? 'build' : 'docker';
-  if (/^(?:ba|z)?sh$/.test(head)) {
-    const c = rest.findIndex((a) => /^-[a-z]*c$/.test(a));
-    return c >= 0 && rest[c + 1] !== undefined ? commandClass(rest[c + 1]!) : testScript(args[0]) ? 'test' : 'other';
+  if (SHELL.test(head)) {
+    const script = shellScript(words, i);
+    return script !== undefined ? commandClass(script) : testScript(args[0]) ? 'test' : 'other';
   }
   if (testScript(words[i])) return 'test'; // ./scripts/test.sh
   if (/^python3?$|^py$/.test(head)) return rest.includes('-m') ? classOf(rest.slice(rest.indexOf('-m') + 1)) : 'other';
@@ -364,6 +379,191 @@ export function commandClass(command: string): CommandClass {
   let best = CLASS_RANK.length - 1;
   for (const words of commands(command)) best = Math.min(best, CLASS_RANK.indexOf(classOf(words)));
   return CLASS_RANK[best]!;
+}
+
+// ── The merge refusal (v0.4 slice 5, #31; PROJECT.md §2: the one place the mod blocks Claude Code) ──────────────────
+
+/** The server's Cond (api/factory.ts): ok true holds, false is a definite no, null is not known. */
+export type Cond = { ok: boolean | null; note: string };
+/** What the plugin keeps of an open PR from GET /api/factory: enough to judge a merge, nothing it would have to fetch. `open`: its open findings, when the server named them (#31 R22). */
+export type PrMemory = { number: number; head: string | null; headOid: string; conditions: Record<'findings' | 'gate' | 'bots' | 'clean', Cond>; open?: { id: string; severity: string }[] };
+/** `readAt` is when GitHub was read (epoch ms), 0 when it never was. */
+export type FactoryMemory = { readAt: number; prs: PrMemory[] };
+export const REFUSE_MS = 10 * 60_000; // as the server's STALE_MS (api/factory.ts): older data is not trusted to refuse
+
+const CONDS = ['findings', 'gate', 'bots', 'clean'] as const;
+const condOf = (c: unknown): Cond | undefined => {
+  const x = c as { ok?: unknown; note?: unknown } | null | undefined;
+  return x && typeof x === 'object' && (x.ok === true || x.ok === false || x.ok === null) && typeof x.note === 'string' ? { ok: x.ok, note: x.note } : undefined;
+};
+const TOKEN = /^[\w.#-]{1,24}$/; // a finding's id or severity is a short token: anything longer is text, which a refusal the model reads does not repeat
+
+/** The open findings of one served PR, as ids and severities; nothing when there are none or any is not a plain token (the server's note says it then). */
+const openFindings = (findings: unknown): PrMemory['open'] => {
+  const open = (Array.isArray(findings) ? findings : []).filter((f: { fate?: unknown } | null) => f?.fate === 'open') as { id?: unknown; severity?: unknown }[];
+  return open.length && open.every((f) => typeof f.id === 'string' && TOKEN.test(f.id) && typeof f.severity === 'string' && TOKEN.test(f.severity)) ? open.map((f) => ({ id: f.id as string, severity: f.severity as string })) : undefined;
+};
+
+/**
+ * The server's answer to GET /api/factory, reduced to what a merge is judged by: each open PR's number, branch, head, four conditions and open findings, and when GitHub was read. Nothing when the
+ * text is not that answer (the last memory stays); a PR that is malformed is left out.
+ */
+export function parseFactory(text: string): FactoryMemory | undefined {
+  let body: { readAt?: unknown; prs?: unknown } | null;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!body || typeof body !== 'object' || !Array.isArray(body.prs) || !(body.readAt === null || typeof body.readAt === 'number')) return undefined;
+  if (body.readAt === null) return { readAt: 0, prs: [] }; // GitHub was never read for this project: it has no PRs to judge
+  const prs = body.prs.flatMap((p: Record<string, any> | null): PrMemory[] => {
+    const conds = CONDS.map((k) => condOf(p?.conditions?.[k]));
+    if (!p || !Number.isInteger(p.number) || p.number < 1 || typeof p.headOid !== 'string' || !(p.head === null || p.head === undefined || typeof p.head === 'string') || !conds.every(Boolean)) return [];
+    const open = openFindings(p.findings);
+    return [{ number: p.number, head: p.head ?? null, headOid: p.headOid, conditions: Object.fromEntries(CONDS.map((k, i) => [k, conds[i]])) as PrMemory['conditions'], ...(open && { open }) }];
+  });
+  return { readAt: body.readAt, prs };
+}
+
+/**
+ * What `gh pr merge` was asked for: the selector as written (a number, a URL or a branch; none means the current branch), the repository `--repo` named, and `uncertain` when the command
+ * leaves the repository open to doubt (a `cd` earlier in it, or GH_REPO set for it: #31 R6), which only matters when no `--repo` names it.
+ */
+export type MergeAsk = { selector?: string; repo?: string; uncertain?: 'cd' | 'GH_REPO' };
+
+/**
+ * Whether a `cd` or `pushd` stays in the session's repository (#31 R6): to an absolute path equal to, or inside, `root`, or to a relative path with no `..` part (it starts where the session did, or
+ * where an earlier cd that stayed went). A `..`, `~`, `$VAR`, `-`, a glob, no argument, several arguments or an absolute path outside the root does not.
+ * ponytail: as path strings, no process and no filesystem: a symlink or a nested repository inside the root reads as the root's. Resolve the path if one is ever seen.
+ */
+function cdStays(args: string[], root: string | undefined): boolean {
+  const dir = args[0];
+  if (args.length !== 1 || dir === undefined || dir.startsWith('-') || /[$`~*?[{]/.test(dir) || dir.split('/').includes('..')) return false;
+  if (!dir.startsWith('/')) return true;
+  const strip = (p: string) => p.replace(/\/+$/, '');
+  return !!root && (strip(dir) === strip(root) || dir.startsWith(`${strip(root)}/`));
+}
+const MERGE_VALUE_FLAGS = new Set(['-R', '--repo', '-b', '--body', '-F', '--body-file', '-t', '--subject', '-A', '--author-email', '--match-head-commit']); // `gh pr merge` flags that take a value
+const SHORT_VALUE = new Set(['R', 'b', 'F', 't', 'A']); // and their short letters, which pflag reads in a cluster: -sR o/x, -sRo/x, -sR=o/x
+
+/**
+ * Every `gh pr merge` in a Bash command, found by its argv: in each part of a chain (`&&`, `||`, `;`, `|`), inside `bash -c '…'` (the -c reading commandClass has), after a prefix a shell allows,
+ * with the flags before or after the selector. `--disable-auto` turns auto-merge off and is no merge (#31 R7); `--auto` is one. Only a command's own word counts, so `echo gh pr merge 12`
+ * and a commit message that says it are not one, and neither is `gh pr view 12` or `gh api …/merge` (left out on purpose, #31).
+ * `root` is the session's repository root, which a `cd` to it or inside it keeps in the repository (#31 R6); `moved` says an earlier `cd` did not (a `bash -c` script reads the outer command's).
+ * ponytail: a naive reading of the shell, as commandClass is: no variables, aliases, `eval`, backticks, `xargs`, `watch` or script run by name (README, Known limits).
+ */
+export function mergesIn(command: string, root?: string, moved = false): MergeAsk[] {
+  const out: MergeAsk[] = [];
+  for (const words of commands(command)) {
+    const i = headIndex(words);
+    const head = words[i]?.split('/').at(-1);
+    const script = shellScript(words, i);
+    if (script !== undefined) out.push(...mergesIn(script, root, moved));
+    if (head === 'cd' || head === 'pushd') moved ||= !cdStays(words.slice(i + 1), root);
+    else if (head === 'popd') moved = true; // back to a directory this reading did not follow
+    if (head !== 'gh') continue;
+    const args = words.slice(i + 1);
+    const positional: string[] = [];
+    let repo: string | undefined;
+    for (let j = 0; j < args.length; j++) {
+      const a = args[j]!;
+      if (!a.startsWith('-')) {
+        positional.push(a);
+        continue;
+      }
+      const eq = /^(--[\w-]+)=([\s\S]*)$/.exec(a);
+      const flag = eq ? eq[1]! : a;
+      if (MERGE_VALUE_FLAGS.has(flag)) {
+        const value = eq ? eq[2] : args[++j];
+        if (flag === '-R' || flag === '--repo') repo = value;
+      } else if (/^-[A-Za-z]/.test(a)) {
+        // A cluster of short flags: the first that takes a value takes the rest of the cluster (after an `=`), or else the next word.
+        const k = [...a].findIndex((c, n) => n > 0 && SHORT_VALUE.has(c));
+        if (k > 0) {
+          const rest = a.slice(k + 1);
+          const value = rest.startsWith('=') ? rest.slice(1) : rest || args[++j];
+          if (a[k] === 'R') repo = value;
+        }
+      }
+    }
+    if (positional[0] !== 'pr' || positional[1] !== 'merge' || args.includes('--disable-auto')) continue;
+    const uncertain = repo ? undefined : moved ? 'cd' : words.slice(0, i).some((w) => w.startsWith('GH_REPO=')) ? 'GH_REPO' : undefined;
+    out.push({ ...(positional[2] ? { selector: positional[2] } : {}), ...(repo ? { repo } : {}), ...(uncertain ? { uncertain } : {}) });
+  }
+  return out;
+}
+
+/**
+ * The name of the remote in a `.git/config` whose url is the session's remote (#31 R8), where git keeps that remote's tracking refs (`refs/remotes/<name>/…`): the first that matches, nothing when none does.
+ * ponytail: two remotes with one url read as the first; `include`d config files are not read.
+ */
+export function remoteNamed(config: string, remote: string | undefined): string | undefined {
+  if (!remote) return undefined;
+  let name: string | undefined;
+  for (const line of config.split('\n')) {
+    const section = /^\s*\[(.*)\]/.exec(line);
+    if (section) name = /^remote "([^"]+)"$/.exec(section[1]!.trim())?.[1];
+    else if (name && !name.includes('..') && normalizeRemote(/^\s*url\s*=\s*(.+?)\s*$/i.exec(line)?.[1])?.toLowerCase() === remote.toLowerCase()) return name; // as repoKey compares: host and path are not case-sensitive here
+  }
+  return undefined;
+}
+
+/** `o/r`, `github.com/o/r`, an https URL or an scp remote → `github.com/o/r`, lower-cased, to compare repositories. */
+const repoKey = (s: string) => (/^[a-z][a-z0-9+.-]*:\/\/|^[^@/]+@[^:/]+:/i.test(s) ? normalizeRemote(s) : s.split('/').length === 2 ? `github.com/${s}` : s)?.replace(/\.git$/, '').toLowerCase();
+const minutesOld = (ms: number) => (ms < 60_000 ? 'under a minute' : `${Math.floor(ms / 60_000)} min`);
+const UNCERTAIN = { cd: 'a `cd` earlier in the command may have changed the repository', GH_REPO: 'GH_REPO is set for it, so the repository may not be this one' };
+// The agent reads this, and its "terminal" is the Bash tool: it is told not to go round the refusal by another door (#31 R4).
+const DENY_TAIL = "Don't merge it another way (`bash -c`, `gh api`, the web page). Tell the person why it was refused; to merge anyway, they run it in their own terminal.";
+
+/** One refused PR's reasons: the findings by id when the server named them ("2 findings are open: F12 major, F14 minor."), otherwise each condition's note. */
+function reasons(pr: PrMemory): string[] {
+  return Object.values(pr.conditions).filter((c) => c.ok === false).map((c) => {
+    if (c !== pr.conditions.findings || !pr.open) return c.note;
+    const n = pr.open.length;
+    return `${n} finding${n === 1 ? ' is' : 's are'} open: ${pr.open.map((f) => `${f.id} ${f.severity}`).join(', ')}.`;
+  });
+}
+
+/**
+ * Whether one `gh pr merge` goes ahead, from the plugin's memory alone (no process, no fetch). `deny` on a definite no (a condition that is false) in data 10 minutes old or less; `say` when the
+ * plugin cannot tell (a condition not known, data older than that or dated in the future, a PR or a repository it has not read, a branch that moved since GitHub was read), which lets the merge go
+ * ahead and prints why; nothing for a PR that is ready. `where.branch` is the session's current branch, the PR when the command names none; `where.tracking` the heads this checkout last saw on
+ * the remote, by branch (`refs/remotes/<remote>/<branch>`, #31 R8): `gh pr merge` merges the PR's remote head, so an unpushed local commit is not a move, and a push from here is.
+ */
+export function judgeMerge(ask: MergeAsk, where: { remote?: string; branch?: string; tracking?: Record<string, string | undefined> }, memory: FactoryMemory | undefined, now: number): { deny: string } | { say: string } | undefined {
+  const say = (label: string, why: string) => ({ say: `agent-orb can't say ${label} is ready: ${why}. The merge goes ahead.` });
+  let number: number | undefined;
+  let branch: string | undefined;
+  let repo = ask.repo;
+  const url = ask.selector && /^(https?:\/\/[^/]+\/[^/]+\/[^/]+)\/pull\/(\d+)/.exec(ask.selector);
+  if (url) [repo, number] = [normalizeRemote(url[1]), Number(url[2])];
+  else if (ask.selector && /^#?\d+$/.test(ask.selector)) number = Number(ask.selector.replace('#', ''));
+  else branch = ask.selector ?? where.branch;
+  if (number === undefined && !branch) return { say: "agent-orb can't say which PR this is: no branch to name it. The merge goes ahead." };
+  const named = number !== undefined ? `PR #${number}` : `the PR on ${branch}`;
+  if (repo === undefined && ask.uncertain) return say(named, UNCERTAIN[ask.uncertain]);
+  if (repo !== undefined) {
+    if (!where.remote) return say(named, `it is in ${repo}, and this project has no remote to compare it with`);
+    if (repoKey(repo) !== where.remote.toLowerCase()) return say(named, `it is in ${repo}, and the plugin reads ${where.remote} only`);
+  }
+  const found = memory?.prs.filter((p) => (number !== undefined ? p.number === number : p.head === branch)) ?? [];
+  if (found.length > 1) return say(named, `${found.length} open PRs have that head branch`); // a fork's `main` or `patch-1`: the name does not say which (#31 R21)
+  const pr = found[0];
+  if (!memory || !pr) return say(named, 'the plugin has not read it');
+  const age = now - memory.readAt;
+  if (age < 0) return say(`PR #${pr.number}`, 'its GitHub data is dated in the future'); // a clock that moved: its age is not known
+  if (age > REFUSE_MS) return say(`PR #${pr.number}`, `its GitHub data is ${age < REFUSE_MS + 60_000 ? 'over 10 min' : minutesOld(age)} old`);
+  const tracked = pr.head ? where.tracking?.[pr.head] : undefined;
+  if (tracked !== undefined && tracked !== pr.headOid) return say(`PR #${pr.number}`, 'the branch moved since GitHub was read'); // what was read is the old head's, in either direction (#31 R8)
+  const conditions = Object.values(pr.conditions);
+  if (conditions.some((c) => c.ok === false)) {
+    return { deny: [`agent-orb refused this merge: PR #${pr.number} isn't ready.`, ...reasons(pr).map((r) => `- ${r}`), `GitHub data ${minutesOld(age)} old, head ${pr.headOid.slice(0, 7)}.`, DENY_TAIL].join('\n') };
+  }
+  const unknown = conditions.filter((c) => c.ok === null);
+  // "No test run on e4f5a6b" reads on after a colon as "no test run…"; a note that starts with a name (GitHub) or an acronym keeps its capital.
+  return unknown.length ? say(`PR #${pr.number}`, unknown.map((c) => c.note.replace(/^[A-Z](?=[a-z]+\s)/, (m) => m.toLowerCase())).join('; ')) : undefined;
 }
 
 // ── Changes: the git history of what a change watches (v0.2 slice 1) ─────────
@@ -560,6 +760,329 @@ export function prNumbersIn(text: string, remote: string | undefined): number[] 
   return [...found];
 }
 
+// ── Factory: findings, the gate and the open PRs (v0.4 slice 1, #27, PROJECT.md §5; the gate from test runs, #34) ──────────────
+
+export const FATES = ['fixed', 'dismissed', 'open'] as const;
+export type Fate = (typeof FATES)[number];
+export type Finding = { id: string; severity: string; file: string; fate: Fate; title?: string; why?: string };
+export type Findings = { findings: Finding[]; dropped: number; pr?: number }; // pr: the PR the fence line named, ```orb-findings #416
+export type Gate = { result: 'pass' | 'fail'; commit: string };
+const FINDINGS_MAX = 500;
+// `id severity file fate`: an id of letters, digits and `._#-`, a lower-case severity, a path with no space, and one of the three fates. Anything else is dropped, not guessed.
+const FINDING = /^([A-Za-z0-9][\w.#-]{0,39}) ([a-z]{1,20}) (\S{1,300}) (fixed|dismissed|open)$/;
+
+/**
+ * #34: the one thing the plugin adds to what an agent is told (PROJECT.md §2), appended to every subagent's prompt, so findings reach the Factory from any repo with no
+ * change to its agent files. Its example is the format parseFindings reads; factory.spec.ts holds the two together. Every subagent reads it, so it says who must not
+ * answer: an empty block is a review that found nothing, and an Explore lookup told "write an empty block if you found nothing" wrote one (#36).
+ */
+export const FINDINGS_ASK = [
+  '',
+  '',
+  'agent-orb, a plugin that records this session, asks one thing, only if your task was to review code or to fix review findings: end your final report with an',
+  '`orb-findings` block, one finding a line, `id severity file fate | title`, then ` | why` for a dismissed one: fate is fixed, dismissed or open, severity one',
+  "lower-case word, file a path with no space. Put the PR's number for #N, or leave #N out if you don't know it. Keep the ids a review gave you, and write an",
+  'empty block if your review found nothing. For example:',
+  '```orb-findings #N',
+  'F1 major src/auth/refresh.ts open | Two refreshes can run at once',
+  'F2 minor src/net/client.ts dismissed | The timeout is not a constant | Used once, so no config',
+  'F3 major src/auth/refresh.ts fixed | The token was written before the response was checked',
+  '```',
+  'If your task was anything else, such as a search, a plan or new code, write no block.',
+].join('\n');
+
+/**
+ * The last ```name block in a report: its body, and what its fence line says after the name, or nothing when there is none. A fence may be indented (a block in a
+ * list item) and carry more on its line, and a block left open runs to the report's end: a block the reader missed would read as no report at all, and the last
+ * report's word would stand. Linear: the openers, then one search for the close.
+ */
+function lastBlock(text: string, name: string): { body: string; info: string } | undefined {
+  let last: RegExpExecArray | undefined;
+  for (const m of text.matchAll(new RegExp(`^[ \\t]*\`\`\`${name}(?![\\w-])([^\\r\\n]*)\\r?$`, 'gm'))) last = m;
+  if (!last) return undefined;
+  const rest = text.slice(last.index + last[0].length);
+  const end = /^[ \t]*```[ \t]*\r?$/m.exec(rest);
+  return { body: end ? rest.slice(0, end.index) : rest, info: last[1]!.trim() };
+}
+
+/**
+ * A subagent's `orb-findings` block (FINDINGS_ASK asks every one for it): one finding a line, `id severity file fate`, then ` | title`, then ` | why` for a dismissed one. A line that does not
+ * parse is dropped and counted (`dropped`), so a reader can tell "none open" from "some unread". An empty block is a report that found nothing; no block, no report.
+ * `text` decides what of the title and the reason travels: the plugin passes its Content helper (masked, and nothing unless Content is on full); without it, nothing does.
+ */
+export function parseFindings(report: string, text: (s: string) => string | undefined = () => undefined): Findings | undefined {
+  const block = lastBlock(report, 'orb-findings');
+  if (!block) return undefined;
+  const { body, info } = block;
+  // The fence may name the PR (owner, 2026-11-03, #27): `#416` exactly. Anything else there is no number, and the block still counts.
+  const pr = /^#[1-9]\d{0,8}$/.test(info) ? Number(info.slice(1)) : undefined;
+  const findings: Finding[] = [];
+  let dropped = 0;
+  for (const raw of body.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    const [head = '', title, ...why] = line.split(/\s+\|\s+/);
+    const m = FINDING.exec(head.replace(/\s+/g, ' '));
+    if (!m || findings.length >= FINDINGS_MAX) {
+      dropped++;
+      continue;
+    }
+    const fate = m[4] as Fate;
+    const t = title ? text(title)?.slice(0, 200) : undefined;
+    const w = fate === 'dismissed' && why.length ? text(why.join(' | '))?.slice(0, 300) : undefined;
+    // the file is the agent's own words too: a URL can carry a secret
+    findings.push({ id: m[1]!, severity: m[2]!, file: mask(m[3]!).slice(0, 300), fate, ...(t ? { title: t } : {}), ...(w ? { why: w } : {}) });
+  }
+  return { findings, dropped, ...(pr ? { pr } : {}) };
+}
+
+export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };
+// created_at is when the PR opened and issue the one it closes (#28): the body is read for `Closes #N` and goes no further.
+export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; created_at?: number; issue?: number; checks: Check[]; bots: { author: string; at: number }[] };
+export type OpenIssue = { number: number; milestone?: string; title?: string };
+// gh's `commits` asks GitHub for 100 commits of 100 authors a PR, and GitHub refuses a query of more than 500,000 nodes before running it: 50 PRs fail, on every repo.
+const OPEN_PRS_MAX = 40;
+const OPEN_PRS_BUDGET = 250_000; // characters of JSON, as PRS_BUDGET: 100 PRs of 200 checks would pass the server's 1 MB request, and a refused event is lost
+
+/** The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time; and (#28) when the PR opened and its body, for the issue it closes. */
+export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', String(OPEN_PRS_MAX), '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body'];
+/** The open issues' numbers and milestones (#28): what a milestone's budget default is matched to. #32: and their titles, which only name a row of the board and leave only with Content on full. gh lists at most 200 here; a read keeps at most 500. */
+export const openIssuesArgv = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title'];
+const OPEN_ISSUES_MAX = 500;
+
+// The issue a branch names, as shared/src/issue.ts reads it (the plugin imports nothing from shared; contract.spec.ts holds the two to one table).
+const BRANCH_ISSUE = /^(?:[^/]+\/)*(?!(?:19|20)\d{2}-(?:0[1-9]|1[0-2])(?!\d))([1-9]\d{0,4})(?:[-_]|$)/;
+export const branchIssue = (branch: string | null | undefined): number | null => {
+  const m = branch ? BRANCH_ISSUE.exec(branch) : null;
+  return m ? Number(m[1]) : null;
+};
+// GitHub's closing keywords before `#N` of this repository (not `owner/repo#N`, not a URL). The gaps are bounded: a body of a long run of spaces after a keyword stays linear.
+const CLOSES = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)(?!\w)\s{0,4}:?\s{1,4}#([1-9]\d{0,8})(?!\d)/i;
+
+/**
+ * The issue a PR is for (#28): the number in its branch (`fix/90-…`) first, else the first `Closes #N` (or Fixes, Resolves) in its body. Only the number is kept: the body is read
+ * here and goes no further. A PR that closes several issues is the first's.
+ * ponytail: a keyword inside a sentence that denies it ("does not close #5") still counts, as on GitHub; `Closes owner/repo#N` and a closing URL do not.
+ */
+export function issueOf(head: unknown, body: unknown): number | undefined {
+  const b = typeof head === 'string' ? branchIssue(head.slice(0, 200)) : null;
+  if (b !== null) return b;
+  const m = typeof body === 'string' ? CLOSES.exec(body) : null;
+  return m ? Number(m[1]) : undefined;
+}
+
+// gh names a bot's author bare (`coderabbitai`, `sonarqubecloud`, measured on NeoBoard's PRs), with no mark that it is one.
+// ponytail: a name list. Upgrade path: `gh api graphql` with `author { __typename }`, which says Bot.
+const BOTS = new Set(['coderabbitai', 'sonarqubecloud', 'sonarcloud', 'github-actions', 'codecov', 'copilot-pull-request-reviewer', 'dependabot', 'renovate',
+  'gemini-code-assist', 'greptile-apps', 'chatgpt-codex-connector']);
+export const isBot = (login: string) => /(?:\[bot\]|[-_]bot)$/i.test(login) || BOTS.has(login.toLowerCase());
+
+const checkOf = (c: Record<string, unknown>): Check | undefined => {
+  const name = typeof c.name === 'string' && c.name ? c.name : typeof c.context === 'string' && c.context ? c.context : undefined;
+  if (!name) return undefined;
+  const state = c.__typename === 'StatusContext'
+    ? (c.state === 'SUCCESS' ? 'pass' : c.state === 'PENDING' || c.state === 'EXPECTED' ? 'pending' : 'fail')
+    : c.status !== 'COMPLETED' ? 'pending' : ['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(String(c.conclusion)) ? 'pass' : 'fail';
+  // A check run of a GitHub Actions workflow carries the workflow's name: that is CI. An app's run (CodeRabbit, Sonar) has none, so it is not.
+  return { name: name.slice(0, 200), state, ...(c.__typename !== 'StatusContext' && typeof c.workflowName === 'string' && c.workflowName ? { ci: true as const } : {}) };
+};
+
+/**
+ * The open PRs in `openPrsArgv`'s output. Only numbers, the branch (none for an excluded project), the head, the merge state, each check's name and result, and each bot's
+ * latest comment or review time are kept: a comment's text, a title and a body are never read into the event. The head's time is its commit's in the list; a PR whose
+ * head is not among them (gh lists at most 100 commits) has none. Nothing when the output is not gh's list; an empty list is a read of no open PRs.
+ * At most 250 KB of JSON: gh lists the newest first, and the PRs past it are left out.
+ */
+export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined {
+  let list: unknown;
+  try {
+    list = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(list)) return undefined;
+  const at = (x: unknown) => (typeof x === 'string' ? Date.parse(x) : NaN);
+  const prs: OpenPr[] = [];
+  for (const p of (list as Record<string, unknown>[]).slice(0, OPEN_PRS_MAX)) {
+    if (typeof p?.number !== 'number' || !Number.isInteger(p.number) || p.number < 1 || typeof p.headRefOid !== 'string' || !/^[0-9a-f]{40,64}$/.test(p.headRefOid)) continue;
+    const head = heads && typeof p.headRefName === 'string' && p.headRefName ? p.headRefName.slice(0, 200) : undefined;
+    const state = typeof p.mergeStateStatus === 'string' && /^[A-Z_]{1,40}$/.test(p.mergeStateStatus) ? p.mergeStateStatus : 'UNKNOWN';
+    const commit = (Array.isArray(p.commits) ? p.commits as Record<string, unknown>[] : []).find((c) => c?.oid === p.headRefOid);
+    const committed = at(commit?.committedDate);
+    const opened = at(p.createdAt);
+    const issue = issueOf(p.headRefName, p.body); // from the real branch name, which an excluded project does not send
+    const checks = (Array.isArray(p.statusCheckRollup) ? p.statusCheckRollup as Record<string, unknown>[] : []).map(checkOf).filter((c): c is Check => c !== undefined).slice(0, 200);
+    const bots = new Map<string, number>();
+    for (const c of [...(Array.isArray(p.comments) ? p.comments : []), ...(Array.isArray(p.reviews) ? p.reviews : [])] as Record<string, any>[]) {
+      const login = c?.author?.login;
+      const t = at(c?.createdAt ?? c?.submittedAt);
+      if (typeof login === 'string' && login && login.length <= 100 && isBot(login) && t > 0 && t > (bots.get(login) ?? 0)) bots.set(login, t);
+    }
+    prs.push({
+      number: p.number, ...(head ? { head } : {}), head_oid: p.headRefOid, merge_state: state, ...(committed > 0 ? { last_commit_at: committed } : {}),
+      ...(opened > 0 ? { created_at: opened } : {}), ...(issue ? { issue } : {}),
+      checks, bots: [...bots].slice(0, 50).map(([author, t]) => ({ author, at: t })),
+    });
+  }
+  let size = 0;
+  return prs.filter((p) => (size += JSON.stringify(p).length + 1) <= OPEN_PRS_BUDGET);
+}
+
+/**
+ * The open issues in `openIssuesArgv`'s output: a number and its milestone's title, and (#32) the issue's own title when `text` gives it, never a body. `milestones: false` (an excluded
+ * project) leaves the milestone out: a title is a name. `text` decides whether the issue's title travels: the plugin passes its Content helper (masked, and nothing unless Content is on full);
+ * without it, none does. Nothing when the output is not gh's list; an empty list is a read of no open issues. At most 500.
+ */
+export function parseOpenIssues(stdout: string, milestones = true, text?: (s: string) => string | undefined): OpenIssue[] | undefined {
+  let list: unknown;
+  try {
+    list = JSON.parse(stdout);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(list)) return undefined;
+  const issues: OpenIssue[] = [];
+  for (const i of list as Record<string, any>[]) {
+    if (typeof i?.number !== 'number' || !Number.isInteger(i.number) || i.number < 1) continue;
+    const milestone = milestones && typeof i.milestone?.title === 'string' && i.milestone.title ? i.milestone.title.slice(0, 200) : undefined;
+    const title = text && typeof i.title === 'string' && i.title ? text(i.title)?.slice(0, 200) : undefined;
+    issues.push({ number: i.number, ...(milestone ? { milestone } : {}), ...(title ? { title } : {}) });
+    if (issues.length >= OPEN_ISSUES_MAX) break;
+  }
+  return issues;
+}
+
+// ── The machine (v0.4 slice 3, #29) ──────────────────────────────────────────
+
+export type DockerState = 'ok' | 'absent' | 'stopped';
+export type MachineContainer = {
+  name?: string; created_at?: number; state: string; health?: 'healthy' | 'unhealthy' | 'starting'; memory?: number;
+  compose?: string; working_dir?: string; testcontainers?: { session?: string }; excluded?: true;
+};
+export type MachineSample = { mem_free?: number; mem_total?: number; docker: DockerState; containers: MachineContainer[] };
+const CONTAINERS_MAX = 200; // as shared/src/event.ts: past it a sample would be refused whole
+
+/**
+ * The running containers (no -a), one JSON object a line, asking for the fields kept and the five labels by name (`.Label` answers one label's value) and for nothing else: the command,
+ * the environment, the mounts, the image and every other label are never read, so they cannot leave. Written as a template and not as `--format json`, which Docker 20.10 lacks and which
+ * would hand over the label list as one string. A Testcontainers run's id is one label under two spellings: `sessionId` (Java, Go) and `session-id` (testcontainers-node).
+ */
+export const dockerPsArgv = ['docker', 'ps', '--format',
+  '{"id":{{json .ID}},"name":{{json .Names}},"created":{{json .CreatedAt}},"state":{{json .State}},"status":{{json .Status}},'
+  + '"project":{{json (.Label "com.docker.compose.project")}},"dir":{{json (.Label "com.docker.compose.project.working_dir")}},'
+  + '"tc":{{json (.Label "org.testcontainers")}},"session":{{json (.Label "org.testcontainers.sessionId")}},"sessionDash":{{json (.Label "org.testcontainers.session-id")}}}'];
+/** Each running container's memory, `used / limit` as Docker writes it. */
+export const dockerStatsArgv = ['docker', 'stats', '--no-stream', '--format', '{"id":{{json .ID}},"mem":{{json .MemUsage}}}'];
+
+const jsonLine = (line: string): Record<string, unknown> | undefined => {
+  try {
+    const r: unknown = JSON.parse(line);
+    return r && typeof r === 'object' && !Array.isArray(r) ? (r as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Free and total memory of a Mac, in bytes, from `vm_stat` and `sysctl -n hw.memsize`. Free is Activity Monitor's: the total less its "Memory Used", which is the app memory (anonymous pages
+ * less the purgeable ones) plus the wired pages plus the ones the compressor occupies, all times the page size vm_stat prints. "Pages free" + "Pages inactive" is not it: inactive holds anonymous
+ * memory a process still owns (on a busy Mac it is bigger than the file-backed pages), so that sum reads gigabytes too high.
+ * ponytail: file-backed pages (the cache) count as free, as Activity Monitor counts them, though the system takes them back only when it must. Nothing when either command's output is not what it
+ * should be, or lacks a counter this needs.
+ */
+export function macMemory(vmStat: string, memsize: string): { free: number; total: number } | undefined {
+  const page = Number(/page size of (\d+) bytes/.exec(vmStat)?.[1]);
+  const count = (label: string) => Number(new RegExp(`^${label}:\\s+(\\d+)\\.`, 'm').exec(vmStat)?.[1]);
+  const used = count('Anonymous pages') - count('Pages purgeable') + count('Pages wired down') + count('Pages occupied by compressor');
+  const total = Number(memsize.trim());
+  return page > 0 && total > 0 && Number.isFinite(used) ? { free: Math.max(0, total - used * page), total } : undefined;
+}
+
+/** Free (`MemAvailable`) and total memory of a Linux machine, in bytes, from /proc/meminfo's kibibytes. */
+export function linuxMemory(meminfo: string): { free: number; total: number } | undefined {
+  const kib = (key: string) => Number(new RegExp(`^${key}:\\s+(\\d+) kB`, 'm').exec(meminfo)?.[1]);
+  const [free, total] = [kib('MemAvailable'), kib('MemTotal')];
+  return free >= 0 && total > 0 ? { free: free * 1024, total: total * 1024 } : undefined;
+}
+
+const MEM_UNITS: Record<string, number> = { b: 1, kb: 1e3, mb: 1e6, gb: 1e9, tb: 1e12, kib: 1024, mib: 1024 ** 2, gib: 1024 ** 3, tib: 1024 ** 4 };
+/** Container id to the bytes it uses: the first number of `73.62MiB / 41.08GiB`. A line that is not a stats row, or a figure that is not a size, is left out. */
+export function parseDockerStats(stdout: string): Map<string, number> {
+  const memory = new Map<string, number>();
+  for (const line of stdout.split('\n')) {
+    const r = jsonLine(line);
+    const m = typeof r?.id === 'string' && r.id.length >= 6 && typeof r.mem === 'string' ? /^([\d.]+)\s*([A-Za-z]+)\s*\//.exec(r.mem) : null;
+    const unit = m ? MEM_UNITS[m[2]!.toLowerCase()] : undefined;
+    if (m && unit && Number.isFinite(Number(m[1]))) memory.set(r!.id as string, Math.round(Number(m[1]) * unit));
+  }
+  return memory;
+}
+
+const psRows = (stdout: string) => stdout.split('\n').map(jsonLine).filter((r): r is Record<string, unknown> => typeof r?.id === 'string' && r.id.length >= 6);
+const CREATED = /^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)(?:\.\d+)? ([+-]\d\d)(\d\d)\b/; // 2026-11-05 10:12:03 +0100 CET
+const HEALTH = /\((healthy|unhealthy|health: starting)\)/;
+
+/**
+ * The containers of a `docker ps` read, with the memory `docker stats` gave them (ids match by prefix: one lists 12 characters, the other may list 64). A container whose working directory is in
+ * `excluded` (a project the plugin excludes) keeps its state, health and memory and is marked `excluded`: no name, label, directory or time. At most 200, the biggest by memory first.
+ */
+export function containersFrom(stdout: string, memory: Map<string, number>, excluded: Set<string>): MachineContainer[] {
+  const containers = psRows(stdout).map((r): MachineContainer => {
+    const str = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : '');
+    const id = str('id');
+    const bytes = [...memory].find(([m]) => m.startsWith(id) || id.startsWith(m))?.[1];
+    const state = /^[a-z]{1,20}$/.test(str('state')) ? str('state') : 'unknown';
+    const health = HEALTH.exec(str('status'))?.[1]?.replace('health: ', '') as MachineContainer['health'];
+    const small = { state, ...(health ? { health } : {}), ...(bytes === undefined ? {} : { memory: bytes }) };
+    if (excluded.has(str('dir'))) return { ...small, excluded: true };
+    const made = CREATED.exec(str('created'));
+    const created = made ? Date.parse(`${made[1]}T${made[2]}${made[3]}:${made[4]}`) : NaN;
+    return {
+      ...(str('name') ? { name: str('name').slice(0, 200) } : {}), ...(created > 0 ? { created_at: created } : {}), ...small,
+      ...(str('project') ? { compose: str('project').slice(0, 200) } : {}), ...(str('dir') ? { working_dir: str('dir').slice(0, 500) } : {}),
+      ...(str('tc') ? { testcontainers: str('session') || str('sessionDash') ? { session: (str('session') || str('sessionDash')).slice(0, 100) } : {} } : {}),
+    };
+  });
+  return containers.sort((a, b) => (b.memory ?? -1) - (a.memory ?? -1)).slice(0, CONTAINERS_MAX);
+}
+
+/**
+ * Which of these working directories are inside a project the plugin excludes (`excludeProjects`: names, remotes or paths, `~` already expanded). A directory is judged as a session is: by the
+ * repository git finds around it (its top level, its last name, its origin), else by the path alone. Git is not asked when nothing is excluded.
+ * ponytail: a container started from a git worktree is judged by the worktree's folder name, which is not its repository's; list the repository's path in excludeProjects to hold those too.
+ */
+export async function excludedDirs(run: Run, dirs: string[], list: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!list.trim()) return out;
+  const ask = (argv: string[]) => run(argv).then((r) => (r.exitCode === 0 ? r.stdout.trim() : ''), () => '');
+  for (const dir of dirs) {
+    const top = (await ask(['git', '-C', dir, 'rev-parse', '--show-toplevel'])) || dir;
+    const remote = normalizeRemote(await ask(['git', '-C', top, 'remote', 'get-url', 'origin']));
+    const name = top.split('/').pop() ?? top;
+    if ([dir, top].some((cwd) => isExcluded({ cwd, name, ...(remote ? { git_remote: remote } : {}) }, list))) out.add(dir);
+  }
+  return out;
+}
+
+/**
+ * One reading of the machine: free memory (vm_stat on macOS, /proc/meminfo on Linux, nothing on another system), then `docker ps` and `docker stats`. When `docker ps` fails, `docker` is `absent` if
+ * the shell cannot find a `docker` (`command -v`), and `stopped` otherwise: the daemon exits non-zero or does not answer in time. The failure's own wording is not read (how the engine words a
+ * missing binary, or whether it is a rejection or a 127, is not known to this code). Every call here may take seconds, so the caller runs this off any hook's path.
+ */
+export async function readMachine(run: Run, excludeList: string): Promise<MachineSample> {
+  const ask = (argv: string[]) => run(argv).then((r) => (r.exitCode === 0 ? r.stdout : undefined), () => undefined);
+  const platform = ((await ask(['uname', '-s'])) ?? '').trim().toLowerCase();
+  const mem = platform === 'darwin' ? macMemory((await ask(['vm_stat'])) ?? '', (await ask(['sysctl', '-n', 'hw.memsize'])) ?? '')
+    : platform === 'linux' ? linuxMemory((await ask(['cat', '/proc/meminfo'])) ?? '') : undefined;
+  const memory = mem ? { mem_free: mem.free, mem_total: mem.total } : {};
+  const ps = await ask(dockerPsArgv);
+  if (ps === undefined) return { ...memory, docker: (await ask(['sh', '-c', 'command -v docker']))?.trim() ? 'stopped' : 'absent', containers: [] };
+  const rows = psRows(ps);
+  const stats = rows.length ? parseDockerStats((await ask(dockerStatsArgv)) ?? '') : new Map<string, number>();
+  const hidden = await excludedDirs(run, [...new Set(rows.map((r) => r.dir).filter((d): d is string => typeof d === 'string' && d !== ''))], excludeList);
+  return { ...memory, docker: 'ok', containers: containersFrom(ps, stats, hidden) };
+}
+
 // ── The monthly goal (v0.2 slice 3, PROJECT.md §15, 2026-10-24) ──────────────
 
 /** The project's goal for a month, in API-equivalent dollars, and what it has spent so far: the server's GET /api/goal. */
@@ -613,14 +1136,18 @@ export type Stall = { key: string; agent: string; tool_use_id?: string; tool?: s
 export type Tracker = { agents: Map<string, AgentLive>; tools: Map<string, ToolLive>; stalled: Map<string, Stall> };
 export const newTracker = (): Tracker => ({ agents: new Map(), tools: new Map(), stalled: new Map() });
 
+const DELEGATING = new Set(['Agent', 'Task']);
+
 /**
  * §13: a tool running past the threshold, or an agent mid-turn with no tool running and no event, is stalled.
- * A tool at the permission prompt, and an agent between turns, wait for the person and never stall.
+ * A tool at the permission prompt, and an agent between turns, wait for the person and never stall; neither does an agent's own Agent/Task call (#31 R2).
  */
 export function checkStalls(t: Tracker, now: number, thresholdMs: number) {
   const current = new Map<string, Stall>();
   for (const tool of t.tools.values()) {
-    if (!tool.waiting && now - tool.since >= thresholdMs) {
+    // An agent's own Agent/Task call lasts as long as the subagent it started, which is watched for its own stall; main reads "stuck on Agent" for a healthy 20-minute subagent otherwise (#31 R2).
+    // ponytail: a spawn that hangs before any subagent exists is never flagged; the engine's own timeouts are what end it.
+    if (!tool.waiting && !DELEGATING.has(tool.tool) && now - tool.since >= thresholdMs) {
       current.set(tool.id, { key: tool.id, agent: tool.agent, tool_use_id: tool.id, tool: tool.tool, since: tool.since });
     }
   }
@@ -733,6 +1260,25 @@ export function modelFromFrontmatter(text: string): string | undefined {
   return (front && /^model:\s*["']?([^\s"']+)["']?\s*(?:#.*)?$/m.exec(front)?.[1]) || undefined;
 }
 
+/** `background: true` in an agent definition's frontmatter: every spawn of the agent runs in the background (the engine forces it on, whatever the call asked). */
+export function backgroundFromFrontmatter(text: string): true | undefined {
+  const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
+  return front && /^background:\s*["']?true["']?\s*(?:#.*)?$/m.test(front) ? true : undefined;
+}
+
+/**
+ * The server's answer to the plugin's poll of GET /api/stop: a stop waiting for this session names the stall it was clicked for (the agent and the stall's `since`, as stall.start carried
+ * them), once. Anything else is no stop (#31 R1).
+ */
+export function stopWaits(text: string): { agent: string; since: number } | undefined {
+  try {
+    const x = JSON.parse(text) as { stop?: unknown; agent?: unknown; since?: unknown } | null;
+    return x?.stop === true && typeof x.agent === 'string' && x.agent !== '' && Number.isInteger(x.since) ? { agent: x.agent, since: x.since as number } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // The server's MODEL_FAMILIES (packages/shared), kept here so the plugin needs no import; a contract test keeps the two equal.
 export const FAMILIES = ['haiku', 'sonnet', 'opus', 'fable', 'mythos'] as const;
 export type Family = (typeof FAMILIES)[number];
@@ -773,6 +1319,7 @@ export const build = {
   sessionStart: (c: Ctx, model: string, claudeVersion: string, interactive: boolean, content: ContentMode = 'off') =>
     makeEvent(c, 'session.start', { model, source: interactive ? 'interactive' : 'headless', claude_version: claudeVersion, plugin_version: VERSION, content }),
   sessionEnd: (c: Ctx, reason: string) => makeEvent(c, 'session.end', { reason }),
+  sessionStopped: (c: Ctx, aborted: boolean) => makeEvent(c, 'session.stopped', { aborted }), // the session's, not an agent's
   sessionCompact: (c: Ctx, before: number, after: number) => makeEvent(c, 'session.compact', { tokens_before: before, tokens_after: after }),
   prompt: (c: Ctx, length: number, promptId: string, text?: string) =>
     makeEvent(c, 'prompt.submit', { length, ...(text === undefined ? {} : { text }) }, { prompt_id: promptId }),
@@ -784,11 +1331,11 @@ export const build = {
       duration_ms: durationMs, usage_total: usageOf(usage), reason, answer_length: answerLength,
       ...(contextPercent === undefined ? {} : { context_percent: Math.min(100, Math.max(0, contextPercent)) }),
     }, who(w)),
-  agentSpawn: (c: Ctx, a: { agentId: string; parentAgentId?: string; toolUseId: string; type: string; description: string; model: string; promptLength: number; declaredRole?: Role; declaredModel?: string; modelCheck?: { allowed: Family; source: 'file' | 'ceiling' }; prompt?: string }) =>
+  agentSpawn: (c: Ctx, a: { agentId: string; parentAgentId?: string; toolUseId: string; type: string; description: string; model: string; promptLength: number; declaredRole?: Role; declaredModel?: string; modelCheck?: { allowed: Family; source: 'file' | 'ceiling' }; prompt?: string; background?: boolean }) =>
     makeEvent(c, 'agent.spawn', {
       tool_use_id: a.toolUseId, agent_type: a.type, description: a.description, model: a.model, prompt_length: a.promptLength,
       ...(a.declaredRole ? { declared_role: a.declaredRole } : {}), ...defined({ declared_model: a.declaredModel, prompt: a.prompt }),
-      ...(a.modelCheck ? { model_check: a.modelCheck } : {}),
+      ...(a.modelCheck ? { model_check: a.modelCheck } : {}), ...(a.background ? { background: true } : {}),
     }, { agent_id: a.agentId, parent_agent_id: a.parentAgentId }),
   agentComplete: (c: Ctx, agentId: string, durationMs: number, usage: ReturnType<typeof usageOf>, reportLength: number) =>
     makeEvent(c, 'agent.complete', { duration_ms: durationMs, usage_total: usage, report_length: reportLength }, { agent_id: agentId }),
@@ -809,6 +1356,11 @@ export const build = {
   projectFingerprint: (c: Ctx, files: Fingerprint[]) => makeEvent(c, 'project.fingerprint', { files }),
   projectPrs: (c: Ctx, prs: Pr[]) => makeEvent(c, 'project.prs', { prs }),
   sessionPr: (c: Ctx, number: number) => makeEvent(c, 'session.pr', { number }), // the session's, not an agent's: no agent_id, no turn_id
+  findingsReport: (c: Ctx, w: Who, branch: string | undefined, f: Findings) =>
+    makeEvent(c, 'findings.report', { ...(branch ? { branch } : {}), ...(f.pr ? { pr: f.pr } : {}), findings: f.findings, dropped: f.dropped }, who(w)),
+  gateReport: (c: Ctx, w: Who, g: Gate) => makeEvent(c, 'gate.report', { result: g.result, commit: g.commit }, who(w)),
+  projectOpenPrs: (c: Ctx, prs: OpenPr[], issues?: OpenIssue[]) => makeEvent(c, 'project.open_prs', { prs, ...(issues ? { issues } : {}) }),
+  machineSample: (c: Ctx, sample: MachineSample) => makeEvent(c, 'machine.sample', sample), // about the host: the sampling session's id and project ride along
   skillsCatalog: (c: Ctx, skills: CatalogSkill[], agents: CatalogAgent[]) => makeEvent(c, 'skills.catalog', { skills, agents }),
   stall: (c: Ctx, edge: 'start' | 'end', s: Stall) =>
     makeEvent(c, `stall.${edge}`, { ...(s.tool_use_id ? { tool_use_id: s.tool_use_id, tool: s.tool } : {}), since: s.since }, { agent_id: s.agent === 'main' ? undefined : s.agent }),

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as shared from '../../shared/src/index.ts';
 import { COMMAND_CLASSES, ERROR_CLASSES, EVENT_KINDS, Event, MODEL_FAMILIES, NAMED_SHAPES, ROLES } from '../../shared/src/index.ts';
-import { COMMANDS, ERRORS, OTHER_SHAPE, SAME_SHAPE, SHAPES } from '../../shared/test/class-tables.ts';
+import { BRANCH_ISSUES, COMMANDS, ERRORS, OTHER_SHAPE, SAME_SHAPE, SHAPES } from '../../shared/test/class-tables.ts';
 import * as mod from '../hooks/core.ts';
 import { build, FAMILIES, MOD_COMMAND_CLASSES, MOD_ERROR_CLASSES, MOD_NAMED_SHAPES, MOD_ROLES, modelLabel, roleFromFrontmatter, type Ctx, type Ev, type Stall } from '../hooks/core.ts';
 
@@ -16,6 +16,8 @@ const built: Ev[] = [
   build.sessionStart({ ...ctx, project: { ...ctx.project, checkout: '/r/.claude/worktrees/w' } }, 'claude-haiku-5-5', '2.1.308', false), // a worktree session (v0.2 slice 3)
   build.sessionEnd(ctx, 'other'),
   build.sessionCompact(ctx, 180_000, 40_000),
+  build.sessionStopped(ctx, true), // v0.4 slice 5 (#31): the studio's Stop reached the session; one found nothing to stop
+  build.sessionStopped(ctx, false),
   build.prompt(ctx, 332, 'p-1'),
   build.turnStart(ctx, { turnId: 't-1' }, 'p-1'),
   build.turnStart(ctx, sub),
@@ -25,6 +27,7 @@ const built: Ev[] = [
   build.agentSpawn(ctx, { agentId: sub.agentId, toolUseId: 'toolu_a', type: 'Explore', description: 'Find ROLES', model: 'claude-haiku-5-5', promptLength: 261, declaredRole: 'researcher' }),
   build.agentSpawn(ctx, { agentId: 'a-3', toolUseId: 'toolu_c', type: 'implementer', description: 'Build it', model: 'claude-opus-5-5', promptLength: 8, declaredRole: 'developer', declaredModel: 'sonnet', modelCheck: { allowed: 'sonnet', source: 'file' } }),
   build.agentSpawn(ctx, { agentId: 'a-4', toolUseId: 'toolu_d', type: 'workflow-subagent', description: 'Review', model: 'claude-opus-5-5', promptLength: 8, modelCheck: { allowed: 'sonnet', source: 'ceiling' } }),
+  build.agentSpawn(ctx, { agentId: 'a-5', toolUseId: 'toolu_e', type: 'Explore', description: 'Scan', model: 'claude-haiku-5-5', promptLength: 8, background: true }), // runs apart from the turn (#31)
   build.agentComplete(ctx, sub.agentId, 5_962, { input: 4, output: 337, cache_read: 18_744, cache_creation: 20_152 }, 31),
   build.toolCall(ctx, sub, 'toolu_g', 'Grep', 40),
   build.toolResult(ctx, sub, { toolUseId: 'toolu_g', success: false, errorType: 'error', durationMs: 12, outputSize: 0, files: [] }),
@@ -44,6 +47,17 @@ const built: Ev[] = [
   // v0.3 slice 2 (#42, Worth): the merged PRs (an excluded project's carry no title or branch) and a session's PR link, which is its number alone
   build.projectPrs(ctx, [{ number: 73, title: 'feat: v0.3 slice 1', merged_at: 1_792_400_000_000, additions: 1030, deletions: 24, head: 'feat/43-classes', counted_lines: 812, counted_files: 9 }, { number: 72, merged_at: 1_792_300_000_000, additions: 0, deletions: 0 }]),
   build.sessionPr(ctx, 73),
+  // v0.4 slice 1 (#27, Factory): findings with Content off (no title, no reason), a gate report, and an open-PR read
+  build.findingsReport(ctx, sub, 'fix/409-token-retry', { findings: [{ id: 'F12', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open' }], dropped: 1 }),
+  build.gateReport(ctx, sub, { result: 'pass', commit: 'a1b2c3d' }),
+  build.projectOpenPrs(ctx, [{ number: 416, head: 'fix/409-token-retry', head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: 1_792_400_000_000, checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: 1_792_400_100_000 }] }]),
+  // v0.4 slice 3 (#29, Factory): the machine, with a compose container, a Testcontainers one and an excluded project's, and a Mac with no Docker
+  build.machineSample(ctx, { mem_free: 6_200_000_000, mem_total: 36_000_000_000, docker: 'ok', containers: [
+    { name: 'mobile-app-db-1', created_at: 1_792_400_000_000, state: 'running', health: 'healthy', memory: 104_857_600, compose: 'mobile-app', working_dir: '/r/deploy' },
+    { name: 'quirky_curie', state: 'running', memory: 52_428_800, testcontainers: { session: '3f2a9b' } },
+    { state: 'running', health: 'unhealthy', memory: 1_048_576, excluded: true },
+  ] }),
+  build.machineSample(ctx, { docker: 'absent', containers: [] }),
   build.stall(ctx, 'start', stall),
   build.stall(ctx, 'end', { key: 'agent:main', agent: 'main', since: 1_792_400_000_000 }),
   build.dropped(ctx, 3, 1_792_400_000_000),
@@ -115,6 +129,11 @@ describe('error and command classes (v0.3 slice 1, #43)', () => {
   it('the mod names exactly the classes the server accepts, so a class it sends is never refused', () => {
     expect([...MOD_ERROR_CLASSES]).toEqual([...ERROR_CLASSES]);
     expect([...MOD_COMMAND_CLASSES]).toEqual([...COMMAND_CLASSES]);
+  });
+
+  it.each(BRANCH_ISSUES.map(([branch, issue]) => [branch, issue] as const))('both copies read the issue of branch %j as %j', (branch, issue) => {
+    expect(shared.branchIssue(branch)).toBe(issue);
+    expect(mod.branchIssue(branch)).toBe(issue);
   });
 
   it.each(COMMANDS.map(([cls, command]) => [cls, command.slice(0, 80), command] as const))('both copies read %s: %j', (cls, _label, command) => {

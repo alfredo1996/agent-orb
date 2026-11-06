@@ -68,12 +68,24 @@ export const ROLE_INFO: Record<Role, string> = {
 export const MODEL_FAMILIES = ['haiku', 'sonnet', 'opus', 'fable', 'mythos'] as const;
 export type ModelFamily = (typeof MODEL_FAMILIES)[number];
 
+// v0.4 slice 1 (#27): what became of a review finding.
+export const FATES = ['fixed', 'dismissed', 'open'] as const;
+export type Fate = (typeof FATES)[number];
+
+// v0.4 slice 3 (#29): Docker as the plugin found it, a container's health as `docker ps` says it, and the most containers a sample lists.
+export const DOCKER_STATES = ['ok', 'absent', 'stopped'] as const;
+export type DockerState = (typeof DOCKER_STATES)[number];
+export const HEALTH = ['healthy', 'unhealthy', 'starting'] as const;
+export const CONTAINERS_MAX = 200;
+
 export const Event = z.discriminatedUnion('kind', [
   Base.extend({
     kind: z.literal('session.start'),
     data: z.object({ model: id, source: id, claude_version: id, plugin_version: id, content: z.enum(['off', 'full', 'excluded']).optional() }),
   }),
   Base.extend({ kind: z.literal('session.end'), data: z.object({ reason: id }) }),
+  // v0.4 slice 5 (#31): the studio's Stop reached the session. `aborted` says whether a turn was running to end; false is "nothing to stop". Clears the queued stop on the server.
+  Base.extend({ kind: z.literal('session.stopped'), data: z.object({ aborted: z.boolean() }) }),
   Base.extend({ kind: z.literal('session.compact'), data: z.object({ tokens_before: count, tokens_after: count }) }),
   Base.extend({ kind: z.literal('prompt.submit'), data: z.object({ length: count, text: content.optional() }) }),
   Base.extend({ kind: z.literal('turn.start'), ...inTurn, data: z.object({}) }),
@@ -107,6 +119,7 @@ export const Event = z.discriminatedUnion('kind', [
       // Present only when the agent runs on a pricier model than it should: what it is held to, and whether its file or the owner's ceiling says so.
       model_check: z.object({ allowed: z.enum(MODEL_FAMILIES), source: z.enum(['file', 'ceiling']) }).optional(),
       prompt: content.optional(), // the task the subagent was given
+      background: z.literal(true).optional(), // v0.4 slice 5 (#31): it runs apart from the turn, so the studio's Stop (which ends the main turn) does not reach it
     }),
   }),
   Base.extend({
@@ -177,6 +190,65 @@ export const Event = z.discriminatedUnion('kind', [
   // v0.3 slice 2: the session opened, or worked on, this PR: seen in a tool's output on the machine, or in Claude Code's own `pr-link` log line (the import).
   // Only the number travels; the project is the event's.
   Base.extend({ kind: z.literal('session.pr'), data: z.object({ number: z.number().int().positive() }) }),
+  // v0.4 slice 1 (#27, Factory): a reviewer's or developer's `orb-findings` block, parsed on the machine (PROJECT.md §5). `branch` is the checkout's when the report ended,
+  // which the server joins to an open PR's head. With Content off only id, severity, file and fate travel: `title` and `why` (a dismissed finding's reason) are text,
+  // sent only with Content on full. `dropped` counts the lines that did not parse.
+  // `pr` is the PR the fence line named (```orb-findings #416, owner 2026-11-03): the report goes to it whatever the branch. One of the two at least.
+  Base.extend({ kind: z.literal('findings.report'), data: z.object({
+    branch: id.max(200).optional(),
+    pr: z.number().int().positive().optional(),
+    findings: z.array(z.object({
+      id: z.string().regex(/^[A-Za-z0-9][\w.#-]{0,39}$/),
+      severity: z.string().regex(/^[a-z]{1,20}$/),
+      file: id.max(300),
+      fate: z.enum(FATES),
+      title: z.string().transform((s) => s.slice(0, 200)).optional(),
+      why: z.string().transform((s) => s.slice(0, 300)).optional(),
+    })).max(500),
+    dropped: count,
+  }).refine((d) => d.branch !== undefined || d.pr !== undefined, 'a findings report names its branch or its PR') }),
+  // A test run the plugin saw on a clean tree (#34): passed or failed, and the commit it ran on (7 to 64 hex characters).
+  Base.extend({ kind: z.literal('gate.report'), data: z.object({ result: z.enum(['pass', 'fail']), commit: z.string().regex(/^[0-9a-f]{7,64}$/) }) }),
+  // The open PRs as gh lists them, every 5 minutes while a session runs: numbers, the branch (none for an excluded project), the head, the merge state, each check's name
+  // and result, each bot's latest comment time. Never a comment's text, a title or a body. `last_commit_at` is the head commit's time, when gh listed it.
+// #28 (issue cost): `created_at` is when the PR opened, and `issue` the one it closes (the branch's number, else the first `Closes #N` of its body, read on the machine: only the number
+// travels). `issues` is the open issues' numbers and their milestone's title (none for an excluded project): absent, a read says nothing about them. #32: an issue's own `title` rides
+// with them only with Content on full (the board names its rows with it); with Content off a read carries none, and the server drops the one it held.
+  Base.extend({ kind: z.literal('project.open_prs'), data: z.object({
+    prs: z.array(z.object({
+      number: z.number().int().positive(),
+      head: id.max(200).optional(),
+      head_oid: BLOB,
+      merge_state: z.string().regex(/^[A-Z_]{1,40}$/),
+      last_commit_at: z.number().int().positive().optional(),
+      created_at: z.number().int().positive().optional(),
+      issue: z.number().int().positive().optional(),
+      // ci: a GitHub Actions workflow's check (it names its workflow); an app's check (CodeRabbit, Sonar) has none
+      checks: z.array(z.object({ name: id.max(200), state: z.enum(['pass', 'fail', 'pending']), ci: z.literal(true).optional() })).max(200),
+      bots: z.array(z.object({ author: id.max(100), at: z.number().int().positive() })).max(50),
+    })).max(100),
+    issues: z.array(z.object({ number: z.number().int().positive(), milestone: id.max(200).optional(), title: z.string().min(1).transform((s) => s.slice(0, 200)).optional() })).max(500).optional(),
+  }) }),
+  // v0.4 slice 3 (#29, Factory): what runs on the Mac, about the host and not the session (the sampling session's project and id ride along as on any event). Free and total memory in bytes,
+  // Docker's state (`absent`: no docker binary; `stopped`: the daemon does not answer), and the running containers: a name, when it was created, its state and health, its memory in bytes
+  // and these labels and no others: the compose project and its working directory, and whether it is a Testcontainers one and that run's session id. Never a command, an environment,
+  // a mount, an image or another label. A container of a project the plugin excludes is `excluded: true` and carries only its state, health and memory: no name, no label.
+  Base.extend({ kind: z.literal('machine.sample'), data: z.object({
+    mem_free: count.optional(),
+    mem_total: count.optional(),
+    docker: z.enum(DOCKER_STATES),
+    containers: z.array(z.object({
+      name: id.max(200).optional(),
+      created_at: z.number().int().positive().optional(),
+      state: z.string().regex(/^[a-z]{1,20}$/),
+      health: z.enum(HEALTH).optional(),
+      memory: count.optional(),
+      compose: id.max(200).optional(),
+      working_dir: id.max(500).optional(),
+      testcontainers: z.object({ session: id.max(100).optional() }).optional(),
+      excluded: z.literal(true).optional(),
+    })).max(CONTAINERS_MAX),
+  }) }),
   // Slice 5: every skill and custom agent the session lists, once per session; refs where the mod could read the text.
   Base.extend({ kind: z.literal('skills.catalog'), data: z.object({
     skills: z.array(z.object({ name: id, source: id, plugin: id.optional(), tokens: count, description: describe.optional(), refs: Refs.optional() })).max(1000),

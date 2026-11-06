@@ -31,8 +31,9 @@ export function openStore(path: string): Store {
   return db;
 }
 
-// Columns added after a file could exist (#103: what a PR was counted from, and when a session linked it); schema.sql has them for a new file.
-const ADDED = [['pull_requests', 'counted_lines INTEGER'], ['pull_requests', 'counted_files INTEGER'], ['session_prs', 'ts INTEGER']] as const;
+// Columns added after a file could exist (#103: what a PR was counted from, and when a session linked it; #27: when the open PRs were read; #28: a session's branch, and when a PR opened and the issue it closes; #29: the last event of a session; #32: an open issue's title and when it left the list, and the time of a findings ref's latest reviewer report); schema.sql has them for a new file.
+const ADDED = [['pull_requests', 'counted_lines INTEGER'], ['pull_requests', 'counted_files INTEGER'], ['session_prs', 'ts INTEGER'], ['projects', 'prs_read_at INTEGER'],
+  ['sessions', 'branch TEXT'], ['pull_requests', 'created_at INTEGER'], ['pull_requests', 'issue INTEGER'], ['sessions', 'seen_at INTEGER'], ['open_issues', 'title TEXT'], ['open_issues', 'gone_at INTEGER'], ['finding_reports', 'reviewed_at INTEGER']] as const;
 
 // A statement is prepared once per SQL text and file, so the writer's inline SQL costs one parse for the life of the store. The text store and the analysis
 // store, which are other files, go through this too (a route that calls `db.prepare` itself prepares again on every request, #90).
