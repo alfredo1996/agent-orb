@@ -34,4 +34,27 @@ describe('opening a history file made before #28', () => {
 
     openStore(path).close(); // the second open meets "duplicate column name" and goes on, as a second process opening the file would
   });
+
+  it('#32: an open_issues table made by #28 has no title; opening takes the column and keeps its rows', () => {
+    const path = join(dir, 'before-32.db');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
+      INSERT INTO open_issues (project_id, number, milestone) VALUES ('p', 409, 'v0.4 Factory');`);
+    old.close();
+    const db = openStore(path);
+    expect(columns(db, 'open_issues')).toEqual(expect.arrayContaining(['milestone', 'title', 'gone_at']));
+    expect({ ...get(db, 'SELECT number, milestone, title, gone_at FROM open_issues') }).toEqual({ number: 409, milestone: 'v0.4 Factory', title: null, gone_at: null }); // still open, until a read says otherwise
+    db.close();
+  });
+
+  it('#32: a finding_reports table made by #27 has no reviewed_at; opening takes the column and keeps its rows', () => {
+    const path = join(dir, 'before-32-reports.db');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE finding_reports (project_id TEXT NOT NULL, ref TEXT NOT NULL, ts INTEGER NOT NULL, dropped INTEGER NOT NULL, PRIMARY KEY (project_id, ref)) WITHOUT ROWID;
+      INSERT INTO finding_reports (project_id, ref, ts, dropped) VALUES ('p', 'pr:416', 1792000000000, 0);`);
+    old.close();
+    const db = openStore(path);
+    expect({ ...get(db, 'SELECT ref, ts, dropped, reviewed_at FROM finding_reports') }).toEqual({ ref: 'pr:416', ts: 1792000000000, dropped: 0, reviewed_at: null });
+    db.close();
+  });
 });

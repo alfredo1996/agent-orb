@@ -7,7 +7,7 @@ import { Live, type Session } from './Live.tsx';
 import { lastEventOf, shown } from './live-cards.ts';
 import { Office } from './Office.tsx';
 import { Pipeline } from './Pipeline.tsx';
-import { choiceQuery, choose, readChoice } from './project-choice.ts';
+import { choiceQuery, choose, readChoice, readSession } from './project-choice.ts';
 
 // The studio's frame and routes, and the one /stream every view shares.
 
@@ -60,7 +60,7 @@ function useRoute() {
     const next = path in ROUTES ? path + choiceQuery(choice) : path;
     if (next !== location.hash) history.replaceState(null, '', next);
   }, [hash, choice]);
-  return { view, choice, pick: (name: string) => setChoice((c) => choose(c, name)) };
+  return { view, hash, choice, pick: (name: string) => setChoice((c) => choose(c, name)) };
 }
 
 /** The projects to choose from, the most recent first; asked for again when the page changes. */
@@ -89,7 +89,7 @@ function useNow(ms = 1000) {
 export function App() {
   const { sessions, isOpen } = useStream();
   const now = useNow();
-  const { view, choice, pick } = useRoute();
+  const { view, hash, choice, pick } = useRoute();
   const projects = useProjectList(view);
   const lastEvent = lastEventOf(Object.values(sessions)); // the connection says Quiet from the newest event, not from the last time the stream spoke
   const list = Object.values(sessions)
@@ -124,7 +124,7 @@ export function App() {
       </header>
 
       <ProjectContext.Provider value={{ projects, choice, pick }}>
-        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} /> : view === 'office' ? <Office sessions={running} all={sessions} now={now} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} />}
+        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} live={new Set(list.map((s) => s.id))} /> : view === 'office' ? <Office sessions={running} all={sessions} now={now} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} />}
       </ProjectContext.Provider>
     </div>
   );

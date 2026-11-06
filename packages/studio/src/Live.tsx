@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ago, contextMeter, duration, modelLabel, plural, readTokens, stateLabel, usd } from './format.ts';
 import { rowKey, useHistory, type Open, type Picked } from './History.tsx';
 import { Explain, PageHeader } from './kit.tsx';
@@ -16,8 +16,29 @@ export type Session = {
   content?: 'off' | 'full' | 'excluded'; stoppedAt?: number; stoppedAborted?: boolean; skills?: { skill: string; count: number; by: { who: string; count: number }[] }[];
 };
 
-export function Live({ list, all, now }: { list: Session[]; all: Record<string, Session>; now: number }) {
+/**
+ * What the hook below does at each render of the list: the card a Factory board link named (`#/live?session=<id>`, #32) is brought into view and focused, once. A session Live does not show, because
+ * it ended more than ten minutes ago, is given up on as soon as the list has loaded without it; before that (the stream has not spoken) the wish stays.
+ */
+export function focusWanted(want: { current: string | null | undefined }, listed: number, doc: Pick<Document, 'getElementById'>, reducedMotion: boolean) {
+  if (!want.current) return;
+  const card = doc.getElementById(`session-${want.current}`);
+  if (!card && !listed) return; // the stream has not spoken yet
+  want.current = null;
+  card?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+  card?.focus({ preventScroll: true });
+}
+
+/** The session a link named (the app reads it out of the hash and passes it as `wanted`), taken as the view opens: not one that a later render is handed. */
+function useWantedSession(list: Session[], wanted: string | null) {
+  const want = useRef<string | null | undefined>(undefined);
+  if (want.current === undefined) want.current = wanted;
+  useEffect(() => focusWanted(want, list.length, document, matchMedia('(prefers-reduced-motion: reduce)').matches), [list]);
+}
+
+export function Live({ list, all, now, wanted = null }: { list: Session[]; all: Record<string, Session>; now: number; wanted?: string | null }) {
   const { picked, open, drawer } = useHistory(all, now);
+  useWantedSession(list, wanted);
   return (
     <main className="live">
       <PageHeader title="Live" sub={<span>{liveSentence(list)}</span>} />
@@ -142,7 +163,7 @@ export function NeedRow({ n, project, branch, now, mode, sentAt, onOpen, onStop 
 
 function SessionCard({ s, now, picked, onOpen }: { s: Session; now: number; picked?: Picked; onOpen: Open }) {
   return (
-    <section className="card sess" aria-label={`Session ${s.project}`}>
+    <section className="card sess" id={`session-${s.id}`} tabIndex={-1} aria-label={`Session ${s.project}`}>
       <div className="shead">
         <div className="who">
           <div className="l1">

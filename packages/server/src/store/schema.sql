@@ -108,15 +108,20 @@ CREATE TABLE IF NOT EXISTS open_prs (
 -- report names keeps its fate. ref is `pr:416` for a report whose fence named its PR, else the branch it was made on (a branch name never holds `:`); an open PR reads
 -- both its own and its head branch's. A title and a dismissal's reason are text: the text store holds them (node 'finding', id `project|ref|id`), with Content on full only.
 -- finding_reports is the last report a ref had (an empty one says "nothing found") and how many lines did not parse, kept until a reviewer's report drops none.
+-- reviewed_at (#32) is the time of the latest *reviewer's* report on the ref (the writer's `reviewer`: orb-role, else an agent that wrote no file): the board's Reviewing, Fixing and Gate
+-- compare against it, never against a report by an agent that wrote code (a fixer says what it did; that is not a review).
 CREATE TABLE IF NOT EXISTS findings (
   project_id TEXT NOT NULL, ref TEXT NOT NULL, id TEXT NOT NULL, severity TEXT NOT NULL, file TEXT NOT NULL, fate TEXT NOT NULL, ts INTEGER NOT NULL,
   PRIMARY KEY (project_id, ref, id)
 ) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS finding_reports (project_id TEXT NOT NULL, ref TEXT NOT NULL, ts INTEGER NOT NULL, dropped INTEGER NOT NULL, PRIMARY KEY (project_id, ref)) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS finding_reports (project_id TEXT NOT NULL, ref TEXT NOT NULL, ts INTEGER NOT NULL, dropped INTEGER NOT NULL, reviewed_at INTEGER, PRIMARY KEY (project_id, ref)) WITHOUT ROWID;
 -- v0.4 slice 2 (#28, issue cost). open_issues: the open issues' numbers and milestones as the plugin last read them, a snapshot per project replaced like open_prs (a read
 -- with no `issues` leaves it). budgets: the owner's, set by PUT /api/budget and never by the writer, per project *name* like goal_usd: kind 'milestone' (key the milestone's title:
 -- the default for each issue in it) or 'issue' (key the number: that issue's own budget, which wins). No default ships: with none, nothing warns.
-CREATE TABLE IF NOT EXISTS open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
+-- title (#32) is the issue's own title, sent only with Content on full: the board names its rows with it, and a read without one clears it of the issues the read lists.
+-- gone_at (#32) is when an issue left the list (closed, or past gh's limit of 200): the row keeps its milestone and title, so the board can show it as Merged on its milestone when its PR merged.
+-- Null: it is in the last read. A later read that lists the issue again (reopened) clears it. ponytail: the closed rows are never pruned (a few a week); a DELETE of the old ones if a project ever closes thousands.
+CREATE TABLE IF NOT EXISTS open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, title TEXT, gone_at INTEGER, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS budgets (project TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, usd REAL NOT NULL, PRIMARY KEY (project, kind, key)) WITHOUT ROWID;
 -- A test run's result per project and commit, from a run on a clean tree (#34; 7 to 64 hex characters, matched against a PR's head by prefix): the latest wins.
 CREATE TABLE IF NOT EXISTS gates (project_id TEXT NOT NULL, commit_sha TEXT NOT NULL, result TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (project_id, commit_sha)) WITHOUT ROWID;

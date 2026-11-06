@@ -276,6 +276,16 @@ export const BRANCH_ISSUES: [string | undefined, number | null][] = [
   ['fix/0-nothing', null],
   ['fix/90.1-x', null],
   ['fix/1234567890-x', null], // ten digits are no issue number
+  ['fix/99999-last', 99999], // the largest number a branch can name: past it a repository has no such issue (R10, #32)
+  ['fix/100000-x', null],
+  ['fix/123456-too-long', null], // six digits are not read as the five that lead them either
+  ['deps/2026-11-03', null], // a dated branch is no issue #2026
+  ['hotfix/2026-11-fix', null],
+  ['chore/1999-12', null],
+  ['release/2027-01_cut', null],
+  ['fix/2026-fix-the-feed', 2026], // a year-shaped number that is not followed by a month is an issue (NeoBoard has passed #2400)
+  ['fix/2026-13-x', 2026], // 13 is no month
+  ['fix/2026', 2026],
   ['', null],
   [undefined, null],
 ];

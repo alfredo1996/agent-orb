@@ -193,6 +193,15 @@ describe('the budget: a default per milestone, an override per issue, no default
     expect((await budget()).milestones.map((m: { name: string }) => m.name)).toEqual(['b', 'old']);
   });
 
+  it('#32: an issue that closes keeps its milestone, so what it cost is still held to the default; a closed issue with no spend is not listed, and its milestone is not offered', async () => {
+    await send(start('s-1', 'fix/409-x'), spend('s-1', T0, 9), read(T0 + MIN, [], [{ number: 409, milestone: 'm' }, { number: 500, milestone: 'm' }, { number: 501, milestone: 'z' }]));
+    await put({ project: 'mobile-app', milestone: 'm', usd: 10 });
+    await send(read(T0 + 6 * MIN, [], [{ number: 1, milestone: 'n' }])); // 409, 500 and 501 closed
+    expect(await issue(409)).toMatchObject({ milestone: 'm', budget: 10, source: 'milestone', mark: 'at80' });
+    expect(await issue(500)).toBeUndefined();
+    expect((await budget()).milestones).toEqual([{ name: 'm', budget: 10 }, { name: 'n', budget: null }]); // z has only a closed issue and no default
+  });
+
   it('PUT refuses what is not a budget, a project it has not seen, and a write from another site', async () => {
     await send(start('s-1', 'main'), spend('s-1', T0, 1));
     for (const usd of [0, -5, 1_000_001, '12']) expect((await put({ project: 'mobile-app', issue: 409, usd })).status).toBe(400);

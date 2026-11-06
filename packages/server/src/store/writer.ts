@@ -236,8 +236,15 @@ function writeRows(db: Store, ev: Event[], source: Source) {
       { id: `${project}:${p.number}`, number: p.number, created_at: p.created_at, issue: p.issue });
     }
     if (e.data.issues) { // absent says nothing about the issues: the last read stands
-      run(db, 'DELETE FROM open_issues WHERE project_id = :project', { project });
-      for (const i of e.data.issues) run(db, 'INSERT OR REPLACE INTO open_issues (project_id, number, milestone) VALUES (:project, :number, :milestone)', { project, number: i.number, milestone: i.milestone });
+      // #32: an issue the read no longer lists is closed (or past gh's limit): it keeps its milestone and title and is marked gone, so the board can show it as Merged on its milestone. The ones listed are open.
+      run(db, 'UPDATE open_issues SET gone_at = coalesce(gone_at, :ts) WHERE project_id = :project', { project, ts: e.ts });
+      for (const i of e.data.issues) {
+        run(db, `INSERT INTO open_issues (project_id, number, milestone, title, gone_at) VALUES (:project, :number, :milestone, :title, NULL)
+                 ON CONFLICT (project_id, number) DO UPDATE SET milestone = excluded.milestone, title = excluded.title, gone_at = NULL`, { project, number: i.number, milestone: i.milestone, title: i.title });
+      }
+      // A title travels only with Content on full: a read of issues that carries none (Content off, or an excluded project) clears the closed rows' titles too, as it just cleared the open ones'.
+      // ponytail: a read of no issues at all says nothing either way (Content on full sends the same), so the issue that just closed keeps its title until a read of others carries none.
+      if (e.data.issues.length && !e.data.issues.some((i) => i.title)) run(db, 'UPDATE open_issues SET title = NULL WHERE project_id = :project', { project });
     }
   }
   // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it
@@ -252,6 +259,7 @@ function writeRows(db: Store, ev: Event[], source: Source) {
              ON CONFLICT (project_id, ref) DO UPDATE SET ts = excluded.ts,
                dropped = CASE WHEN :reviewer THEN excluded.dropped ELSE max(finding_reports.dropped, excluded.dropped) END WHERE excluded.ts >= finding_reports.ts`,
     { ...key, dropped: e.data.dropped, reviewer });
+    if (reviewer) run(db, 'UPDATE finding_reports SET reviewed_at = max(coalesce(reviewed_at, 0), :ts) WHERE project_id = :project AND ref = :ref', key); // #32: a fixer's report is not the review
     for (const f of e.data.findings) {
       run(db, `INSERT INTO findings (project_id, ref, id, severity, file, fate, ts) VALUES (:project, :ref, :id, :severity, :file, :fate, :ts)
                ON CONFLICT (project_id, ref, id) DO UPDATE SET severity = excluded.severity, file = excluded.file, fate = excluded.fate, ts = excluded.ts WHERE excluded.ts >= findings.ts`,

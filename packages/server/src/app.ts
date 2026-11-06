@@ -4,6 +4,7 @@ import Fastify, { type FastifyRequest, type FastifyServerOptions } from 'fastify
 import { analysis } from './api/analysis.ts';
 import type { Claude } from './analysis-claude.ts';
 import { openAnalysisStore, type AnalysisStore } from './analysis-store.ts';
+import { board } from './api/board.ts';
 import { budget } from './api/budget.ts';
 import { factory } from './api/factory.ts';
 import { machine } from './api/machine.ts';
@@ -81,6 +82,7 @@ export function buildApp({ store = openStore(':memory:'), token, logger = false,
   pipeline(app, { store }); // the Pipeline, its role fixes, and the lanes and lists its pickers ask for
   factory(app, { store, content, now }); // v0.4 slice 1 (#27): ready() per open PR, and its findings; a finding's title and reason are in the text store
   budget(app, { store, now }); // v0.4 slice 2 (#28): what each issue cost against its budget, and the budgets the owner sets
+  board(app, { store, content, now }); // v0.4 slice 6 (#32): each issue of a milestone from queued to merged, its stage read from what the agents did
   machine(app, { store, now }); // v0.4 slice 3 (#29): the Mac's latest sample per host, its containers grouped and flagged
   stop(app, { store, token, now }); // v0.4 slice 5 (#31): Live's Stop, queued here and taken by the session's plugin; the clock is the one a stop's ten minutes run by
   return app;

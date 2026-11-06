@@ -66,6 +66,7 @@ let goalBusy = false
 // v0.4 slice 1 (#27): when the open PRs were last asked for, and whether a gh call is out.
 let openPrsAt = 0
 let openPrsBusy = false
+let openNumbers = new Set<number>() // the PRs the last open-PR read sent: one the next read lacks has merged or been closed (#32)
 // v0.4 slice 5 (#31): the open PRs as the server judged them (GET /api/factory), which the merge refusal reads and nothing else; when they were last asked for, whether a call is out, and the same for the studio's stop.
 let factory: FactoryMemory | undefined
 let factoryAt = 0
@@ -330,6 +331,7 @@ async function sendPrs($: $, excluded: boolean) {
   const r = await $.process.run(prsArgv(await $.clock.now()), { cwd: checkout, timeoutMs: 60_000 })
   const prs = r.exitCode === 0 ? parsePrs(r.stdout, !excluded) : []
   if (prs.length && ctx) push($, build.projectPrs(ctx, prs))
+  return r.exitCode === 0 // whether gh answered: the open-PR read holds its own list back when it did not (#32)
 }
 
 /**
@@ -338,6 +340,8 @@ async function sendPrs($: $, excluded: boolean) {
  * never a comment's text. An excluded project sends no branches. No gh, or a gh that fails or is not logged in, sends nothing, quietly; a call that hangs is not repeated.
  * #28: each PR also carries when it opened and the issue it closes (its body is read here, only the number leaves), and the open issues' numbers and milestones ride in the same
  * event, from a second gh call that, failing, leaves them out.
+ * #32: a PR the last read sent and this one lacks has merged or been closed, and the merged list says which; so that is read right here (the existing read, `sendPrs`) and sent before the open list, and
+ * a merge reaches the server with the list that no longer holds the PR, not at the next session start. If gh cannot answer, nothing is sent this time: the server keeps what it had, and the next read tries both.
  * ponytail: every session in a repo reads it; three sessions in one repo ask three times in 5 minutes. Share the last read through `$.store` if GitHub's rate limit is ever met.
  */
 async function readOpenPrs($: $) {
@@ -348,10 +352,12 @@ async function readOpenPrs($: $) {
     const r = await $.process.run(openPrsArgv, { cwd: checkout, timeoutMs: 60_000 })
     const prs = r.exitCode === 0 ? parseOpenPrs(r.stdout, !excluded) : undefined
     if (prs && ctx) {
+      if ([...openNumbers].some((n) => !prs.some((p) => p.number === n)) && !(await sendPrs($, excluded).catch(() => false))) return
       // #28: the open issues' milestones ride in the same event. A read that fails leaves `issues` out, so the server keeps the last.
       const i = await $.process.run(openIssuesArgv, { cwd: checkout, timeoutMs: 60_000 }).catch(() => undefined)
-      const issues = i && i.exitCode === 0 ? parseOpenIssues(i.stdout, !excluded) : undefined
+      const issues = i && i.exitCode === 0 ? parseOpenIssues(i.stdout, !excluded, text) : undefined
       if (ctx) push($, build.projectOpenPrs(ctx, prs, issues))
+      openNumbers = new Set(prs.map((p) => p.number))
     }
   } finally {
     openPrsBusy = false

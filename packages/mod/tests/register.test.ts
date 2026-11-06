@@ -53,7 +53,7 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   const hash = { calls: [] as { argv: readonly string[]; cwd?: string; stdin?: string }[], exitCode: 0, hang: false }
   // v0.3 slice 2 (#42): `gh pr list --state merged ...` answers `gh.out` (a test sets it before the session starts), exits with `gh.exitCode`, never
   // answers (`hang`), or is not installed (`missing`: the call rejects).
-  const gh = { out: '', exitCode: 0, hang: false, missing: false, calls: [] as { argv: readonly string[]; cwd?: string }[],
+  const gh = { out: '', exitCode: 0, hang: false, missing: false, mergedExit: undefined as number | undefined, calls: [] as { argv: readonly string[]; cwd?: string }[],
     // v0.4 slice 1 (#27): `gh pr list --state open ...` answers `gh.open`, and is recorded in `openCalls` (not `calls`, which is the merged list's)
     open: '', openCalls: [] as { argv: readonly string[]; cwd?: string }[],
     // v0.4 slice 2 (#28): `gh issue list --state open ...` answers `gh.issues` (empty: gh printed nothing usable) and is recorded in `issueCalls`
@@ -104,7 +104,7 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
       ;(issue ? gh.issueCalls : open ? gh.openCalls : gh.calls).push({ argv: e.argv, cwd: e.init?.cwd })
       if (gh.hang) return new Promise(() => {})
       if (gh.missing) return { deny: 'spawn gh ENOENT' }
-      return { value: { exitCode: gh.exitCode, stdout: issue ? gh.issues : open ? gh.open : gh.out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      return { value: { exitCode: !issue && !open && gh.mergedExit !== undefined ? gh.mergedExit : gh.exitCode, stdout: issue ? gh.issues : open ? gh.open : gh.out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
     const isLog = e.argv[0] === 'git' && e.argv[3] === 'log'
     if (isLog) git.calls.push(e.argv)
@@ -1677,7 +1677,7 @@ const OPEN_LIST = JSON.stringify([{
 }])
 const openSent = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'project.open_prs')
 const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']
-const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone']
+const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title']
 
 test('v0.4 slice 1: the open PRs are read in the checkout at session start and every 5 minutes after, and no comment text, title or commit message leaves', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
   const w = world(on)
@@ -1750,6 +1750,95 @@ test('v0.4 slice 2: a gh issue list that fails still sends the PRs, with no issu
   await w.clock.advance(5 * MIN + 2_000)
   await w.clock.advance(2_000)
   expect(openSent(w).map((e) => e.data.issues)).toEqual([undefined, [{ number: 409 }, { number: 410 }]])
+})
+
+// v0.4 slice 6 (#32): an issue's title names a row of the board, so it leaves only with Content on full, masked; an excluded project sends numbers only.
+test('v0.4 slice 6: the open issues\' titles travel with Content on full, masked, and only then', { options: { token: 'tok', content: 'full' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = JSON.stringify([{ number: 409, title: 'Retry after an expired token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789', body: 'private text', milestone: { title: 'v0.4 Factory' } }, { number: 410, milestone: null }])
+  await boot($)
+  await w.clock.advance(2_000)
+  const issues = openSent(w)[0]!.data.issues
+  expect(issues[0]).toMatchObject({ number: 409, milestone: 'v0.4 Factory', title: expect.stringContaining('Retry after an expired token') })
+  expect(issues[0].title).not.toContain('sk-ant-api03')
+  expect(issues[1]).toEqual({ number: 410 })
+  expect(JSON.stringify(w.sent())).not.toMatch(/private text/)
+})
+
+test('v0.4 slice 6: with Content off, or in an excluded project, no issue title leaves', { options: { token: 'tok' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = ISSUE_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }])
+})
+
+test('v0.4 slice 6: an excluded project sends issue numbers alone, whatever Content is set to', { options: { token: 'tok', content: 'full', excludeProjects: 'o/r' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = ISSUE_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409 }, { number: 410 }])
+  expect(JSON.stringify(w.sent())).not.toMatch(/Retry after|v0.4 Factory/)
+})
+
+// v0.4 slice 6 (#32): a PR that leaves the open list has merged or been closed, and the merged list says which. The open read finds that out and reads the merged list right then, in the same
+// off-the-hook pass, and sends it first: the server gets the merge with the list that no longer holds the PR, so an issue does not go backwards between the two reads (the board's R1).
+const MERGED_416 = JSON.stringify([{ additions: 5, deletions: 1, headRefName: 'fix/409-token-retry', mergedAt: '2026-11-05T09:00:00Z', number: 416, title: 'Retry after an expired token', files: [{ path: 'a.ts', additions: 5, deletions: 1 }] }])
+const sentKinds = (w: ReturnType<typeof world>) => w.sent().map((e) => e.kind).filter((k) => k === 'project.prs' || k === 'project.open_prs')
+
+test('v0.4 slice 6: when a PR leaves the open list the merged PRs are read at once and sent before the open list that no longer holds it', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = OPEN_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(1); // the merged list at session start (it was empty: nothing sent)
+  await w.clock.advance(5 * MIN + 2_000)
+  expect(w.gh.calls).toHaveLength(1) // the same PR still open: no extra read of the merged list
+  w.gh.open = '[]' // PR 416 is gone from the list
+  w.gh.out = MERGED_416
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(2)
+  expect(sentKinds(w)).toEqual(['project.open_prs', 'project.open_prs', 'project.prs', 'project.open_prs'])
+  expect(prsSent(w)[0]!.data.prs.map((p: any) => p.number)).toEqual([416])
+  expect(openSent(w)[2]!.data.prs).toEqual([])
+})
+
+test('v0.4 slice 6: a PR that left the list without merging (closed) is read for, finds nothing, and the open list is sent all the same', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = OPEN_LIST
+  w.gh.out = '[]'
+  await boot($)
+  await w.clock.advance(2_000)
+  w.gh.open = '[]'
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(2)
+  expect(sentKinds(w)).toEqual(['project.open_prs', 'project.open_prs']) // no project.prs: nothing merged
+})
+
+test('v0.4 slice 6: a merged list that cannot be read sends nothing this time, so the server keeps what it last had; the next read tries both again', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = OPEN_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  w.gh.open = '[]'
+  w.gh.mergedExit = 1
+  w.gh.out = 'HTTP 502: Bad Gateway'
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(2)
+  expect(sentKinds(w)).toEqual(['project.open_prs']) // the list without PR 416 was held back
+  w.gh.mergedExit = undefined
+  w.gh.out = MERGED_416
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(3)
+  expect(sentKinds(w)).toEqual(['project.open_prs', 'project.prs', 'project.open_prs'])
 })
 
 // v0.4 slice 3 (#29, Factory): the Mac's free memory and its running containers, sampled once per machine however many sessions run. Only names, a few labels, state, health and memory leave.

@@ -68,18 +68,31 @@ describe('the open-PR read, for cost', () => {
 });
 
 describe('the open issues\' milestones', () => {
-  it('asks gh for the open issues\' numbers and milestones only', () => {
-    expect(openIssuesArgv).toEqual(['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone']);
+  it('asks gh for the open issues\' numbers, milestones and titles only', () => {
+    expect(openIssuesArgv).toEqual(['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title']);
   });
 
-  it('keeps a number and its milestone\'s title: never an issue\'s title or body', () => {
-    const issues = parseOpenIssues(JSON.stringify([
-      { number: 409, title: 'Retry after an expired token', body: 'private text', milestone: { number: 3, title: 'v0.4 Factory', description: 'the plan' } },
-      { number: 410, milestone: null },
-      { number: 411 },
-    ]))!;
+  const LIST = JSON.stringify([
+    { number: 409, title: 'Retry after an expired token', body: 'private text', milestone: { number: 3, title: 'v0.4 Factory', description: 'the plan' } },
+    { number: 410, milestone: null },
+    { number: 411 },
+  ]);
+
+  it('keeps a number and its milestone\'s title, and an issue\'s own title only when the Content helper gives it: never a body', () => {
+    const issues = parseOpenIssues(LIST)!;
     expect(issues).toEqual([{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }, { number: 411 }]);
-    expect(JSON.stringify(issues)).not.toMatch(/Retry after|private text|the plan/);
+    expect(JSON.stringify(issues)).not.toMatch(/Retry after|private text|the plan/); // Content off: the helper is not passed
+    const titled = parseOpenIssues(LIST, true, (s) => s)!;
+    expect(titled).toEqual([{ number: 409, milestone: 'v0.4 Factory', title: 'Retry after an expired token' }, { number: 410 }, { number: 411 }]);
+    expect(JSON.stringify(titled)).not.toMatch(/private text|the plan/);
+    expect(parseOpenIssues(LIST, true, () => undefined)).toEqual(issues); // the helper says nothing leaves (Content is not full): none does
+  });
+
+  it('an issue\'s title is cut to 200 characters, and an empty or non-text one is left out', () => {
+    const long = JSON.stringify([{ number: 1, title: 'x'.repeat(300) }, { number: 2, title: '' }, { number: 3, title: 42 }]);
+    const [a, b, c] = parseOpenIssues(long, true, (s) => s.toUpperCase())!;
+    expect(a!.title).toBe('X'.repeat(200));
+    expect([b, c]).toEqual([{ number: 2 }, { number: 3 }]);
   });
 
   it('an excluded project sends numbers only: a milestone\'s title is a name', () => {
@@ -100,6 +113,7 @@ describe('project.open_prs with cost fields speaks the server schema', () => {
     build.projectOpenPrs(ctx, read(gh({ body: 'Closes #409' }), gh({ number: 417, headRefName: 'feat/407-compress' })), [{ number: 409, milestone: 'v0.4 Factory' }, { number: 407 }]),
     build.projectOpenPrs(ctx, read(gh())), // no issue read: the key is absent, so the server keeps what it has
     build.projectOpenPrs(ctx, [], []), // an empty list is a read of no open issues
+    build.projectOpenPrs(ctx, [], [{ number: 409, milestone: 'v0.4 Factory', title: 'Retry after an expired token' }]), // #32: an issue's title, with Content on full
   ])('%#', (e) => {
     const parsed = Event.safeParse(e);
     expect(parsed.error).toBeUndefined();
