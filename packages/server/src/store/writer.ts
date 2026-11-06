@@ -242,6 +242,9 @@ function writeRows(db: Store, ev: Event[], source: Source) {
         run(db, `INSERT INTO open_issues (project_id, number, milestone, title, gone_at) VALUES (:project, :number, :milestone, :title, NULL)
                  ON CONFLICT (project_id, number) DO UPDATE SET milestone = excluded.milestone, title = excluded.title, gone_at = NULL`, { project, number: i.number, milestone: i.milestone, title: i.title });
       }
+      // A title travels only with Content on full: a read of issues that carries none (Content off, or an excluded project) clears the closed rows' titles too, as it just cleared the open ones'.
+      // ponytail: a read of no issues at all says nothing either way (Content on full sends the same), so the issue that just closed keeps its title until a read of others carries none.
+      if (e.data.issues.length && !e.data.issues.some((i) => i.title)) run(db, 'UPDATE open_issues SET title = NULL WHERE project_id = :project', { project });
     }
   }
   // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it

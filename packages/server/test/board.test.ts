@@ -372,8 +372,16 @@ describe('GET /api/board: a closed issue, and a merge between two reads (R1, R3)
   it('an issue that closes when its PR merges stays on its milestone as Merged, with its title: the merged list is read first, and the next open read no longer lists the issue', async () => {
     await send(...ready());
     expect(await stageOf(409)).toBe('gate'); // (the read is two days old, so it is never Ready)
-    await send(merged(NOW0 - 6 * MIN, [{ number: 416, merged_at: NOW0 - 7 * MIN, head: 'fix/409-retry' }]), read(NOW0 - 5 * MIN, [], [{ number: 417, milestone: M }]));
+    await send(merged(NOW0 - 6 * MIN, [{ number: 416, merged_at: NOW0 - 7 * MIN, head: 'fix/409-retry' }]), read(NOW0 - 5 * MIN, [], [{ number: 417, milestone: M, title: 'Sync the queue' }]));
     expect(await row(409)).toMatchObject({ stage: 'merged', milestone: M, outside: false, title: T, pr: { number: 416, head: 'fix/409-retry', merged: true } });
+  });
+
+  it('a closed issue\'s title goes with the next read that carries none (Content turned off or the project excluded), as an open one\'s does; its place on the milestone stays', async () => {
+    await send(...ready(), merged(NOW0 - 6 * MIN, [{ number: 416, merged_at: NOW0 - 7 * MIN, head: 'fix/409-retry' }]), read(NOW0 - 5 * MIN, [], [{ number: 417, milestone: M, title: 'Sync the queue' }]));
+    expect(await row(409)).toMatchObject({ stage: 'merged', title: T });
+    await send(read(NOW0 - 4 * MIN, [], issues(417)));
+    expect(await row(409)).toMatchObject({ stage: 'merged', milestone: M, outside: false });
+    expect(await row(409)).not.toHaveProperty('title');
   });
 
   it('it is on its own milestone\'s board only, and the picker lists the milestones of the issues still open', async () => {
