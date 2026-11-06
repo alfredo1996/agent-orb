@@ -20,10 +20,11 @@ CREATE TABLE IF NOT EXISTS role_rules (project_id TEXT NOT NULL, agent_type TEXT
 -- source is the first session.start source seen; recorded is 1 once a session.start with another source arrived.
 -- plugin_first and plugin_last are the first and last ts of the prompts, requests and calls the plugin wrote (the writer's `source` is 'plugin'):
 -- the stretch the import never fills. An imported session the plugin resumed later has a stretch from the resume on (#79); null = the plugin wrote none.
+-- seen_at (#29) is the last ts of any event of the session, of any kind (a machine sample and a read of the open PRs among them); null = none since the column was added.
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, host TEXT NOT NULL, project_id TEXT NOT NULL,
   started_at INTEGER, ended_at INTEGER, model TEXT, claude_version TEXT, content TEXT, source TEXT, recorded INTEGER,
-  plugin_first INTEGER, plugin_last INTEGER, dropped_events INTEGER, branch TEXT
+  plugin_first INTEGER, plugin_last INTEGER, dropped_events INTEGER, branch TEXT, seen_at INTEGER
 ) WITHOUT ROWID;
 
 -- id is `session:agent_id`, the main agent `session:main`. parent_id and spawn_tool_use_id are the SPAWNED edge and the SPAWNED_AGENT one.
@@ -119,6 +120,11 @@ CREATE TABLE IF NOT EXISTS open_issues (project_id TEXT NOT NULL, number INTEGER
 CREATE TABLE IF NOT EXISTS budgets (project TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, usd REAL NOT NULL, PRIMARY KEY (project, kind, key)) WITHOUT ROWID;
 -- A test run's result per project and commit, from a run on a clean tree (#34; 7 to 64 hex characters, matched against a PR's head by prefix): the latest wins.
 CREATE TABLE IF NOT EXISTS gates (project_id TEXT NOT NULL, commit_sha TEXT NOT NULL, result TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (project_id, commit_sha)) WITHOUT ROWID;
+
+-- v0.4 slice 3 (#29, Factory). machine_samples: one row per host, the latest machine.sample the plugin sent (a sample older than the row's changes nothing): free and total memory in bytes (null: the
+-- plugin could not read them), Docker's state (ok, absent, stopped) and the running containers as JSON (name, created_at, state, health, memory, and the compose and Testcontainers labels, as the event
+-- carries them). The grouping and the flags are a read's (api/machine.ts), against the history as it stands then.
+CREATE TABLE IF NOT EXISTS machine_samples (host TEXT PRIMARY KEY, ts INTEGER NOT NULL, mem_free INTEGER, mem_total INTEGER, docker TEXT NOT NULL, containers TEXT NOT NULL) WITHOUT ROWID;
 
 -- The indexes the writer's own lookups and the reads walk. A read goes from a project down to its calls (projects, sessions, agents, turns), and what it counts
 -- must come from an index, not from a table row fetched for every call: that, not the joins, was the cost (#83, slice 2). So calls_turn carries `success`,

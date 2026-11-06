@@ -264,6 +264,14 @@ function writeRows(db: Store, ev: Event[], source: Source) {
     { project: projectId(e), commit: e.data.commit, result: e.data.result, ts: e.ts });
   }
 
+  // v0.4 slice 3 (#29): the latest sample of each host replaces the one before; an older one, arriving late, changes nothing. The sample is about the host, so it is kept by host alone.
+  for (const e of only(ev, 'machine.sample')) {
+    run(db, `INSERT INTO machine_samples (host, ts, mem_free, mem_total, docker, containers) VALUES (:host, :ts, :free, :total, :docker, :containers)
+             ON CONFLICT (host) DO UPDATE SET ts = excluded.ts, mem_free = excluded.mem_free, mem_total = excluded.mem_total, docker = excluded.docker, containers = excluded.containers
+             WHERE excluded.ts >= machine_samples.ts`,
+    { host: e.host, ts: e.ts, free: e.data.mem_free, total: e.data.mem_total, docker: e.data.docker, containers: JSON.stringify(e.data.containers) });
+  }
+
   // Slice 5: the skills and custom agents a session lists, one SkillDef per project, kind, origin and name. A field a later event leaves out keeps
   // what an earlier one said (a plugin skill's references arrive with its first load). tokens is 0 until one says.
   const def = (e: Event, kind: 'skill' | 'agent', d: { name: string; source: string; plugin?: string; tokens?: number; description?: string; refs?: { skills: string[]; agents: string[] }; preload?: string[] }) => ({
@@ -314,6 +322,12 @@ function writeRows(db: Store, ev: Event[], source: Source) {
       run(db, 'UPDATE sessions SET plugin_first = min(coalesce(plugin_first, :lo), :lo), plugin_last = max(coalesce(plugin_last, :hi), :hi) WHERE id = :id', { id, lo, hi });
     }
   }
+
+  // v0.4 slice 3 (#29): the last ts of any event of each session, whichever kind and source (a machine sample, a read of the open PRs): "Left running" reads a project's quiet from it. Apart from
+  // plugin_last, which is the stretch the import fills around and so counts only the prompts, requests and calls.
+  const heard = new Map<string, number>();
+  for (const e of ev) heard.set(e.session_id, Math.max(heard.get(e.session_id) ?? 0, e.ts));
+  for (const [id, ts] of heard) run(db, 'UPDATE sessions SET seen_at = max(coalesce(seen_at, 0), :ts) WHERE id = :id', { id, ts });
 }
 
 type Fp = { id: string; project: string; cwd: string | null; path: string; scope: 'project' | 'user'; hash: string; ts: number };

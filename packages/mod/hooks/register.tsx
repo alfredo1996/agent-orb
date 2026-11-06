@@ -4,7 +4,7 @@ import type { EngineInterface as $, Register } from 'claude-code'
 import type { OrbAgentRow, OrbEventRow, OrbView } from '../types'
 import {
   BATCH, build, capText, changesArgv, checkStalls, commandClass, enqueue, errorClass, errorShape, filesTouched, fingerprintFiles, fingerprintsFrom, fmtTokens, goalNotice, hostName, isExcluded, mask, modelLabel, newOutbox, newTracker,
-  normalizeRemote, openIssuesArgv, openPrsArgv, parseChanges, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, toolContent, type ContentMode, type Goal, type GoalSent,
+  normalizeRemote, openIssuesArgv, openPrsArgv, parseChanges, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, toolContent, type ContentMode, type Goal, type GoalSent,
   familyOf, modelCheck, modelFromFrontmatter, pricierNotice, rejectedIn, roleFromFrontmatter, settle, statusText, takeBatch, tokensOf, usageOf,
   descriptionOf, FINDINGS_ASK, preloadOf, refsIn, type CatalogAgent, type CatalogSkill, type Ctx, type Ev, type Refs, type Role, type SkillLoad,
 } from './core.ts'
@@ -17,6 +17,9 @@ const TICK_MS = 2_000
 const ORPHAN_MS = 60_000 // another session's outbox untouched this long is taken over
 const GOAL_MS = 60_000 // v0.2 slice 3: the goal is asked again this often
 const OPEN_PRS_MS = 5 * 60_000 // v0.4 slice 1 (#27): the open PRs are read from GitHub again this often
+const MACHINE_MS = 10 * 60_000 // v0.4 slice 3 (#29): the machine is sampled at most this often, by whichever session finds the last sample this old
+const MACHINE_CHECK_MS = 60_000 // and a running session looks at the store this often
+const MACHINE_KEY = 'machine:sampled'
 const view = atom({ plugin: 'agent-orb', key: 'view' } as const, null as OrbView | null)
 
 type Usage = ReturnType<typeof usageOf>
@@ -63,6 +66,9 @@ let goalBusy = false
 // v0.4 slice 1 (#27): when the open PRs were last asked for, and whether a gh call is out.
 let openPrsAt = 0
 let openPrsBusy = false
+// v0.4 slice 3 (#29): when this session last looked at the store's machine timestamp, and excludeProjects as start() expanded it.
+let machineAt = 0
+let excludeEntries = ''
 const t = newTracker()
 const ob = newOutbox()
 const recent: OrbEventRow[] = []
@@ -154,6 +160,7 @@ async function tick($: $) {
   if (ticks++ % 5 === 0) ctxPercent = (await $.session.usage().catch(() => undefined))?.context?.percent ?? ctxPercent
   if (now - goalAt >= GOAL_MS) void fetchGoal($).catch(() => {}) // off the tick's path: a slow server holds nothing up
   if (now - openPrsAt >= OPEN_PRS_MS) void readOpenPrs($).catch(() => {}) // and a slow gh too
+  if (now - machineAt >= MACHINE_CHECK_MS) void sampleMachine($, now).catch(() => {}) // and docker
   const text = !token ? 'agent-orb: no token (see /orb)' : statusText(t, ctxPercent, now, goal)
   if (text !== lastStatus) $.ui.status((lastStatus = text))
 
@@ -373,6 +380,24 @@ async function sendGate($: $, w: { agentId?: string; turnId?: string }, result: 
   push($, build.gateReport(ctx, w, { result, commit }), { agent: label(key(w.agentId)), kind: 'gate.report', detail: `${result} ${commit.slice(0, 7)}` })
 }
 
+/**
+ * v0.4 slice 3 (#29, Factory): the Mac's free memory and its running containers, sent as one `machine.sample`, once per machine however many sessions run: the plugin's store is shared by
+ * every session, and holds when the machine was last sampled. A session looks at session start and then every minute from the tick, never on a hook's path (docker may take seconds), and
+ * samples only when that time is 10 minutes old or more. It writes the time before reading, so a session that starts meanwhile finds it fresh and skips. Two sessions that look in the same
+ * instant may both sample; the server keeps the latest. A sample whose reads all fail is not tried again for 10 minutes.
+ * What leaves is in `readMachine`: names, a few labels, state, health and memory; an excluded project's containers go as numbers alone. No token, or no docker, sends what there is, quietly.
+ */
+async function sampleMachine($: $, now: number) {
+  if (!ctx || !token) return
+  machineAt = now
+  const last = await $.store.get(MACHINE_KEY)
+  if (typeof last === 'number' && last <= now && now - last < MACHINE_MS) return // a time in the future (the clock moved back) is not a fresh sample
+  // Written before the reads, which can take a minute: no other look, this session's next one included, finds the sample due while this one is read (so nothing here is "busy").
+  await $.store.set(MACHINE_KEY, now)
+  const sample = await readMachine((argv) => $.process.run(argv, { timeoutMs: 30_000 }), excludeEntries)
+  if (ctx) push($, build.machineSample(ctx, sample))
+}
+
 const timeZone = () => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -445,6 +470,7 @@ async function start($: $, interactive: boolean, cwd: string) {
   const home = (await $.env.get('HOME')) ?? ''
   const list = excludeList.replace(/(^|,)\s*~(?=\/|,|$)/g, `$1${home}`)
   excluded = isExcluded(ctx.project, list)
+  excludeEntries = list
   contentMode = contentSetting !== 'full' ? 'off' : excluded ? 'excluded' : 'full'
   push($, build.sessionStart(ctx, model, version.version, interactive, contentMode))
   void flush($) // §12 A: a new session shows in Live at once, not at the next tick
@@ -454,6 +480,7 @@ async function start($: $, interactive: boolean, cwd: string) {
   void sendPrs($, excluded).catch(() => {}) // and gh is a network call
   void fetchGoal($).catch(() => {}) // the goal is asked now, not at the first tick
   void readOpenPrs($).catch(() => {}) // and the open PRs too
+  void sampleMachine($, now).catch(() => {}) // and the machine, if no session has sampled it these 10 minutes
   if (interactive) await $.command.register({ name: 'orb', description: 'agent-orb: active agents, tokens and the last events' })
 }
 

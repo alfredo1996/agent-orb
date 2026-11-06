@@ -45,6 +45,12 @@ const examples = [
   ev('findings.report', { branch: 'fix/409-token-retry', findings: [{ id: 'F12', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open', title: 'Two refreshes race' }, { id: 'F09', severity: 'minor', file: 'b.ts', fate: 'dismissed', why: 'Used once' }], dropped: 0 }, { agent_id: 'a-1', turn_id: 't-1' }),
   ev('gate.report', { result: 'pass', commit: 'a1b2c3d' }, { agent_id: 'a-2', turn_id: 't-2' }),
   ev('project.open_prs', { prs: [{ number: 416, head: 'fix/409-token-retry', head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: 1_792_400_000_000, checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: 1_792_400_100_000 }] }] }),
+  // v0.4 slice 3 (#29): the Mac's memory and its containers
+  ev('machine.sample', { mem_free: 6_200_000_000, mem_total: 36_000_000_000, docker: 'ok', containers: [
+    { name: 'mobile-app-db-1', created_at: 1_792_400_000_000, state: 'running', health: 'healthy', memory: 104_857_600, compose: 'mobile-app', working_dir: '/Users/a/mobile-app/deploy' },
+    { name: 'quirky_curie', state: 'running', memory: 52_428_800, testcontainers: { session: '3f2a9b' } },
+    { state: 'running', health: 'unhealthy', memory: 1_048_576, excluded: true },
+  ] }),
   ev('project.fingerprint', { files: [{ path: '.claude/agents/implementer.md', hash: '1'.repeat(40), scope: 'project' }, { path: '~/.claude/rules/git.md', hash: 'a'.repeat(64), scope: 'user' }] }),
   ev('skills.catalog', {
     skills: [{ name: 'alpha', source: 'projectSettings', tokens: 19, description: 'Runs beta', refs: { skills: ['beta'], agents: ['scout'] } }, { name: 'p:x', source: 'plugin', plugin: 'p', tokens: 40 }],
@@ -166,6 +172,22 @@ describe('Event schema', () => {
     expect(Event.safeParse(ev('gate.report', { result: 'passed', commit: 'a1b2c3d' })).success).toBe(false);
     const read = Event.parse(ev('project.open_prs', { prs: [{ number: 1, head_oid: 'e'.repeat(40), merge_state: 'CLEAN', checks: [], bots: [{ author: 'coderabbitai', at: 1, body: 'the review text' }], title: 'a title', comments: ['x'] }] }));
     expect(JSON.stringify(read)).not.toMatch(/review text|a title|comments/);
+  });
+
+  it('machine.sample: bytes, three Docker states, and only the labels it names; a command, an environment or a mount has no field to travel in (v0.4 slice 3)', () => {
+    const sample = (c: object, d: object = {}) => ev('machine.sample', { docker: 'ok', containers: [{ state: 'running', ...c }], ...d });
+    // Docker absent or stopped lists nothing, and a Mac whose memory could not be read sends none
+    expect(Event.safeParse(ev('machine.sample', { docker: 'absent', containers: [] })).success).toBe(true);
+    expect(Event.safeParse(ev('machine.sample', { docker: 'stopped', containers: [], mem_free: 1, mem_total: 2 })).success).toBe(true);
+    for (const bad of [{ docker: 'running' }, { docker: undefined }, { mem_free: -1 }, { mem_free: 1.5 }, { containers: undefined }]) {
+      expect(Event.safeParse(ev('machine.sample', { docker: 'ok', containers: [], ...bad })).success, JSON.stringify(bad)).toBe(false);
+    }
+    for (const bad of [{ state: 'Running' }, { state: '' }, { health: 'sick' }, { memory: -5 }, { name: '' }, { excluded: false }]) {
+      expect(Event.safeParse(sample(bad)).success, JSON.stringify(bad)).toBe(false);
+    }
+    expect(Event.safeParse(ev('machine.sample', { docker: 'ok', containers: Array.from({ length: 201 }, () => ({ state: 'running' })) })).success).toBe(false);
+    const kept = Event.parse(sample({ name: 'db', command: 'postgres -c secret', env: ['PASSWORD=hunter2'], mounts: ['/Users/a/.ssh'], labels: { owner: 'x' }, image: 'sha256:abc', testcontainers: { session: 's', labels: 'x' } }));
+    expect(JSON.stringify(kept)).not.toMatch(/postgres|hunter2|\.ssh|owner|sha256/);
   });
 
   it('project.checkout: the session\'s own working tree, optional, never empty (v0.2 slice 3)', () => {

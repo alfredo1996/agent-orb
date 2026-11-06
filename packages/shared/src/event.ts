@@ -72,6 +72,12 @@ export type ModelFamily = (typeof MODEL_FAMILIES)[number];
 export const FATES = ['fixed', 'dismissed', 'open'] as const;
 export type Fate = (typeof FATES)[number];
 
+// v0.4 slice 3 (#29): Docker as the plugin found it, a container's health as `docker ps` says it, and the most containers a sample lists.
+export const DOCKER_STATES = ['ok', 'absent', 'stopped'] as const;
+export type DockerState = (typeof DOCKER_STATES)[number];
+export const HEALTH = ['healthy', 'unhealthy', 'starting'] as const;
+export const CONTAINERS_MAX = 200;
+
 export const Event = z.discriminatedUnion('kind', [
   Base.extend({
     kind: z.literal('session.start'),
@@ -218,6 +224,26 @@ export const Event = z.discriminatedUnion('kind', [
       bots: z.array(z.object({ author: id.max(100), at: z.number().int().positive() })).max(50),
     })).max(100),
     issues: z.array(z.object({ number: z.number().int().positive(), milestone: id.max(200).optional() })).max(500).optional(),
+  }) }),
+  // v0.4 slice 3 (#29, Factory): what runs on the Mac, about the host and not the session (the sampling session's project and id ride along as on any event). Free and total memory in bytes,
+  // Docker's state (`absent`: no docker binary; `stopped`: the daemon does not answer), and the running containers: a name, when it was created, its state and health, its memory in bytes
+  // and these labels and no others: the compose project and its working directory, and whether it is a Testcontainers one and that run's session id. Never a command, an environment,
+  // a mount, an image or another label. A container of a project the plugin excludes is `excluded: true` and carries only its state, health and memory: no name, no label.
+  Base.extend({ kind: z.literal('machine.sample'), data: z.object({
+    mem_free: count.optional(),
+    mem_total: count.optional(),
+    docker: z.enum(DOCKER_STATES),
+    containers: z.array(z.object({
+      name: id.max(200).optional(),
+      created_at: z.number().int().positive().optional(),
+      state: z.string().regex(/^[a-z]{1,20}$/),
+      health: z.enum(HEALTH).optional(),
+      memory: count.optional(),
+      compose: id.max(200).optional(),
+      working_dir: id.max(500).optional(),
+      testcontainers: z.object({ session: id.max(100).optional() }).optional(),
+      excluded: z.literal(true).optional(),
+    })).max(CONTAINERS_MAX),
   }) }),
   // Slice 5: every skill and custom agent the session lists, once per session; refs where the mod could read the text.
   Base.extend({ kind: z.literal('skills.catalog'), data: z.object({

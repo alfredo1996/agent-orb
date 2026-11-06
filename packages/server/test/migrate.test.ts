@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { all, get, openStore } from '../src/store/store.ts';
 
 // The history file the owner runs on was made before #28: `CREATE TABLE IF NOT EXISTS` leaves its tables as they were, so the columns #28 added (a session's branch, a PR's opening
-// time and issue) come from the list in store.ts. A file that lacked them would fail every write of a session start, and the live history is not a test rig.
+// time and issue), and #29's (a session's last event), come from the list in store.ts. A file that lacked them would fail every write of a session start, and the live history is not a test rig.
 const dir = mkdtempSync(join(tmpdir(), 'orb-migrate-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 const columns = (db: ReturnType<typeof openStore>, table: string) => all(db, `SELECT name FROM pragma_table_info('${table}')`).map((r) => r.name as string);
@@ -25,7 +25,7 @@ describe('opening a history file made before #28', () => {
     old.close();
 
     const db = openStore(path);
-    expect(columns(db, 'sessions')).toContain('branch');
+    expect(columns(db, 'sessions')).toEqual(expect.arrayContaining(['branch', 'seen_at'])); // seen_at: #29, the last event of a session
     expect(columns(db, 'pull_requests')).toEqual(expect.arrayContaining(['created_at', 'issue']));
     expect({ ...get(db, "SELECT id, started_at, branch FROM sessions WHERE id = 's-old'") }).toEqual({ id: 's-old', started_at: 1792000000000, branch: null });
     expect({ ...get(db, "SELECT title, merged_at, created_at, issue FROM pull_requests WHERE id = 'p:7'") }).toEqual({ title: 'an old PR', merged_at: 1792000000000, created_at: null, issue: null });

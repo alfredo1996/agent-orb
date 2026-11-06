@@ -750,6 +750,137 @@ export function parseOpenIssues(stdout: string, titles = true): OpenIssue[] | un
   return issues;
 }
 
+// ── The machine (v0.4 slice 3, #29) ──────────────────────────────────────────
+
+export type DockerState = 'ok' | 'absent' | 'stopped';
+export type MachineContainer = {
+  name?: string; created_at?: number; state: string; health?: 'healthy' | 'unhealthy' | 'starting'; memory?: number;
+  compose?: string; working_dir?: string; testcontainers?: { session?: string }; excluded?: true;
+};
+export type MachineSample = { mem_free?: number; mem_total?: number; docker: DockerState; containers: MachineContainer[] };
+const CONTAINERS_MAX = 200; // as shared/src/event.ts: past it a sample would be refused whole
+
+/**
+ * The running containers (no -a), one JSON object a line, asking for the fields kept and the five labels by name (`.Label` answers one label's value) and for nothing else: the command,
+ * the environment, the mounts, the image and every other label are never read, so they cannot leave. Written as a template and not as `--format json`, which Docker 20.10 lacks and which
+ * would hand over the label list as one string. A Testcontainers run's id is one label under two spellings: `sessionId` (Java, Go) and `session-id` (testcontainers-node).
+ */
+export const dockerPsArgv = ['docker', 'ps', '--format',
+  '{"id":{{json .ID}},"name":{{json .Names}},"created":{{json .CreatedAt}},"state":{{json .State}},"status":{{json .Status}},'
+  + '"project":{{json (.Label "com.docker.compose.project")}},"dir":{{json (.Label "com.docker.compose.project.working_dir")}},'
+  + '"tc":{{json (.Label "org.testcontainers")}},"session":{{json (.Label "org.testcontainers.sessionId")}},"sessionDash":{{json (.Label "org.testcontainers.session-id")}}}'];
+/** Each running container's memory, `used / limit` as Docker writes it. */
+export const dockerStatsArgv = ['docker', 'stats', '--no-stream', '--format', '{"id":{{json .ID}},"mem":{{json .MemUsage}}}'];
+
+const jsonLine = (line: string): Record<string, unknown> | undefined => {
+  try {
+    const r: unknown = JSON.parse(line);
+    return r && typeof r === 'object' && !Array.isArray(r) ? (r as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * Free and total memory of a Mac, in bytes, from `vm_stat` and `sysctl -n hw.memsize`. Free is Activity Monitor's: the total less its "Memory Used", which is the app memory (anonymous pages
+ * less the purgeable ones) plus the wired pages plus the ones the compressor occupies, all times the page size vm_stat prints. "Pages free" + "Pages inactive" is not it: inactive holds anonymous
+ * memory a process still owns (on a busy Mac it is bigger than the file-backed pages), so that sum reads gigabytes too high.
+ * ponytail: file-backed pages (the cache) count as free, as Activity Monitor counts them, though the system takes them back only when it must. Nothing when either command's output is not what it
+ * should be, or lacks a counter this needs.
+ */
+export function macMemory(vmStat: string, memsize: string): { free: number; total: number } | undefined {
+  const page = Number(/page size of (\d+) bytes/.exec(vmStat)?.[1]);
+  const count = (label: string) => Number(new RegExp(`^${label}:\\s+(\\d+)\\.`, 'm').exec(vmStat)?.[1]);
+  const used = count('Anonymous pages') - count('Pages purgeable') + count('Pages wired down') + count('Pages occupied by compressor');
+  const total = Number(memsize.trim());
+  return page > 0 && total > 0 && Number.isFinite(used) ? { free: Math.max(0, total - used * page), total } : undefined;
+}
+
+/** Free (`MemAvailable`) and total memory of a Linux machine, in bytes, from /proc/meminfo's kibibytes. */
+export function linuxMemory(meminfo: string): { free: number; total: number } | undefined {
+  const kib = (key: string) => Number(new RegExp(`^${key}:\\s+(\\d+) kB`, 'm').exec(meminfo)?.[1]);
+  const [free, total] = [kib('MemAvailable'), kib('MemTotal')];
+  return free >= 0 && total > 0 ? { free: free * 1024, total: total * 1024 } : undefined;
+}
+
+const MEM_UNITS: Record<string, number> = { b: 1, kb: 1e3, mb: 1e6, gb: 1e9, tb: 1e12, kib: 1024, mib: 1024 ** 2, gib: 1024 ** 3, tib: 1024 ** 4 };
+/** Container id to the bytes it uses: the first number of `73.62MiB / 41.08GiB`. A line that is not a stats row, or a figure that is not a size, is left out. */
+export function parseDockerStats(stdout: string): Map<string, number> {
+  const memory = new Map<string, number>();
+  for (const line of stdout.split('\n')) {
+    const r = jsonLine(line);
+    const m = typeof r?.id === 'string' && r.id.length >= 6 && typeof r.mem === 'string' ? /^([\d.]+)\s*([A-Za-z]+)\s*\//.exec(r.mem) : null;
+    const unit = m ? MEM_UNITS[m[2]!.toLowerCase()] : undefined;
+    if (m && unit && Number.isFinite(Number(m[1]))) memory.set(r!.id as string, Math.round(Number(m[1]) * unit));
+  }
+  return memory;
+}
+
+const psRows = (stdout: string) => stdout.split('\n').map(jsonLine).filter((r): r is Record<string, unknown> => typeof r?.id === 'string' && r.id.length >= 6);
+const CREATED = /^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)(?:\.\d+)? ([+-]\d\d)(\d\d)\b/; // 2026-11-05 10:12:03 +0100 CET
+const HEALTH = /\((healthy|unhealthy|health: starting)\)/;
+
+/**
+ * The containers of a `docker ps` read, with the memory `docker stats` gave them (ids match by prefix: one lists 12 characters, the other may list 64). A container whose working directory is in
+ * `excluded` (a project the plugin excludes) keeps its state, health and memory and is marked `excluded`: no name, label, directory or time. At most 200, the biggest by memory first.
+ */
+export function containersFrom(stdout: string, memory: Map<string, number>, excluded: Set<string>): MachineContainer[] {
+  const containers = psRows(stdout).map((r): MachineContainer => {
+    const str = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : '');
+    const id = str('id');
+    const bytes = [...memory].find(([m]) => m.startsWith(id) || id.startsWith(m))?.[1];
+    const state = /^[a-z]{1,20}$/.test(str('state')) ? str('state') : 'unknown';
+    const health = HEALTH.exec(str('status'))?.[1]?.replace('health: ', '') as MachineContainer['health'];
+    const small = { state, ...(health ? { health } : {}), ...(bytes === undefined ? {} : { memory: bytes }) };
+    if (excluded.has(str('dir'))) return { ...small, excluded: true };
+    const made = CREATED.exec(str('created'));
+    const created = made ? Date.parse(`${made[1]}T${made[2]}${made[3]}:${made[4]}`) : NaN;
+    return {
+      ...(str('name') ? { name: str('name').slice(0, 200) } : {}), ...(created > 0 ? { created_at: created } : {}), ...small,
+      ...(str('project') ? { compose: str('project').slice(0, 200) } : {}), ...(str('dir') ? { working_dir: str('dir').slice(0, 500) } : {}),
+      ...(str('tc') ? { testcontainers: str('session') || str('sessionDash') ? { session: (str('session') || str('sessionDash')).slice(0, 100) } : {} } : {}),
+    };
+  });
+  return containers.sort((a, b) => (b.memory ?? -1) - (a.memory ?? -1)).slice(0, CONTAINERS_MAX);
+}
+
+/**
+ * Which of these working directories are inside a project the plugin excludes (`excludeProjects`: names, remotes or paths, `~` already expanded). A directory is judged as a session is: by the
+ * repository git finds around it (its top level, its last name, its origin), else by the path alone. Git is not asked when nothing is excluded.
+ * ponytail: a container started from a git worktree is judged by the worktree's folder name, which is not its repository's; list the repository's path in excludeProjects to hold those too.
+ */
+export async function excludedDirs(run: Run, dirs: string[], list: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!list.trim()) return out;
+  const ask = (argv: string[]) => run(argv).then((r) => (r.exitCode === 0 ? r.stdout.trim() : ''), () => '');
+  for (const dir of dirs) {
+    const top = (await ask(['git', '-C', dir, 'rev-parse', '--show-toplevel'])) || dir;
+    const remote = normalizeRemote(await ask(['git', '-C', top, 'remote', 'get-url', 'origin']));
+    const name = top.split('/').pop() ?? top;
+    if ([dir, top].some((cwd) => isExcluded({ cwd, name, ...(remote ? { git_remote: remote } : {}) }, list))) out.add(dir);
+  }
+  return out;
+}
+
+/**
+ * One reading of the machine: free memory (vm_stat on macOS, /proc/meminfo on Linux, nothing on another system), then `docker ps` and `docker stats`. When `docker ps` fails, `docker` is `absent` if
+ * the shell cannot find a `docker` (`command -v`), and `stopped` otherwise: the daemon exits non-zero or does not answer in time. The failure's own wording is not read (how the engine words a
+ * missing binary, or whether it is a rejection or a 127, is not known to this code). Every call here may take seconds, so the caller runs this off any hook's path.
+ */
+export async function readMachine(run: Run, excludeList: string): Promise<MachineSample> {
+  const ask = (argv: string[]) => run(argv).then((r) => (r.exitCode === 0 ? r.stdout : undefined), () => undefined);
+  const platform = ((await ask(['uname', '-s'])) ?? '').trim().toLowerCase();
+  const mem = platform === 'darwin' ? macMemory((await ask(['vm_stat'])) ?? '', (await ask(['sysctl', '-n', 'hw.memsize'])) ?? '')
+    : platform === 'linux' ? linuxMemory((await ask(['cat', '/proc/meminfo'])) ?? '') : undefined;
+  const memory = mem ? { mem_free: mem.free, mem_total: mem.total } : {};
+  const ps = await ask(dockerPsArgv);
+  if (ps === undefined) return { ...memory, docker: (await ask(['sh', '-c', 'command -v docker']))?.trim() ? 'stopped' : 'absent', containers: [] };
+  const rows = psRows(ps);
+  const stats = rows.length ? parseDockerStats((await ask(dockerStatsArgv)) ?? '') : new Map<string, number>();
+  const hidden = await excludedDirs(run, [...new Set(rows.map((r) => r.dir).filter((d): d is string => typeof d === 'string' && d !== ''))], excludeList);
+  return { ...memory, docker: 'ok', containers: containersFrom(ps, stats, hidden) };
+}
+
 // ── The monthly goal (v0.2 slice 3, PROJECT.md §15, 2026-10-24) ──────────────
 
 /** The project's goal for a month, in API-equivalent dollars, and what it has spent so far: the server's GET /api/goal. */
@@ -1003,6 +1134,7 @@ export const build = {
     makeEvent(c, 'findings.report', { ...(branch ? { branch } : {}), ...(f.pr ? { pr: f.pr } : {}), findings: f.findings, dropped: f.dropped }, who(w)),
   gateReport: (c: Ctx, w: Who, g: Gate) => makeEvent(c, 'gate.report', { result: g.result, commit: g.commit }, who(w)),
   projectOpenPrs: (c: Ctx, prs: OpenPr[], issues?: OpenIssue[]) => makeEvent(c, 'project.open_prs', { prs, ...(issues ? { issues } : {}) }),
+  machineSample: (c: Ctx, sample: MachineSample) => makeEvent(c, 'machine.sample', sample), // about the host: the sampling session's id and project ride along
   skillsCatalog: (c: Ctx, skills: CatalogSkill[], agents: CatalogAgent[]) => makeEvent(c, 'skills.catalog', { skills, agents }),
   stall: (c: Ctx, edge: 'start' | 'end', s: Stall) =>
     makeEvent(c, `stall.${edge}`, { ...(s.tool_use_id ? { tool_use_id: s.tool_use_id, tool: s.tool } : {}), since: s.since }, { agent_id: s.agent === 'main' ? undefined : s.agent }),
