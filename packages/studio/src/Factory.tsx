@@ -23,10 +23,11 @@ export type IssueCost = {
   number: number; milestone: string | null; usd: number; partial: boolean; whole: number; windows: number; budget: number | null; milestoneBudget: number | null; source: 'issue' | 'milestone' | null; mark: 'at80' | 'at100' | null;
 };
 export type BudgetData = { project: string; month: string; issues: IssueCost[]; notOnIssue: { usd: number; partial: boolean }; milestones: { name: string; budget: number | null }[] };
-/** A group of containers on the Mac, as GET /api/machine groups and flags them (v0.4 slice 3, #29). `project` is the agent-orb project it belongs to, when it reaches one. */
+/** A group of containers on the Mac, as GET /api/machine groups and flags them (v0.4 slice 3, #29). `project` is the agent-orb project it belongs to, when it reaches one; `id` is the group's own
+ * (a host's, so it keys a row); `since` is when its oldest container was made. */
 export type MachineGroup = {
-  kind: 'compose' | 'testcontainers' | 'none' | 'excluded'; name: string; project: string | null; compose: string | null; containers: number; memory: number;
-  unhealthy: number; leftRunning: boolean; idleMs: number | null;
+  id: string; kind: 'compose' | 'testcontainers' | 'none' | 'excluded'; name: string; project: string | null; compose: string | null; containers: number; memory: number;
+  unhealthy: number; leftRunning: boolean; idleMs: number | null; since: number | null;
 };
 export type MachineHost = { host: string; at: number; ageMs: number; docker: 'ok' | 'absent' | 'stopped'; memFree: number | null; memTotal: number | null; containers: number; memory: number; groups: MachineGroup[] };
 export type MachineData = { hosts: MachineHost[] };
@@ -181,17 +182,23 @@ export const idleText = (ms: number) => {
 };
 const readAgo = (ms: number) => (ms < MIN ? 'read just now' : `read ${idleText(ms)} ago`);
 
-/** The groups the server flagged "Left running", across the hosts: each is a row in Needs you. A group with no project is never one (the server's rule); an unhealthy one is flagged in the band alone. */
-export const leftRunning = (data?: MachineData) => (data?.hosts ?? []).flatMap((h) => h.groups.filter((g) => g.leftRunning));
+/** A group the server flagged "Left running", with the Mac it is on, when that Mac's sample was read, and whether the page has more than one Mac (so the row names it). */
+export type Left = { group: MachineGroup; host: string; at: number; named: boolean };
+/** The groups the server flagged "Left running", across the hosts: each is a row in Needs you. The server flags only containers a test run left behind, and never a group with no project; an unhealthy one is flagged in the band alone. */
+export const leftRunning = (data?: MachineData): Left[] => {
+  const hosts = data?.hosts ?? [];
+  return hosts.flatMap((h) => h.groups.filter((g) => g.leftRunning).map((group) => ({ group, host: h.host, at: h.at, named: hosts.length > 1 })));
+};
 
-const seeMachine = () => {
-  const band = document.getElementById('machine');
+const bandId = (host: string) => `machine-${host}`;
+const seeMachine = (host: string) => {
+  const band = document.getElementById(bandId(host));
   band?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   band?.focus({ preventScroll: true });
 };
 
 /** Each open PR, worst first (the server's order): its state, the first reason it isn't ready or "Ready for your ok", its issue's cost once read, and its dismissed findings to read. */
-export function NeedsYou({ prs, costs, onOpen, left = [] }: { prs: FactoryPr[]; costs?: Map<number, IssueCost>; onOpen: OpenSheet; left?: MachineGroup[] }) {
+export function NeedsYou({ prs, costs, onOpen, left = [], now = Date.now() }: { prs: FactoryPr[]; costs?: Map<number, IssueCost>; onOpen: OpenSheet; left?: Left[]; now?: number }) {
   return (
     <section className={costs ? 'card needs withcost' : 'card needs'} aria-labelledby="fneeds-h">
       <h2 id="fneeds-h">Needs you</h2>
@@ -213,28 +220,39 @@ export function NeedsYou({ prs, costs, onOpen, left = [] }: { prs: FactoryPr[]; 
           </div>
         );
       })}
-      {left.map((g) => (
-        <div key={`${g.kind}:${g.name}:${g.compose ?? ''}`} className="need">
+      {left.map(({ group: g, host, at, named }) => (
+        <div key={g.id} className="need">
           <span className="state waiting">Left running</span>
           <span className="what">
             <b>{g.name}: {count(g.containers, 'container')}</b>
-            <span className="sub">No session in that project for {idleText(g.idleMs ?? 0)}</span>
+            <span className="sub">{leftText(g, host, at, named, now)}</span>
           </span>
           {costs && <span />}
           <span className="since num">{memText(g.memory)}</span>
-          <button type="button" className="btn" onClick={seeMachine}>See machine</button>
+          <button type="button" className="btn" onClick={() => seeMachine(host)}>See machine</button>
         </div>
       ))}
     </section>
   );
 }
 
-/** What a group is, under its name: how it was started, and how long its project has been quiet when it is left running. */
-const howText = (g: MachineGroup) => {
-  const how = g.kind === 'compose' ? (g.project ? (g.compose === g.project ? 'compose' : `compose ${g.compose}`) : 'compose, not an agent-orb project')
-    : g.kind === 'testcontainers' ? (g.project ? 'Testcontainers' : 'Testcontainers, no test run was going when it started')
+/** Under a "Left running" row's name: when its run began, how long its project has been quiet (at the sample), which Mac when there are several, and how old the sample is once it is not fresh. */
+const leftText = (g: MachineGroup, host: string, at: number, named: boolean, now: number) => {
+  const parts = [g.since === null ? 'No session' : `Run started ${idleText(now - g.since)} ago, no session`];
+  parts[0] += ` in that project for ${idleText(g.idleMs ?? 0)}`;
+  if (named) parts.push(`on ${host}`);
+  if (now - at > MACHINE_STALE_MS) parts.push(readAgo(now - at));
+  return parts.join(', ');
+};
+
+/** What a group is, under its name: how it was started and, for a Testcontainers run, when; and how long its project has been quiet when it is left running. */
+const howText = (g: MachineGroup, now: number) => {
+  if (g.kind === 'testcontainers') {
+    return ['Testcontainers', ...(g.since === null ? [] : [`started ${idleText(now - g.since)} ago`]), ...(g.project ? [] : ['no test run was going when it started']),
+      ...(g.leftRunning ? [`no session for ${idleText(g.idleMs ?? 0)}`] : [])].join(', ');
+  }
+  return g.kind === 'compose' ? (g.project ? (g.compose === g.project ? 'compose' : `compose ${g.compose}`) : 'compose, not an agent-orb project')
     : g.kind === 'excluded' ? 'names left out, as the project is excluded' : 'started by hand';
-  return g.leftRunning ? `${how}, no session for ${idleText(g.idleMs ?? 0)}` : how;
 };
 
 /**
@@ -245,7 +263,7 @@ export function MachineBand({ host, now }: { host: MachineHost; now: number }) {
   const age = now - host.at;
   const stale = age > MACHINE_STALE_MS;
   return (
-    <section className="card machine" id="machine" tabIndex={-1} aria-labelledby={`fmachine-${host.host}`}>
+    <section className="card machine" id={bandId(host.host)} tabIndex={-1} aria-labelledby={`fmachine-${host.host}`}>
       <h2 id={`fmachine-${host.host}`}>Machine <span className={stale ? 'hint stale' : 'hint'}>{host.host} · {readAgo(age)}{stale && ': it updates while a session runs'}</span></h2>
       <div className="mstats">
         <div className="mstat"><span className="k">Free memory</span>{host.memFree === null ? <span className="v">Not read</span> : <span className="v">{memText(host.memFree)}</span>}{host.memTotal !== null && <span className="d">of {memText(host.memTotal)}</span>}</div>
@@ -261,12 +279,12 @@ export function MachineBand({ host, now }: { host: MachineHost; now: number }) {
         <>
           <div className="mrow head"><span>Project</span><span className="r">Containers</span><span className="r">Memory</span></div>
           {host.groups.map((g) => (
-            <div key={`${g.kind}:${g.name}:${g.compose ?? ''}`} className="mrow">
+            <div key={g.id} className="mrow">
               <span className="nm">
                 {g.name}
                 {g.leftRunning && <span className="flag left">Left running</span>}
                 {g.unhealthy > 0 && <span className="flag sick">{g.unhealthy > 1 ? `${g.unhealthy} unhealthy` : 'Unhealthy'}</span>}
-                <span className="sub">{howText(g)}</span>
+                <span className="sub">{howText(g, now)}</span>
               </span>
               <span className="r num">{g.containers}</span>
               <span className="r num">{memText(g.memory)}</span>
@@ -275,6 +293,23 @@ export function MachineBand({ host, now }: { host: MachineHost; now: number }) {
           <div className="mfoot">agent-orb lists containers and never removes one: the clean-up stays yours.</div>
         </>
       )}
+    </section>
+  );
+}
+
+/**
+ * The page's Machine part: one band per Mac. It is the Mac's, not the project's, so it stands whatever Factory's own read did. With no sample in the last 24 hours it says so, and when the server
+ * could not answer it says that: an old plugin (it sends none) or an old server (it has no route) is then not taken for an idle Mac. A failed read after a good one keeps the good one.
+ */
+export function MachineBands({ data, error, now }: { data?: MachineData; error?: string; now: number }) {
+  if (data?.hosts.length) return <>{data.hosts.map((h) => <MachineBand key={h.host} host={h} now={now} />)}</>;
+  if (!data && !error) return null;
+  return (
+    <section className="card machine" aria-labelledby="fmachine-none">
+      <h2 id="fmachine-none">Machine</h2>
+      <p className="nothing">
+        {data ? 'Not sampled yet. The plugin samples this Mac while a session runs, and none has for 24 hours. An older plugin or server takes none: update both.' : `The machine could not be read: ${error}`}
+      </p>
     </section>
   );
 }
@@ -348,6 +383,7 @@ export function Factory({ now }: { now: number }) {
   const [data, setData] = useState<FactoryData>();
   const [budget, setBudget] = useState<BudgetData>();
   const [machine, setMachine] = useState<MachineData>();
+  const [machineError, setMachineError] = useState<string>();
   const [error, setError] = useState<string>();
   const [picked, setPicked] = useState<number>();
   const opener = useRef<HTMLElement>(null);
@@ -369,10 +405,14 @@ export function Factory({ now }: { now: number }) {
         const res = await fetch(`/api/budget?${new URLSearchParams({ project, tz: Intl.DateTimeFormat().resolvedOptions().timeZone })}`);
         if (res.ok && live) setBudget((await res.json()) as BudgetData);
       } catch { /* the next read tries again */ }
-      try { // and the machine a third: it is the Mac's, not the project's, so a failure leaves the rest as it was
+      try { // and the machine a third: it is the Mac's, not the project's, so a failure leaves the rest as it was, and says so
         const res = await fetch('/api/machine');
-        if (res.ok && live) setMachine((await res.json()) as MachineData);
-      } catch { /* the next read tries again */ }
+        if (!res.ok) throw new Error(`The server answered ${res.status}.`);
+        const body = (await res.json()) as MachineData;
+        if (live) setMachine(body), setMachineError(undefined);
+      } catch (e) {
+        if (live) setMachineError((e as Error).message);
+      }
     };
     void load();
     const t = setInterval(load, REFRESH_MS);
@@ -406,17 +446,17 @@ export function Factory({ now }: { now: number }) {
   }, [shown, picked]);
   return (
     <main className="factory">
-      <PageHeader title="Factory" sub="What's blocked, and what's ready for your ok" views={shown ? <Asof readAt={shown.readAt} now={now} /> : <span />} project={<ProjectSelect one />} />
+      <PageHeader title="Factory" sub="What's blocked, what's ready, and what's left running" views={shown ? <Asof readAt={shown.readAt} now={now} /> : <span />} project={<ProjectSelect one />} />
       {error && <div className="empty"><b>Factory could not load.</b><span>{error}</span></div>}
       {projects?.length === 0 && <div className="empty"><b>Nothing recorded yet.</b><span>Factory starts when a session runs with the agent-orb plugin.</span></div>}
       {shown && (
         <>
           <Reading said={factoryReading(shown)} />
-          <NeedsYou prs={shown.prs} costs={costs} left={leftRunning(machine)} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />
+          <NeedsYou prs={shown.prs} costs={costs} left={leftRunning(machine)} now={now} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />
           {costed && <BudgetCard data={costed} onSave={save} />}
-          {machine?.hosts.map((h) => <MachineBand key={h.host} host={h} now={now} />)}
         </>
       )}
+      <MachineBands data={machine} error={machineError} now={now} />
       {pr && createPortal(
         <>
           <div className="scrim" onClick={close} aria-hidden="true" />

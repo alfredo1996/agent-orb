@@ -490,6 +490,31 @@ describe('the plugin\'s stretch', () => {
   });
 });
 
+describe('a session\'s last event (#29)', () => {
+  const sample = (ts: number, session = 's-1') => ev('machine.sample', { docker: 'stopped', containers: [] }, { session, ts });
+  const seen = (session = 's-1') => q('SELECT seen_at AS seen, plugin_last AS last FROM sessions WHERE id = :id', { id: session })[0];
+
+  it('is the latest ts of any event of the session, of any kind: a start, a machine sample, a read of the open PRs', () => {
+    plugin([start('startup', { ts: T })]);
+    expect(seen()!.seen).toBe(T);
+    plugin([sample(T + 5000)]);
+    expect(seen()!.seen).toBe(T + 5000);
+    plugin([ev('project.open_prs', { prs: [] }, { ts: T + 9000, remote: REMOTE })]);
+    expect(seen()!.seen).toBe(T + 9000);
+  });
+
+  it('only moves forward: an older event arriving late changes nothing; and it is its own per session', () => {
+    plugin([sample(T + 20_000), sample(T + 1000, 's-2')]);
+    plugin([sample(T + 10_000)]);
+    expect([seen('s-1')!.seen, seen('s-2')!.seen]).toEqual([T + 20_000, T + 1000]);
+  });
+
+  it('is not the plugin\'s stretch, which a machine sample must not widen: the import fills around that', () => {
+    plugin([start('startup', { ts: T }), sample(T + 5000)]);
+    expect(seen()).toEqual({ seen: T + 5000, last: null });
+  });
+});
+
 describe('project.changes', () => {
   const sha = (c: string) => c.repeat(40);
   const changes = (commits: object[], o: Opts = {}) => ev('project.changes', { commits }, { remote: REMOTE, ...o });

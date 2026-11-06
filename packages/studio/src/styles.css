@@ -726,6 +726,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .machine .mstat code { font: 13px var(--mono); }
 .machine .mdown, .machine .nothing { margin: 0; font-size: 14px; color: var(--muted); }
 .machine .nothing { padding: 0 20px 16px; }
+.machine h2 + .nothing { padding-top: 16px; }
 .machine .mrow { display: grid; grid-template-columns: minmax(0, 1fr) 100px 90px; gap: 4px 16px; align-items: center; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 14px; }
 .machine .mrow .nm { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
 .machine .mrow .sub { flex-basis: 100%; font-size: 13px; color: var(--muted); font-weight: 400; }

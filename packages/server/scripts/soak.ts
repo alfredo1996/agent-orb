@@ -55,7 +55,8 @@ if (values.db) {
 
 /**
  * #29: one machine sample at the cap of 200 containers on the target session's host, so /api/machine groups and looks things up against the whole history: compose stacks under the target
- * project's folders (whose last event it reads), Testcontainers runs made over the past day (each looks for a test run in flight among the calls), and loose ones.
+ * project's folders (whose last event it reads), Testcontainers runs made over the past day (each looks for a test run in flight among the calls), and loose ones. Only for the synthetic
+ * store: `--db` names a file that may be a real one, and this would replace its host's latest sample. (To soak the grouping against a real history, put a sample into a copy by hand.)
  */
 function seedMachine(db: Store, { project, session }: { project: string; session: string }, at: number) {
   const host = (get(db, 'SELECT host FROM sessions WHERE id = :session', { session })?.host as string | undefined) ?? 'mbp';
@@ -66,7 +67,7 @@ function seedMachine(db: Store, { project, session }: { project: string; session
   }));
   run(db, 'INSERT OR REPLACE INTO machine_samples (host, ts, mem_free, mem_total, docker, containers) VALUES (:host, :ts, 6000000000, 36000000000, \'ok\', :containers)', { host, ts: at - 4 * 60_000, containers: JSON.stringify(containers) });
 }
-seedMachine(store, target, now);
+if (!values.db) seedMachine(store, target, now);
 
 const app = buildApp({ store, token: 'soak' });
 const address = await app.listen({ port: 0, host: '127.0.0.1' });

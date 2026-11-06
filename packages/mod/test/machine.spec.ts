@@ -12,7 +12,7 @@ const GiB = 1024 * MiB;
 
 // A row of `docker ps` as dockerPsArgv's template renders it, with what a fuller `docker ps --format json` row would add (the command, the mounts, the labels, the image), which must go nowhere.
 const row = (o: Record<string, unknown> = {}) => JSON.stringify({
-  id: 'a1b2c3d4e5f6', name: 'mobile-app-db-1', created: '2026-11-05 10:12:03 +0100 CET', state: 'running', status: 'Up 2 hours', project: '', dir: '', tc: '', session: '',
+  id: 'a1b2c3d4e5f6', name: 'mobile-app-db-1', created: '2026-11-05 10:12:03 +0100 CET', state: 'running', status: 'Up 2 hours', project: '', dir: '', tc: '', session: '', sessionDash: '',
   command: 'postgres -c password=hunter2', env: ['API_KEY=sk-live-1'], mounts: '/Users/a/.ssh', labels: 'owner=x,com.example.secret=s3cret', image: 'sha256:deadbeef', ...o,
 });
 const ps = (...rows: string[]) => `${rows.join('\n')}\n`;
@@ -20,18 +20,38 @@ const stat = (id: string, mem: string) => JSON.stringify({ id, mem });
 const stats = (...rows: string[]) => `${rows.join('\n')}\n`;
 
 describe('what is asked of Docker', () => {
-  it('names the four labels and the fields it keeps, and nothing that holds a command, an environment, a mount or a label list', () => {
-    const asked = dockerPsArgv.join(' ');
-    for (const label of ['com.docker.compose.project', 'com.docker.compose.project.working_dir', 'org.testcontainers', 'org.testcontainers.sessionId']) expect(asked).toContain(`"${label}"`);
-    expect(asked).not.toMatch(/\.Command|\.Mounts|\.Labels|\.Image|\.Ports|\{\{json \.\}\}|inspect/);
-    expect(dockerStatsArgv.join(' ')).not.toMatch(/\{\{json \.\}\}/);
+  // The template's actions are the whole of what is read: `docker ps` renders nothing the template does not name. So the test is an allowlist of them, not a list of banned words that a new
+  // field or label would slip past.
+  const ALLOWED = [
+    'json .ID', 'json .Names', 'json .CreatedAt', 'json .State', 'json .Status',
+    'json (.Label "com.docker.compose.project")', 'json (.Label "com.docker.compose.project.working_dir")', 'json (.Label "org.testcontainers")',
+    'json (.Label "org.testcontainers.sessionId")', 'json (.Label "org.testcontainers.session-id")', // the run's id: Java and Go write the first, testcontainers-node the second
+  ];
+  const actions = (template: string) => [...template.matchAll(/\{\{(.*?)\}\}/g)].map((m) => m[1]!.trim());
+
+  it('reads exactly these fields and these five labels, and nothing else: no command, environment, mount, image, port, network or other label', () => {
+    expect(actions(dockerPsArgv.join(' ')).toSorted()).toEqual(ALLOWED.toSorted());
+    expect(actions(dockerStatsArgv.join(' ')).toSorted()).toEqual(['json .ID', 'json .MemUsage']);
+  });
+
+  it('asks for the running containers only, and for no inspection', () => {
     expect(dockerPsArgv.slice(0, 2)).toEqual(['docker', 'ps']); // running containers only: no -a
     expect(dockerPsArgv).not.toContain('-a');
+    expect(dockerPsArgv.join(' ')).not.toMatch(/inspect/);
     expect(dockerStatsArgv).toContain('--no-stream');
+  });
+
+  it('the fixtures below are rows in the template\'s own shape: the keys the template writes are the keys of a fixture row', () => {
+    // Shape checked on 2026-11-06 against Docker 20.10.13's own output for this template on a Mac with 8 containers: these ten keys, a 12-hex `id`, `created` as `2026-11-05 10:12:03 +0100 CET`,
+    // `state` a lowercase word, `status` as `Up 2 hours` or `Up 2 hours (healthy)`. A real row is not kept here: it names the machine's other projects, and this repository is public.
+    const keys = [...dockerPsArgv.join(' ').matchAll(/"(\w+)":\{\{/g)].map((m) => m[1]);
+    expect(keys).toEqual(['id', 'name', 'created', 'state', 'status', 'project', 'dir', 'tc', 'session', 'sessionDash']);
+    expect(Object.keys(JSON.parse(row()) as object)).toEqual(expect.arrayContaining(keys as string[]));
   });
 });
 
 describe('memory', () => {
+  // A vm_stat as macOS prints it (invented numbers, this Mac's proportions: "Pages inactive" is bigger than the file-backed pages, because it holds anonymous memory too).
   const VM_STAT = [
     'Mach Virtual Memory Statistics: (page size of 16384 bytes)',
     'Pages free:                                    57470.',
@@ -41,17 +61,38 @@ describe('memory', () => {
     'Pages throttled:                                   0.',
     'Pages wired down:                             234035.',
     'Pages purgeable:                               22108.',
+    '"Translation faults":                    17109190103.',
+    'File-backed pages:                            816631.',
+    'Anonymous pages:                             2231780.',
+    'Pages stored in compressor:                  3795281.',
+    'Pages occupied by compressor:                 854969.',
   ].join('\n');
+  const MEMSIZE = 68_719_476_736; // 64 GiB
+  const used = (2_231_780 - 22_108 + 234_035 + 854_969) * 16_384;
 
-  it('macOS: free, inactive and speculative pages times the page size vm_stat prints, of hw.memsize', () => {
-    expect(macMemory(VM_STAT, '68719476736\n')).toEqual({ free: (57_470 + 1_556_096 + 11_092) * 16_384, total: 68_719_476_736 });
-    expect(macMemory(VM_STAT.replace('16384', '4096'), '8589934592')!.free).toBe((57_470 + 1_556_096 + 11_092) * 4_096); // an Intel Mac's page is 4 KiB
+  it('macOS: as Activity Monitor counts it, the total less (anonymous - purgeable + wired + compressor) pages times the page size vm_stat prints', () => {
+    expect(macMemory(VM_STAT, `${MEMSIZE}\n`)).toEqual({ free: MEMSIZE - used, total: MEMSIZE });
+    expect(macMemory(VM_STAT.replace('16384', '4096'), `${MEMSIZE}`)!.free).toBe(MEMSIZE - used / 4); // an Intel Mac's page is 4 KiB
   });
 
-  it('macOS: output that is not vm_stat\'s or sysctl\'s reads as nothing, not as zero', () => {
+  it('macOS: inactive, free and speculative pages are not "free": inactive holds anonymous memory, so adding them overstates the room by gigabytes', () => {
+    const old = (57_470 + 1_556_096 + 11_092) * 16_384; // the formula this replaces: 24.8 GiB here, where Activity Monitor says 14
+    expect(macMemory(VM_STAT, `${MEMSIZE}`)!.free).toBeLessThan(old - 8 * 1024 ** 3);
+    // and the figure answers to what it is made of: more purgeable pages, more room; more compressor pages, less
+    expect(macMemory(VM_STAT.replace('22108', '122108'), `${MEMSIZE}`)!.free - macMemory(VM_STAT, `${MEMSIZE}`)!.free).toBe(100_000 * 16_384);
+    expect(macMemory(VM_STAT.replace('854969', '954969'), `${MEMSIZE}`)!.free - macMemory(VM_STAT, `${MEMSIZE}`)!.free).toBe(-100_000 * 16_384);
+  });
+
+  it('macOS: output that is not vm_stat\'s or sysctl\'s reads as nothing, not as zero; so does a vm_stat that lacks a counter the formula needs', () => {
     expect(macMemory('command not found', '68719476736')).toBeUndefined();
     expect(macMemory(VM_STAT, 'sysctl: unknown oid')).toBeUndefined();
-    expect(macMemory(VM_STAT.replace(/Pages free:\s+57470\./, ''), '1')).toBeUndefined();
+    for (const name of ['Anonymous pages', 'Pages purgeable', 'Pages wired down', 'Pages occupied by compressor']) {
+      expect(macMemory(VM_STAT.replace(new RegExp(`^${name}:.*$`, 'm'), ''), `${MEMSIZE}`), name).toBeUndefined();
+    }
+  });
+
+  it('macOS: a machine that counts more than its total as used reads as no room, not as a negative number', () => {
+    expect(macMemory(VM_STAT, '1000000')).toEqual({ free: 0, total: 1_000_000 });
   });
 
   it('Linux: MemAvailable of MemTotal, in kibibytes', () => {
@@ -88,6 +129,15 @@ describe('the containers of a sample', () => {
     expect(a).toMatchObject({ name: 'quirky_curie', testcontainers: { session: '3f2a9b' } });
     expect(b).toMatchObject({ name: 'older', testcontainers: {} });
     expect(b!.testcontainers).not.toHaveProperty('session');
+  });
+
+  it('the run\'s id is read from either spelling of the label: `sessionId` (Java, Go) or `session-id` (testcontainers-node), so Node runs are told apart', () => {
+    const [a, b, c] = containersFrom(ps(
+      row({ name: 'java', tc: 'true', session: '3f2a9b' }), row({ id: 'f6e5d4c3b2a1', name: 'node', tc: 'true', sessionDash: '8c1d77' }), row({ id: 'e5d4c3b2a1f6', name: 'both', tc: 'true', session: 'x1', sessionDash: 'y2' }),
+    ), new Map(), new Set());
+    expect(a!.testcontainers).toEqual({ session: '3f2a9b' });
+    expect(b!.testcontainers).toEqual({ session: '8c1d77' });
+    expect(c!.testcontainers).toEqual({ session: 'x1' });
   });
 
   it('a container started by hand has a name, a state and no labels', () => {
@@ -181,28 +231,33 @@ describe('which working directories are in an excluded project', () => {
 });
 
 describe('reading the machine', () => {
-  type Reply = { exitCode: number; stdout: string } | 'enoent' | 'timeout';
-  /** A fake `run`: each command answers from the table by its first words; the rest exit 127. */
+  // 'enoent' and 'odd' are a command that cannot start (worded as Node words it, and as an engine might word it otherwise); 'timeout' is one that hangs.
+  type Reply = { exitCode: number; stdout: string } | 'enoent' | 'odd' | 'timeout';
+  /** A fake `run`: each command answers from the table by its first words; the rest exit 127. `sh -c 'command -v docker'` finds docker unless the table says docker cannot start or exits 127. */
   const machine = (os: string, answers: Record<string, Reply>) => {
     const calls: string[][] = [];
     const run: Run = async (argv) => {
       calls.push([...argv]);
+      const docker = answers.docker;
+      if (argv[0] === 'sh') return docker === 'enoent' || docker === 'odd' || (typeof docker === 'object' && docker.exitCode === 127) ? { exitCode: 1, stdout: '' } : { exitCode: 0, stdout: '/usr/local/bin/docker\n' };
       const a = argv[0] === 'uname' ? { exitCode: 0, stdout: `${os}\n` } : answers[argv.slice(0, 2).join(' ')] ?? answers[argv[0]!] ?? { exitCode: 127, stdout: '' };
       if (a === 'enoent') throw new Error(`spawn ${argv[0]} ENOENT`);
+      if (a === 'odd') throw new Error(`could not start ${argv[0]}`);
       if (a === 'timeout') throw new Error('timed out after 30000 ms');
       return a;
     };
     return { run, calls };
   };
-  const VM = 'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 100.\nPages inactive: 50.\nPages speculative: 10.\n';
-  const mac = { 'vm_stat': { exitCode: 0, stdout: VM }, 'sysctl -n': { exitCode: 0, stdout: '1000000\n' } };
+  const VM = 'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 100.\nPages wired down: 40.\nPages purgeable: 20.\nAnonymous pages: 300.\nPages occupied by compressor: 10.\n'; // 330 pages in use
+  const FREE = 100_000_000 - 330 * 16_384;
+  const mac = { 'vm_stat': { exitCode: 0, stdout: VM }, 'sysctl -n': { exitCode: 0, stdout: '100000000\n' } };
   const PS = ps(row({ project: 'mobile-app', dir: '/Users/a/mobile-app' }), row({ id: 'f6e5d4c3b2a1', name: 'scratch' }));
   const STATS = stats(stat('a1b2c3d4e5f6', '10MiB / 1GiB'), stat('f6e5d4c3b2a1', '20MiB / 1GiB'));
 
   it('on a Mac: the memory from vm_stat and sysctl, Docker ok, and the containers with their memory', async () => {
     const m = machine('Darwin', { ...mac, 'docker ps': { exitCode: 0, stdout: PS }, 'docker stats': { exitCode: 0, stdout: STATS } });
     const s = await readMachine(m.run, '');
-    expect(s).toMatchObject({ docker: 'ok', mem_free: 160 * 16_384, mem_total: 1_000_000 });
+    expect(s).toMatchObject({ docker: 'ok', mem_free: FREE, mem_total: 100_000_000 });
     expect(s.containers.map((c) => [c.name, c.memory])).toEqual([['scratch', 20 * MiB], ['mobile-app-db-1', 10 * MiB]]); // biggest first
   });
 
@@ -212,17 +267,26 @@ describe('reading the machine', () => {
     expect(m.calls.map((c) => c[0])).not.toContain('vm_stat');
   });
 
-  it('with no docker binary the state is "absent", no stats are asked, and the memory still comes', async () => {
-    const m = machine('Darwin', { ...mac, docker: 'enoent' });
-    expect(await readMachine(m.run, '')).toMatchObject({ docker: 'absent', containers: [], mem_total: 1_000_000 });
-    expect(m.calls.some((c) => c[0] === 'docker' && c[1] === 'stats')).toBe(false);
+  it('with no docker binary the state is "absent", however the engine words it: a rejection that names ENOENT, one that does not, or a shell\'s 127; no stats are asked, and the memory still comes', async () => {
+    for (const gone of ['enoent', 'odd', { exitCode: 127, stdout: '' }] as const) {
+      const m = machine('Darwin', { ...mac, docker: gone });
+      expect(await readMachine(m.run, ''), String(JSON.stringify(gone))).toMatchObject({ docker: 'absent', containers: [], mem_total: 100_000_000 });
+      expect(m.calls.some((c) => c[0] === 'docker' && c[1] === 'stats')).toBe(false);
+      expect(m.calls).toContainEqual(['sh', '-c', 'command -v docker']); // the answer comes from asking whether docker is there, not from the error's wording
+    }
   });
 
-  it('with a daemon that does not answer, whether it exits non-zero or hangs, the state is "stopped"', async () => {
+  it('with a daemon that does not answer, whether it exits non-zero or hangs, the state is "stopped": docker is there', async () => {
     for (const reply of [{ exitCode: 1, stdout: '' }, 'timeout' as const]) {
       const m = machine('Darwin', { ...mac, docker: reply });
       expect(await readMachine(m.run, '')).toMatchObject({ docker: 'stopped', containers: [] });
     }
+  });
+
+  it('a daemon that answers is never asked whether docker is there', async () => {
+    const m = machine('Linux', { 'docker ps': { exitCode: 0, stdout: '' } });
+    await readMachine(m.run, '');
+    expect(m.calls.some((c) => c[0] === 'sh')).toBe(false);
   });
 
   it('no running container means no stats call, and a stats call that fails leaves the containers without memory', async () => {
@@ -247,6 +311,12 @@ describe('reading the machine', () => {
     const s = await readMachine(m.run, '/Users/a/secret');
     expect(s.containers).toEqual([{ state: 'running', memory: 10 * MiB, excluded: true }]);
     expect(JSON.stringify(s)).not.toMatch(/secret|mobile-app-db/);
+  });
+
+  it('only a container with a compose folder can be judged excluded: a Testcontainers or hand-started one has no folder, so it keeps its name even when its project is excluded', async () => {
+    const m = machine('Linux', { 'docker ps': { exitCode: 0, stdout: ps(row({ name: 'quirky_curie', tc: 'true', session: '3f2a9b' }), row({ id: 'f6e5d4c3b2a1', name: 'scratch-redis' })) }, 'docker stats': { exitCode: 0, stdout: STATS } });
+    const s = await readMachine(m.run, '/Users/a/secret, secret-app');
+    expect(s.containers.map((c) => [c.name, c.excluded])).toEqual([['scratch-redis', undefined], ['quirky_curie', undefined]]);
   });
 
   it('the sample passes the server\'s schema unchanged, with nothing stripped, and holds nothing the row had beyond its labels', async () => {

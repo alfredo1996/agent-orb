@@ -10,7 +10,12 @@ const usage = { input_tokens: 2, output_tokens: 218, cache_read_input_tokens: 12
 type Answer = { status: number; text?: string } | 'hang'
 function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }), withStep = true, stored: Record<string, unknown> = {}) {
   const clock = mock.clock(on, { now: T0 })
-  mock.store(on, stored)
+  // The engine's shared store ($.store), as one plain object a test can read: mock.store keeps its copy to itself, and what another session finds in the store is the thing under test (#29).
+  const store: Record<string, unknown> = { ...stored }
+  on('store.get', (_$: any, e: any) => ({ value: store[e.key] }))
+  on('store.set', (_$: any, e: any) => ((store[e.key] = e.value), { value: undefined }))
+  on('store.delete', (_$: any, e: any) => (delete store[e.key], { value: undefined }))
+  on('store.keys', () => ({ value: Object.keys(store) }))
   mock.env(on, { HOME: '/home/none' })
   const posts: any[][] = []
   const statuses: (string | undefined)[] = []
@@ -56,16 +61,21 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   // #107: `uname -s` names the platform and `scutil --get LocalHostName` the Mac's own name; `hostname -s` ('mbp') is the network's. Linux by default,
   // so a test that wants a Mac sets `os` before the session starts. `scutilExit` non-zero makes scutil fail as it does when no LocalHostName is set.
   const machine = { os: 'Linux', localHostName: 'Alfredos-MacBook-Pro-4', scutilExit: 0, calls: [] as string[][] }
-  // v0.4 slice 3 (#29): `docker ps` and `docker stats` answer `dock.ps` and `dock.stats` while `mode` is 'ok'; 'absent' rejects as a binary that is not installed does, 'stopped' exits 1 as a
-  // daemon that is down does, 'hang' never answers. `vm_stat`, `sysctl -n hw.memsize` and `cat /proc/meminfo` answer the three memory fields. Every call is recorded.
+  // v0.4 slice 3 (#29): `docker ps` and `docker stats` answer `dock.ps` and `dock.stats` while `mode` is 'ok'; 'absent' rejects as a binary that is not installed does (worded here so that nothing
+  // can lean on its text) and `sh -c 'command -v docker'` finds none, 'stopped' exits 1 as a daemon that is down does, 'hang' never answers. `vm_stat`, `sysctl -n hw.memsize` and
+  // `cat /proc/meminfo` answer the three memory fields. Every call is recorded.
   const dock = { mode: 'absent' as 'ok' | 'absent' | 'stopped' | 'hang', ps: '', stats: '', vmStat: '', memsize: '', meminfo: '', calls: [] as string[][] }
   on('process.run', (_$: any, e: any) => {
+    if (e.argv[0] === 'sh' && e.argv[2] === 'command -v docker') {
+      dock.calls.push(e.argv)
+      return { value: { exitCode: dock.mode === 'absent' ? 1 : 0, stdout: dock.mode === 'absent' ? '' : '/usr/local/bin/docker\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
     if (e.argv[0] === 'docker' || e.argv[0] === 'vm_stat' || e.argv[0] === 'sysctl' || (e.argv[0] === 'cat' && e.argv[1] === '/proc/meminfo')) {
       dock.calls.push(e.argv)
       const out = { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
       if (e.argv[0] !== 'docker') return { value: { ...out, stdout: e.argv[0] === 'vm_stat' ? dock.vmStat : e.argv[0] === 'sysctl' ? dock.memsize : dock.meminfo } }
       if (dock.mode === 'hang') return new Promise(() => {})
-      if (dock.mode === 'absent') return { deny: 'spawn docker ENOENT' }
+      if (dock.mode === 'absent') return { deny: 'could not start docker' }
       return { value: dock.mode === 'stopped' ? { ...out, exitCode: 1, stderr: 'Cannot connect to the Docker daemon' } : { ...out, stdout: e.argv[1] === 'ps' ? dock.ps : dock.stats } }
     }
     if (e.argv[0] === 'uname' || e.argv[0] === 'scutil') {
@@ -138,7 +148,7 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   const engine = { model: 'claude-sonnet-5-5', agentId: 'a-child', prompts: [] as string[] }
   on('agent.spawn', (_$: any, e: any) => (engine.prompts.push(e.prompt), { model: engine.model, agentId: engine.agentId }))
   const sent = () => posts.flat()
-  return { clock, posts, sent, statuses, notes, titles, git, files, engine, hash, goal, tree, gh, repo, machine, dock }
+  return { clock, posts, sent, statuses, notes, titles, git, files, engine, hash, goal, tree, gh, repo, machine, dock, store }
 }
 
 // A stand-in for a git blob id: 40 hex characters that are a function of the text.
@@ -1714,10 +1724,11 @@ test('v0.4 slice 2: a gh issue list that fails still sends the PRs, with no issu
 
 // v0.4 slice 3 (#29, Factory): the Mac's free memory and its running containers, sampled once per machine however many sessions run. Only names, a few labels, state, health and memory leave.
 const MiB = 1_048_576
-const VM_STAT = 'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 100.\nPages active: 999.\nPages inactive: 50.\nPages speculative: 10.\nPages wired down: 77.\n'
+const VM_STAT = 'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 100.\nPages active: 999.\nPages inactive: 50.\nPages speculative: 10.\nPages wired down: 40.\nPages purgeable: 20.\nAnonymous pages: 300.\nPages occupied by compressor: 10.\n' // 330 pages in use
+const FREE = 100_000_000 - 330 * 16_384
 // A row of `docker ps` as the plugin's template renders it, plus what a fuller row holds (command, environment, mounts, labels, image), which must never leave.
 const psRow = (o: Record<string, unknown> = {}) => JSON.stringify({
-  id: 'a1b2c3d4e5f6', name: 'mobile-app-db-1', created: '2026-11-05 10:12:03 +0100 CET', state: 'running', status: 'Up 2 hours (healthy)', project: 'mobile-app', dir: '/repo/deploy', tc: '', session: '',
+  id: 'a1b2c3d4e5f6', name: 'mobile-app-db-1', created: '2026-11-05 10:12:03 +0100 CET', state: 'running', status: 'Up 2 hours (healthy)', project: 'mobile-app', dir: '/repo/deploy', tc: '', session: '', sessionDash: '',
   command: 'postgres -c password=hunter2', env: ['API_KEY=sk-live-1'], mounts: '/Users/a/.ssh', labels: 'owner=x,com.example.secret=s3cret', image: 'sha256:deadbeef', ...o,
 })
 const SECRETS = /postgres|hunter2|sk-live|\.ssh|owner=|s3cret|deadbeef/
@@ -1727,8 +1738,8 @@ const macWorld = (on: any, stored: Record<string, unknown> = {}) => {
   w.machine.os = 'Darwin'
   w.dock.mode = 'ok'
   w.dock.vmStat = VM_STAT
-  w.dock.memsize = '1000000\n'
-  w.dock.ps = `${psRow()}\n${psRow({ id: 'f6e5d4c3b2a1', name: 'quirky_curie', project: '', dir: '', tc: 'true', session: '3f2a9b', status: 'Up 3 minutes' })}\n`
+  w.dock.memsize = '100000000\n'
+  w.dock.ps = `${psRow()}\n${psRow({ id: 'f6e5d4c3b2a1', name: 'quirky_curie', project: '', dir: '', tc: 'true', session: '', sessionDash: '3f2a9b', status: 'Up 3 minutes' })}\n`
   w.dock.stats = '{"id":"a1b2c3d4e5f6","mem":"100MiB / 8GiB"}\n{"id":"f6e5d4c3b2a1","mem":"20MiB / 8GiB"}\n'
   return w
 }
@@ -1738,7 +1749,7 @@ test('#29: a session samples the machine at its start: free memory, Docker ok, e
   await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
   await w.clock.advance(2_000)
   expect(samples(w).map((e) => e.data)).toEqual([{
-    mem_free: 160 * 16_384, mem_total: 1_000_000, docker: 'ok',
+    mem_free: FREE, mem_total: 100_000_000, docker: 'ok',
     containers: [
       { name: 'mobile-app-db-1', created_at: Date.parse('2026-11-05T10:12:03+01:00'), state: 'running', health: 'healthy', memory: 100 * MiB, compose: 'mobile-app', working_dir: '/repo/deploy' },
       { name: 'quirky_curie', created_at: Date.parse('2026-11-05T10:12:03+01:00'), state: 'running', memory: 20 * MiB, testcontainers: { session: '3f2a9b' } },
@@ -1760,10 +1771,15 @@ test('#29: on Linux the memory is /proc/meminfo\'s MemAvailable', opts, async ($
   expect(w.dock.calls.map((c) => c[0])).not.toContain('vm_stat')
 })
 
-test('#29: two sessions within 10 minutes sample once', opts, async ($: any, on: any) => {
+test('#29: two sessions within 10 minutes sample once; what keeps the second from sampling is the time in the shared store, which the first wrote', opts, async ($: any, on: any) => {
   const w = macWorld(on)
+  expect(w.store['machine:sampled']).toBeUndefined()
   await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
   await w.clock.advance(2_000)
+  expect(samples(w)).toHaveLength(1)
+  // the time is in the store, not in a variable of this module: another session is another process, and sees only the store
+  expect(w.store['machine:sampled']).toBeGreaterThanOrEqual(T0)
+  expect(w.store['machine:sampled']).toBeLessThanOrEqual(samples(w)[0]!.ts)
   await w.clock.advance(5 * MIN)
   await $.session.start({ cwd: '/repo', surface: null, isInteractive: false }) // the second session: the store says 5 minutes ago
   await w.clock.advance(2_000)
@@ -1798,7 +1814,7 @@ const DOCKER_DOWN = (mode: 'absent' | 'stopped') => async ($: any, on: any) => {
   w.dock.mode = mode
   await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
   await w.clock.advance(2_000)
-  expect(samples(w).map((e) => e.data)).toEqual([{ mem_free: 160 * 16_384, mem_total: 1_000_000, docker: mode, containers: [] }])
+  expect(samples(w).map((e) => e.data)).toEqual([{ mem_free: FREE, mem_total: 100_000_000, docker: mode, containers: [] }])
   expect(w.dock.calls.some((c) => c[1] === 'stats')).toBe(false)
 }
 test('#29: Docker not installed is a sample that says "absent", with the memory and no containers', opts, DOCKER_DOWN('absent'))
@@ -1811,6 +1827,7 @@ test('#29: a daemon that never answers holds up nothing; the time was written be
   await boot($)
   const r = await $.tool.call({ tool: 'Read', tool_use_id: 'toolu_r', file_path: '/repo/a.ts' })
   expect(r.text).toBe('ok')
+  expect(w.store['machine:sampled']).toBeGreaterThanOrEqual(T0) // written before the read that never ends
   await w.clock.advance(9 * MIN)
   expect(w.dock.calls.filter((c) => c[1] === 'ps')).toHaveLength(1) // a look every minute for nine minutes, one read
   expect(w.sent().map((e) => e.kind)).toContain('session.start')

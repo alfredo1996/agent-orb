@@ -322,6 +322,12 @@ function writeRows(db: Store, ev: Event[], source: Source) {
       run(db, 'UPDATE sessions SET plugin_first = min(coalesce(plugin_first, :lo), :lo), plugin_last = max(coalesce(plugin_last, :hi), :hi) WHERE id = :id', { id, lo, hi });
     }
   }
+
+  // v0.4 slice 3 (#29): the last ts of any event of each session, whichever kind and source (a machine sample, a read of the open PRs): "Left running" reads a project's quiet from it. Apart from
+  // plugin_last, which is the stretch the import fills around and so counts only the prompts, requests and calls.
+  const heard = new Map<string, number>();
+  for (const e of ev) heard.set(e.session_id, Math.max(heard.get(e.session_id) ?? 0, e.ts));
+  for (const [id, ts] of heard) run(db, 'UPDATE sessions SET seen_at = max(coalesce(seen_at, 0), :ts) WHERE id = :id', { id, ts });
 }
 
 type Fp = { id: string; project: string; cwd: string | null; path: string; scope: 'project' | 'user'; hash: string; ts: number };

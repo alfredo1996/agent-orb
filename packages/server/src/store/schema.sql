@@ -20,10 +20,11 @@ CREATE TABLE IF NOT EXISTS role_rules (project_id TEXT NOT NULL, agent_type TEXT
 -- source is the first session.start source seen; recorded is 1 once a session.start with another source arrived.
 -- plugin_first and plugin_last are the first and last ts of the prompts, requests and calls the plugin wrote (the writer's `source` is 'plugin'):
 -- the stretch the import never fills. An imported session the plugin resumed later has a stretch from the resume on (#79); null = the plugin wrote none.
+-- seen_at (#29) is the last ts of any event of the session, of any kind (a machine sample and a read of the open PRs among them); null = none since the column was added.
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY, user_id TEXT NOT NULL, host TEXT NOT NULL, project_id TEXT NOT NULL,
   started_at INTEGER, ended_at INTEGER, model TEXT, claude_version TEXT, content TEXT, source TEXT, recorded INTEGER,
-  plugin_first INTEGER, plugin_last INTEGER, dropped_events INTEGER, branch TEXT
+  plugin_first INTEGER, plugin_last INTEGER, dropped_events INTEGER, branch TEXT, seen_at INTEGER
 ) WITHOUT ROWID;
 
 -- id is `session:agent_id`, the main agent `session:main`. parent_id and spawn_tool_use_id are the SPAWNED edge and the SPAWNED_AGENT one.

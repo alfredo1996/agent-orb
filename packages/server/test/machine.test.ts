@@ -35,12 +35,12 @@ const testRun = (session: string, project: Project, ts: number, ms?: number, hos
 
 type Sent = { name?: string; created_at?: number; state?: string; health?: 'healthy' | 'unhealthy' | 'starting'; memory?: number; compose?: string; working_dir?: string; testcontainers?: { session?: string }; excluded?: true };
 const box = (c: Sent = {}): Sent => ({ state: 'running', memory: 100 * MiB, ...c });
-const sample = (containers: Sent[], over: { ts?: number; host?: string; docker?: string; mem_free?: number; mem_total?: number } = {}): Event => {
-  const { ts = SAMPLE_AT, host = 'mbp', ...data } = over;
-  return ev('s-sampler', ts, 'machine.sample', { docker: 'ok', mem_free: 6_200 * MiB, mem_total: 36_000 * MiB, containers, ...data }, {}, SAMPLER, host);
+const sample = (containers: Sent[], over: { ts?: number; host?: string; docker?: string; mem_free?: number; mem_total?: number; by?: [string, Project] } = {}): Event => {
+  const { ts = SAMPLE_AT, host = 'mbp', by = ['s-sampler', SAMPLER], ...data } = over;
+  return ev(by[0], ts, 'machine.sample', { docker: 'ok', mem_free: 6_200 * MiB, mem_total: 36_000 * MiB, containers, ...data }, {}, by[1], host);
 };
 
-type Group = { kind: string; name: string; project: string | null; compose: string | null; containers: number; memory: number; unhealthy: number; leftRunning: boolean; idleMs: number | null };
+type Group = { id: string; kind: string; name: string; project: string | null; compose: string | null; containers: number; memory: number; unhealthy: number; leftRunning: boolean; idleMs: number | null; since: number | null };
 type Host = { host: string; at: number; ageMs: number; docker: string; memFree: number | null; memTotal: number | null; containers: number; memory: number; groups: Group[] };
 
 let app: ReturnType<typeof buildApp>;
@@ -208,44 +208,108 @@ describe('GET /api/machine: grouping', () => {
   });
 });
 
+describe('GET /api/machine: groups told apart', () => {
+  it('two stacks that share a compose name (the default is the folder\'s name) but run from two folders are two groups, each with its own project', async () => {
+    await send(start('s-mobile', MOBILE, SAMPLE_AT - MIN), start('s-notes', NOTES, SAMPLE_AT - MIN), sample([
+      box({ name: 'api-1', compose: 'deploy', working_dir: '/Users/a/mobile-app/deploy', memory: 50 * MiB }),
+      box({ name: 'db-1', compose: 'deploy', working_dir: '/Users/a/mobile-app/deploy', memory: 60 * MiB }),
+      box({ name: 'pg-1', compose: 'deploy', working_dir: '/Users/a/field-notes/deploy', memory: 70 * MiB }),
+    ]));
+    const h = await only();
+    expect(h.groups.map((g) => [g.compose, g.project, g.containers]).sort()).toEqual([['deploy', 'field-notes', 1], ['deploy', 'mobile-app', 2]]);
+  });
+
+  it('every group has an id of its own, within a host and across hosts, and the same stack keeps its id from one read to the next', async () => {
+    const containers = [
+      box({ compose: 'deploy', working_dir: '/Users/a/mobile-app/deploy' }), box({ compose: 'deploy', working_dir: '/Users/a/field-notes/deploy' }),
+      box({ testcontainers: {} }), box({ testcontainers: { session: 'aaa' } }), box({ testcontainers: { session: 'bbb' } }), box({ excluded: true }), box({ name: 'by-hand' }),
+    ];
+    await send(start('s-mobile', MOBILE, SAMPLE_AT - MIN), sample(containers), sample(containers, { host: 'studio' }));
+    const hosts = await read();
+    const ids = hosts.flatMap((h) => h.groups.map((g) => g.id));
+    expect(ids).toHaveLength(14);
+    expect(new Set(ids).size).toBe(14);
+    expect(ids.every((id) => typeof id === 'string' && id !== '')).toBe(true);
+    expect((await read()).flatMap((h) => h.groups.map((g) => g.id)).toSorted()).toEqual(ids.toSorted());
+  });
+
+  it('two Testcontainers runs of one project are two groups with one name, told apart by when each began', async () => {
+    const made = SAMPLE_AT - 3 * HOUR;
+    await send(
+      start('s-notes', NOTES, made - HOUR), ...testRun('s-notes', NOTES, made - 2 * HOUR + 30 * MIN, 3 * HOUR), // one long run, going when both were made
+      sample([box({ created_at: made, testcontainers: { session: 'aaa' } }), box({ created_at: made + 20 * MIN, testcontainers: { session: 'bbb' } }), box({ created_at: made + 25 * MIN, testcontainers: { session: 'bbb' } })]),
+    );
+    const g = (await only()).groups.filter((x) => x.name === 'field-notes');
+    expect(g.map((x) => [x.containers, x.since]).sort()).toEqual([[1, made], [2, made + 20 * MIN]]);
+    expect(g[0]!.id).not.toBe(g[1]!.id);
+  });
+
+  it('a project that is not a repository with a remote does not hold what is under its folder: one session started in the home folder does not claim every stack there', async () => {
+    const home: Project = { cwd: '/Users/a', name: 'a' }; // a session started outside a repository records its folder as the project's
+    await send(start('s-home', home, SAMPLE_AT - 5 * HOUR), start('s-notes', NOTES, SAMPLE_AT - MIN), sample([
+      box({ compose: 'cache', working_dir: '/Users/a/elsewhere/deploy' }), box({ compose: 'notes', working_dir: '/Users/a/field-notes/deploy' }),
+    ]));
+    expect((await only()).groups.map((g) => [g.compose, g.project]).sort()).toEqual([['cache', null], ['notes', 'field-notes']]);
+  });
+});
+
 describe('GET /api/machine: flags', () => {
+  // "Left running" is for containers a test run left behind: a Testcontainers group that reaches a project, because a test run of the project was going when its first container was made.
+  const MADE = SAMPLE_AT - 4 * HOUR;
+  const run = (project: Project = NOTES, session = 's-notes', host = 'mbp') => testRun(session, project, MADE - MIN, 4 * MIN, host);
+  const left = (extra: Sent = {}) => box({ name: 'quirky_curie', created_at: MADE, testcontainers: { session: 'zzz' }, ...extra });
   const stack = (extra: Sent = {}) => box({ name: 'notes-db-1', compose: 'notes', working_dir: '/Users/a/field-notes/deploy', ...extra });
 
-  it('"Left running" when the group\'s project has had no event for an hour before the sample, and not before the hour is up', async () => {
+  it('"Left running" when the project of the test run that made the containers has had no event for an hour before the sample, and not before the hour is up', async () => {
     const last = SAMPLE_AT - HOUR; // the project\'s last event: exactly an hour before the sample
-    await send(start('s-notes', NOTES, last - 30 * MIN), end('s-notes', NOTES, last), sample([stack()]));
-    expect(group(await only(), 'field-notes')).toMatchObject({ leftRunning: true, idleMs: HOUR });
+    await send(start('s-notes', NOTES, MADE - HOUR), ...run(), end('s-notes', NOTES, last), sample([left()]));
+    expect(group(await only(), 'field-notes')).toMatchObject({ kind: 'testcontainers', leftRunning: true, idleMs: HOUR });
   });
 
   it('a project that was active a second inside the hour is not left running; the idle time is read at the sample', async () => {
-    await send(start('s-notes', NOTES, SAMPLE_AT - 2 * HOUR), end('s-notes', NOTES, SAMPLE_AT - HOUR + 1_000), sample([stack()]));
+    await send(start('s-notes', NOTES, MADE - HOUR), ...run(), end('s-notes', NOTES, SAMPLE_AT - HOUR + 1_000), sample([left()]));
     expect(group(await only(), 'field-notes')).toMatchObject({ leftRunning: false, idleMs: HOUR - 1_000 });
   });
 
+  it('a compose stack is never left running, however long its project has been quiet: stacks are started on purpose and stay up (the server agent-orb runs in is one)', async () => {
+    await send(start('s-notes', NOTES, SAMPLE_AT - 6 * HOUR), end('s-notes', NOTES, SAMPLE_AT - 5 * HOUR), sample([stack(), stack({ name: 'notes-api-1' })]));
+    const g = group(await only(), 'field-notes');
+    expect(g).toMatchObject({ kind: 'compose', project: 'field-notes', containers: 2, leftRunning: false, idleMs: null });
+  });
+
   it('what a session did counts as an event: a prompt, a call or a request, not only a start and an end', async () => {
-    await send(start('s-notes', NOTES, SAMPLE_AT - 3 * HOUR), prompt('s-notes', NOTES, SAMPLE_AT - 20 * MIN), sample([stack()]));
+    await send(start('s-notes', NOTES, MADE - HOUR), ...run(), prompt('s-notes', NOTES, SAMPLE_AT - 20 * MIN), sample([left()]));
     expect(group(await only(), 'field-notes')).toMatchObject({ leftRunning: false });
   });
 
-  it('an open-PR read is an event too: a session that is open and quiet still reads the repository every five minutes', async () => {
-    await send(start('s-notes', NOTES, SAMPLE_AT - 3 * HOUR), ev('s-notes', SAMPLE_AT - 10 * MIN, 'project.open_prs', { prs: [] }, {}, NOTES), sample([stack()]));
+  it('any event of the session counts, an open-PR read among them: a session that is open and quiet still reads the repository every five minutes', async () => {
+    await send(start('s-notes', NOTES, MADE - HOUR), ...run(), ev('s-notes', SAMPLE_AT - 10 * MIN, 'project.open_prs', { prs: [] }, {}, NOTES), sample([left()]));
     expect(group(await only(), 'field-notes')).toMatchObject({ leftRunning: false });
+  });
+
+  it('the sample is an event of the session that took it: a session open in a project with no other event for hours, the one sampling, is not left running', async () => {
+    await send(start('s-notes', NOTES, MADE - HOUR), ...run(), sample([left()], { by: ['s-notes', NOTES] }));
+    expect(group(await only(), 'field-notes')).toMatchObject({ leftRunning: false, idleMs: 0 });
   });
 
   it('an event after the sample counts as well: the project is being worked on', async () => {
-    await send(start('s-notes', NOTES, SAMPLE_AT - 3 * HOUR), sample([stack()]), prompt('s-notes', NOTES, SAMPLE_AT + 2 * MIN));
+    await send(start('s-notes', NOTES, MADE - HOUR), ...run(), sample([left()]), prompt('s-notes', NOTES, SAMPLE_AT + 2 * MIN));
     expect(group(await only(), 'field-notes')).toMatchObject({ leftRunning: false });
   });
 
-  it('only a session on this host counts for the project: another Mac working in it does not keep these containers alive', async () => {
-    await send(start('s-notes', NOTES, SAMPLE_AT - 3 * HOUR), end('s-notes', NOTES, SAMPLE_AT - 2 * HOUR), start('s-away', NOTES, SAMPLE_AT - 10 * MIN, 'other-mac'), prompt('s-away', NOTES, SAMPLE_AT - 5 * MIN, 'other-mac'), sample([stack()]));
+  it('only a session on this host counts for the project: another Mac working in it, or reading its PRs, does not keep these containers alive', async () => {
+    await send(
+      start('s-notes', NOTES, MADE - HOUR), ...run(), end('s-notes', NOTES, SAMPLE_AT - 2 * HOUR),
+      start('s-away', NOTES, SAMPLE_AT - 10 * MIN, 'other-mac'), prompt('s-away', NOTES, SAMPLE_AT - 5 * MIN, 'other-mac'), ev('s-away', SAMPLE_AT - 4 * MIN, 'project.open_prs', { prs: [] }, {}, NOTES, 'other-mac'),
+      sample([left()]),
+    );
     expect(group(await only(), 'field-notes')).toMatchObject({ leftRunning: true });
   });
 
-  it('a Testcontainers group reached through a test run is left running by the same rule', async () => {
-    const made = SAMPLE_AT - 3 * HOUR;
-    await send(start('s-notes', NOTES, made - HOUR), ...testRun('s-notes', NOTES, made - MIN), end('s-notes', NOTES, made + 5 * MIN), sample([box({ created_at: made, testcontainers: { session: 'zzz' } })]));
-    expect(group(await only(), 'field-notes')).toMatchObject({ kind: 'testcontainers', leftRunning: true, idleMs: SAMPLE_AT - (made + 5 * MIN) });
+  it('two repositories with one folder name do not share their quiet: the one the test run was in is judged by its own sessions', async () => {
+    const twin: Project = { cwd: '/Users/b/field-notes', name: 'field-notes', git_remote: 'github.com/other/field-notes' };
+    await send(start('s-notes', NOTES, MADE - HOUR), ...run(), end('s-notes', NOTES, SAMPLE_AT - 2 * HOUR), start('s-twin', twin, SAMPLE_AT - 3 * HOUR), prompt('s-twin', twin, SAMPLE_AT - 5 * MIN), sample([left()]));
+    expect(group(await only(), 'field-notes')).toMatchObject({ leftRunning: true, idleMs: 2 * HOUR });
   });
 
   it('a group with no project is never left running, however old: it is unhealthy or nothing', async () => {
@@ -270,14 +334,19 @@ describe('GET /api/machine: flags', () => {
     expect(group(h, 'other')).toMatchObject({ unhealthy: 0 }); // starting is not unhealthy
   });
 
+  it('a container that keeps restarting (crash-looping) is flagged like an unhealthy one: it may have no health check to say so', async () => {
+    await send(sample([box({ name: 'loop-1', compose: 'billing', state: 'restarting' }), box({ name: 'loop-2', compose: 'billing', state: 'running' }), box({ name: 'paused', compose: 'billing', state: 'paused' })]));
+    expect(group(await only(), 'billing')).toMatchObject({ unhealthy: 1, containers: 3 });
+  });
+
   it('the flagged groups come first, then the biggest', async () => {
     await send(
-      start('s-notes', NOTES, SAMPLE_AT - 4 * HOUR), end('s-notes', NOTES, SAMPLE_AT - 3 * HOUR), start('s-mobile', MOBILE, SAMPLE_AT - MIN),
+      start('s-notes', NOTES, MADE - HOUR), ...run(), end('s-notes', NOTES, SAMPLE_AT - 3 * HOUR), start('s-mobile', MOBILE, SAMPLE_AT - MIN),
       sample([
         box({ name: 'big', memory: 900 * MiB }),
         box({ compose: 'mobile-app', working_dir: '/Users/a/mobile-app', memory: 300 * MiB }),
         box({ compose: 'billing', health: 'unhealthy', memory: 20 * MiB }),
-        stack({ memory: 10 * MiB }),
+        left({ memory: 10 * MiB }),
       ]),
     );
     expect((await only()).groups.map((g) => g.name)).toEqual(['billing', 'field-notes', 'No project', 'mobile-app']); // billing is unhealthy, field-notes left running; each by memory
