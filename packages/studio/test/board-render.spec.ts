@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { BoardBand, MilestoneSelect, STAGES, type BoardData, type BoardIssue } from '../src/Factory.tsx';
+import { BoardBand, MilestoneSelect, STAGES, type BoardData, type BoardIssue, type IssueCost } from '../src/Factory.tsx';
 
 // The Board band (v0.4 slice 6, #32; design/v0.4-factory.html, the Board): rows are issues. Each shows its stage on a track of seven, whether its PR is ready, its cost against its budget, and
 // its sessions with a link to Live. The studio has no DOM library, so the band is rendered to markup.
@@ -10,23 +10,28 @@ const NOW = Date.parse('2026-11-05T12:00:00Z');
 const MIN = 60_000;
 
 const issue = (number: number, over: Partial<BoardIssue> = {}): BoardIssue => ({
-  number, milestone: 'v2.3 Offline', outside: false, stage: 'queued', pr: null, ready: null, reason: null, usd: 0, partial: false, budget: 150, mark: null, sessions: [], sessionCount: 0, ...over,
+  number, milestone: 'v2.3 Offline', outside: false, stage: 'queued', pr: null, ready: null, reason: null, sessions: [], sessionCount: 0, ...over,
 });
+/** An issue's cost as /api/budget gives it, which the page joins to the board by number. */
+const ic = (number: number, usd: number, budget: number | null, mark: IssueCost['mark'] = null, partial = false): IssueCost =>
+  ({ number, milestone: 'v2.3 Offline', usd, partial, whole: usd, windows: 0, budget, milestoneBudget: budget, source: budget === null ? null : 'milestone', mark });
 const sess = (id: string, over: Partial<{ background: true }> = {}) => ({ id, at: NOW - 5 * MIN, ...over });
 const ALL: BoardIssue[] = [
   issue(417, { title: 'Clear the cache on sign-out' }),
-  issue(415, { title: 'Sync conflict dialog', stage: 'building', usd: 64, sessions: [sess('s-415')], sessionCount: 1 }),
-  issue(398, { title: 'Crash on an empty feed', stage: 'reviewing', outside: true, milestone: 'v2.2.1', usd: 27, budget: null, pr: { number: 411, head: 'fix/398-feed', merged: false }, ready: false, reason: 'No findings reported yet', sessions: [sess('s-398')], sessionCount: 1 }),
-  issue(409, { title: 'Retry after an expired token', stage: 'fixing', usd: 132, mark: 'at80', pr: { number: 416, head: 'fix/409-retry', merged: false }, ready: false, reason: '2 findings open: 1 major, 1 minor', sessions: [sess('s-409a'), sess('s-409b', { background: true })], sessionCount: 2 }),
-  issue(407, { title: 'Compress photos before upload', stage: 'gate', usd: 96, budget: 80, mark: 'at100', pr: { number: 414, head: 'fix/407-photos', merged: false }, ready: false, reason: 'UNSTABLE: a check is not passing', sessions: [sess('s-407')], sessionCount: 1 }),
-  issue(412, { title: 'Queue uploads while offline', stage: 'ready', usd: 118, pr: { number: 418, head: 'fix/412-queue', merged: false }, ready: true, sessions: [sess('s-412')], sessionCount: 1 }),
-  issue(403, { title: 'Offline banner', stage: 'merged', usd: 41, pr: { number: 405, head: 'fix/403-banner', merged: true }, sessions: [sess('s-403')], sessionCount: 1 }),
+  issue(415, { title: 'Sync conflict dialog', stage: 'building', sessions: [sess('s-415')], sessionCount: 1 }),
+  issue(398, { title: 'Crash on an empty feed', stage: 'reviewing', outside: true, milestone: 'v2.2.1', pr: { number: 411, head: 'fix/398-feed', merged: false }, ready: false, reason: 'No findings reported yet', sessions: [sess('s-398')], sessionCount: 1 }),
+  issue(409, { title: 'Retry after an expired token', stage: 'fixing', pr: { number: 416, head: 'fix/409-retry', merged: false }, ready: false, reason: '2 findings open: 1 major, 1 minor', sessions: [sess('s-409a'), sess('s-409b', { background: true })], sessionCount: 2 }),
+  issue(407, { title: 'Compress photos before upload', stage: 'gate', pr: { number: 414, head: 'fix/407-photos', merged: false }, ready: false, reason: 'UNSTABLE: a check is not passing', sessions: [sess('s-407')], sessionCount: 1 }),
+  issue(412, { title: 'Queue uploads while offline', stage: 'ready', pr: { number: 418, head: 'fix/412-queue', merged: false }, ready: true, sessions: [sess('s-412')], sessionCount: 1 }),
+  issue(403, { title: 'Offline banner', stage: 'merged', pr: { number: 405, head: 'fix/403-banner', merged: true }, sessions: [sess('s-403')], sessionCount: 1 }),
 ];
 const data = (over: Partial<BoardData> = {}): BoardData => ({
-  project: 'mobile-app', milestone: 'v2.3 Offline', month: '2026-11', milestones: [{ name: 'v2.2.1', open: 3 }, { name: 'v2.3 Offline', open: 6 }], issues: ALL, notOnIssue: { usd: 1240, partial: false }, ...over,
+  project: 'mobile-app', milestone: 'v2.3 Offline', milestones: [{ name: 'v2.2.1', open: 3 }, { name: 'v2.3 Offline', open: 6 }], issues: ALL, ...over,
 });
-const band = (d: BoardData, live: string[] = ['s-415', 's-398', 's-409a', 's-409b', 's-407', 's-412'], open: number[] = [411, 416, 414, 418]) =>
-  renderToStaticMarkup(createElement(BoardBand, { data: d, live: new Set(live), openable: new Set(open), onOpen: () => {} }));
+// 417 and 419 have no spend and so no entry, as in /api/budget's list of issues with spend; 398 is in no milestone with a default
+const COSTS = new Map([ic(415, 64, 150), ic(398, 27, null), ic(409, 132, 150, 'at80'), ic(407, 96, 80, 'at100'), ic(412, 118, 150), ic(403, 41, 150)].map((c) => [c.number, c]));
+const band = (d: BoardData, live: string[] = ['s-415', 's-398', 's-409a', 's-409b', 's-407', 's-412'], open: number[] = [411, 416, 414, 418], extra: Partial<Parameters<typeof BoardBand>[0]> = {}) =>
+  renderToStaticMarkup(createElement(BoardBand, { data: d, live: new Set(live), openable: new Set(open), cost: COSTS, notOnIssue: { usd: 1240, partial: false }, onOpen: () => {}, ...extra }));
 const body = (html: string) => html.split('<div class="notissue"')[0]!; // the rows, without the lines under them
 const rows = (html: string) => body(html).split('<div class="brow').slice(1).map((r) => plain(`<div class="brow${r}`));
 const rowOf = (html: string, n: number) => '<div class="brow' + body(html).split('<div class="brow').slice(1).find((r) => r.includes(`data-issue="${n}"`));
@@ -113,8 +118,16 @@ describe('the Board band', () => {
     expect(rowOf(html, 412)).toContain('class="bar"');
     expect(rowOf(html, 398)).not.toContain('class="bar');
     expect(plain(rowOf(html, 398))).toContain('$27.00 No budget set');
-    const partial = band(data({ issues: [issue(5, { usd: 12, partial: true })] }));
+    const partial = band(data({ issues: [issue(5)] }), [], [], { cost: new Map([[5, ic(5, 12, 150, null, true)]]) });
     expect(plain(partial)).toContain('≥ $12.00 of $150.00');
+  });
+
+  it('until the budget has been read the cost cells and the "not on an issue" line are left out, rather than saying "nothing spent" for what is not known', () => {
+    const html = band(data(), undefined, undefined, { cost: undefined, notOnIssue: undefined });
+    expect(plain(html)).not.toContain('Cost, estimate Nothing spent');
+    expect(plain(body(html))).not.toMatch(/\$\d|Nothing spent|No budget/);
+    expect(plain(html)).not.toContain('Not on an issue');
+    expect(plain(rowOf(html, 409))).toContain('Fixing Ready 2 findings open: 1 major, 1 minor Sessions Live s-409a Live s-409b agent view'); // the rest of the row stands
   });
 
   it('an issue with an open PR opens the PR\'s sheet; one with none, or a merged one, is only text', () => {
@@ -135,7 +148,7 @@ describe('the Board band', () => {
 
   it('"not on an issue" is the line slice 2 computes: this month\'s, a floor when a request had no price', () => {
     expect(plain(band(data()))).toContain('Not on an issue: $1240.00 this month');
-    expect(plain(band(data({ notOnIssue: { usd: 15, partial: true } })))).toContain('Not on an issue: ≥ $15.00 this month');
+    expect(plain(band(data(), undefined, undefined, { notOnIssue: { usd: 15, partial: true } }))).toContain('Not on an issue: ≥ $15.00 this month');
     expect(plain(band(data()))).toContain("Sessions with no PR, and turns after a session's last PR. Cost is an estimate by time windows.");
   });
 

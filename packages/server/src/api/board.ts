@@ -3,16 +3,17 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ContentStore } from '../content-store.ts';
 import { all, each, get, type Store } from '../store/store.ts';
-import { budgetOf, sessionLinks, windowIssue, type Link } from './budget.ts';
+import { sessionLinks, windowIssue, type Link } from './budget.ts';
 import { openPrs } from './factory.ts';
-import { zone } from './ledger.ts';
 
 // v0.4 slice 6 (#32, Factory; PROJECT.md §15, 2026-11-03): each issue of a milestone, followed from queued to merged on one board.
-//   GET /api/board?project=<name>[&milestone=<title>]&tz=<IANA>  the chosen milestone's open issues and any issue in flight outside it, each with its stage, its readiness, its cost against its budget and its sessions
+//   GET /api/board?project=<name>[&milestone=<title>]  the chosen milestone's open issues and any issue in flight outside it, each with its stage, its readiness and its sessions
+// The cost of each issue is not here: it is GET /api/budget's, which the page already reads and joins by issue number. Working it out here too doubled the pass over a project's requests and took the soak
+// 70 MB over (the board's own work is a few milliseconds).
 // A stage is read from what the agents did, never from an agent's name: a file written, a findings report, a test run on the PR's head, ready(), a merge. Nothing is stored for it; it is worked out here, on read.
 // A session reaches an issue by slice 2's rule alone (budget.ts): its branch names the issue, and then it reaches that issue only; else a PR it linked names it, its writes counted in that PR's window.
 
-const Query = z.object({ project: z.string().min(1), milestone: z.string().min(1).max(200).optional(), tz: zone.default('UTC') });
+const Query = z.object({ project: z.string().min(1), milestone: z.string().min(1).max(200).optional() });
 const FLIGHT_MS = 7 * 86_400_000; // an issue outside the milestone shows while a session reached it this week and its PR is not merged
 const SESSIONS_SHOWN = 12;
 
@@ -27,7 +28,7 @@ const WRITES = `FROM agents a JOIN turns t ON t.agent_id = a.id JOIN tool_calls 
 type Reach = { id: string; branch: string | null; at: number; background: boolean; own: number | null; links: Link[]; issues: Map<number, number> };
 type PrRow = { number: number; head: string | null; mergedAt: number | null };
 
-export function boardOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, tz: string, now: number) {
+export function boardOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number) {
   const week = now - FLIGHT_MS;
 
   // The open issues, as the plugin last read them. Two project rows with the name (a repo seen from two machines) may differ: the latest by name, as the budget reads them.
@@ -101,8 +102,6 @@ export function boardOf(store: Store, content: ContentStore, project: string, ch
   const reportAt = new Map<string, number>(); // the last findings report each ref (a PR as `pr:416`, or a branch) has had
   for (const r of each(store, 'SELECT f.ref AS ref, max(f.ts) AS ts FROM finding_reports f JOIN projects p ON p.id = f.project_id WHERE p.name = :project GROUP BY f.ref', { project })) reportAt.set(r.ref, r.ts);
 
-  const cost = budgetOf(store, project, tz, now);
-  const costOf = new Map(cost.issues.map((i) => [i.number, i]));
   const rows = [...shown].map(([number, outside]) => {
     const sessions = reaches.filter((r) => r.issues.has(number)).toSorted((a, b) => b.at - a.at);
     const pr = newest(openOf.get(number));
@@ -123,13 +122,11 @@ export function boardOf(store: Store, content: ContentStore, project: string, ch
       if (pr?.gate && pr.gate.ts >= Math.max(written ?? 0, report ?? 0)) stage = 'gate';
       if (pr?.ready) stage = 'ready';
     }
-    const c = costOf.get(number);
     const title = open.get(number)?.title;
     return {
       number, ...(title ? { title } : {}), milestone: open.get(number)?.milestone ?? null, outside, stage,
       pr: merged ? { number: merged.number, head: merged.head, merged: true } : pr ? { number: pr.number, head: pr.head, merged: false } : null,
       ready: merged || !pr ? null : pr.ready, reason: merged || !pr ? null : pr.reason,
-      usd: c?.usd ?? 0, partial: c?.partial ?? false, budget: c?.budget ?? null, mark: c?.mark ?? null,
       sessions: sessions.slice(0, SESSIONS_SHOWN).map((s) => ({ id: s.id, at: s.at, ...(s.background ? { background: true as const } : {}) })), sessionCount: sessions.length,
       latest: sessions[0]?.at ?? 0,
     };
@@ -139,15 +136,15 @@ export function boardOf(store: Store, content: ContentStore, project: string, ch
   rows.sort((a, b) => group(a) - group(b) || b.latest - a.latest || b.number - a.number);
 
   return {
-    project, milestone, month: cost.month, milestones: [...counts].map(([name, c]) => ({ name, open: c.open })).toSorted((a, b) => (a.name < b.name ? -1 : 1)),
-    issues: rows.map(({ latest, ...r }) => r), notOnIssue: cost.notOnIssue,
+    project, milestone, milestones: [...counts].map(([name, c]) => ({ name, open: c.open })).toSorted((a, b) => (a.name < b.name ? -1 : 1)),
+    issues: rows.map(({ latest, ...r }) => r),
   };
 }
 
 export function board(app: FastifyInstance, { store, content, now = Date.now }: { store: Store; content: ContentStore; now?: () => number }) {
   app.get('/api/board', async (req, reply) => {
     const q = Query.safeParse(req.query);
-    if (!q.success) return reply.code(400).send({ error: 'give a project, and a time zone that exists', issues: q.error.issues });
-    return boardOf(store, content, q.data.project, q.data.milestone, q.data.tz, now());
+    if (!q.success) return reply.code(400).send({ error: 'give a project', issues: q.error.issues });
+    return boardOf(store, content, q.data.project, q.data.milestone, now());
   });
 }

@@ -99,44 +99,41 @@ export function issueCosts(store: Store, project: string, start: number, now: nu
   return { issues, none };
 }
 
-/** Every issue's cost against its budget, the milestones' defaults, and this month's spend on no issue: what GET /api/budget answers, and what the board (#32) takes its cost cells from. */
-export function budgetOf(store: Store, project: string, tz: string, at: number) {
-  const month = dayOf(tz, at).slice(0, 7); // as the goal reads it: from midnight on the month's first day in the viewer's zone, to now
-  const [start] = monthBounds(tz, Number(month.slice(0, 4)), Number(month.slice(5, 7)));
-  const { issues, none } = issueCosts(store, project, start, at);
-
-  const milestoneOf = new Map<number, string>(); // two project rows with the name (two machines) may differ on one issue: the latest title by name
-  for (const r of all(store, 'SELECT o.number AS number, max(o.milestone) AS milestone FROM open_issues o JOIN projects p ON p.id = o.project_id WHERE p.name = :project GROUP BY o.number', { project })) {
-    if (r.milestone !== null) milestoneOf.set(r.number, r.milestone);
-    if (!issues.has(r.number)) issues.set(r.number, { whole: 0, windows: 0, partial: false });
-  }
-  const defaults = new Map<string, number>();
-  const overrides = new Map<number, number>();
-  for (const r of all(store, 'SELECT kind, key, usd FROM budgets WHERE project = :project', { project })) {
-    if (r.kind === 'milestone') defaults.set(r.key, r.usd);
-    else {
-      overrides.set(Number(r.key), r.usd);
-      if (!issues.has(Number(r.key))) issues.set(Number(r.key), { whole: 0, windows: 0, partial: false });
-    }
-  }
-
-  const rows = [...issues].toSorted(([a], [b]) => b - a).map(([number, b]) => {
-    const milestone = milestoneOf.get(number) ?? null;
-    const own = overrides.get(number);
-    const dflt = milestone === null ? undefined : defaults.get(milestone);
-    const budget = own ?? dflt ?? null;
-    const spent = b.whole + b.windows;
-    return { number, milestone, usd: spent, partial: b.partial, whole: b.whole, windows: b.windows, budget, milestoneBudget: dflt ?? null, source: own !== undefined ? 'issue' : dflt !== undefined ? 'milestone' : null, mark: markOf(spent, budget) };
-  });
-  const names = [...new Set([...milestoneOf.values(), ...defaults.keys()])].toSorted();
-  return { project, month, issues: rows, notOnIssue: none, milestones: names.map((name) => ({ name, budget: defaults.get(name) ?? null })) };
-}
-
 export function budget(app: FastifyInstance, { store, now = Date.now }: { store: Store; now?: () => number }) {
   app.get('/api/budget', async (req, reply) => {
     const q = Query.safeParse(req.query);
     if (!q.success) return reply.code(400).send({ error: 'give a project, and a time zone that exists', issues: q.error.issues });
-    return budgetOf(store, q.data.project, q.data.tz, now());
+    const { project, tz } = q.data;
+    const at = now();
+    const month = dayOf(tz, at).slice(0, 7); // as the goal reads it: from midnight on the month's first day in the viewer's zone, to now
+    const [start] = monthBounds(tz, Number(month.slice(0, 4)), Number(month.slice(5, 7)));
+    const { issues, none } = issueCosts(store, project, start, at);
+
+    const milestoneOf = new Map<number, string>(); // two project rows with the name (two machines) may differ on one issue: the latest title by name
+    for (const r of all(store, 'SELECT o.number AS number, max(o.milestone) AS milestone FROM open_issues o JOIN projects p ON p.id = o.project_id WHERE p.name = :project GROUP BY o.number', { project })) {
+      if (r.milestone !== null) milestoneOf.set(r.number, r.milestone);
+      if (!issues.has(r.number)) issues.set(r.number, { whole: 0, windows: 0, partial: false });
+    }
+    const defaults = new Map<string, number>();
+    const overrides = new Map<number, number>();
+    for (const r of all(store, 'SELECT kind, key, usd FROM budgets WHERE project = :project', { project })) {
+      if (r.kind === 'milestone') defaults.set(r.key, r.usd);
+      else {
+        overrides.set(Number(r.key), r.usd);
+        if (!issues.has(Number(r.key))) issues.set(Number(r.key), { whole: 0, windows: 0, partial: false });
+      }
+    }
+
+    const rows = [...issues].toSorted(([a], [b]) => b - a).map(([number, b]) => {
+      const milestone = milestoneOf.get(number) ?? null;
+      const own = overrides.get(number);
+      const dflt = milestone === null ? undefined : defaults.get(milestone);
+      const budget = own ?? dflt ?? null;
+      const spent = b.whole + b.windows;
+      return { number, milestone, usd: spent, partial: b.partial, whole: b.whole, windows: b.windows, budget, milestoneBudget: dflt ?? null, source: own !== undefined ? 'issue' : dflt !== undefined ? 'milestone' : null, mark: markOf(spent, budget) };
+    });
+    const names = [...new Set([...milestoneOf.values(), ...defaults.keys()])].toSorted();
+    return { project, month, issues: rows, notOnIssue: none, milestones: names.map((name) => ({ name, budget: defaults.get(name) ?? null })) };
   });
 
   app.put('/api/budget', async (req, reply) => {

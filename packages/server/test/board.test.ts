@@ -61,10 +61,10 @@ const send = async (...events: unknown[]) => {
 };
 type Row = {
   number: number; title?: string; milestone: string | null; outside: boolean; stage: string; pr: { number: number; head: string | null; merged: boolean } | null; ready: boolean | null; reason: string | null;
-  usd: number; partial: boolean; budget: number | null; mark: 'at80' | 'at100' | null; sessions: { id: string; at: number; background?: true }[]; sessionCount: number;
+  sessions: { id: string; at: number; background?: true }[]; sessionCount: number;
 };
-type Board = { project: string; milestone: string | null; month: string; milestones: { name: string; open: number }[]; issues: Row[]; notOnIssue: { usd: number; partial: boolean } };
-const board = async (q: Record<string, string> = {}, project = 'mobile-app'): Promise<Board> => (await app.inject({ url: `/api/board?${new URLSearchParams({ project, tz: 'UTC', ...q })}` })).json();
+type Board = { project: string; milestone: string | null; milestones: { name: string; open: number }[]; issues: Row[] };
+const board = async (q: Record<string, string> = {}, project = 'mobile-app'): Promise<Board> => (await app.inject({ url: `/api/board?${new URLSearchParams({ project, ...q })}` })).json();
 const row = async (number: number, q: Record<string, string> = {}) => (await board(q)).issues.find((i) => i.number === number);
 const stageOf = async (number: number) => (await row(number))?.stage;
 const M = 'v2.3 Offline';
@@ -265,10 +265,9 @@ describe('GET /api/board: which issues, and the milestone', () => {
     expect(await board()).toMatchObject({ milestone: null, milestones: [], issues: [{ number: 5, outside: true, milestone: null, stage: 'building' }] });
   });
 
-  it('a project nobody has seen is an empty answer, not an error; a request without a project, or with a time zone that does not exist, is refused', async () => {
-    expect(await board({}, 'nobody')).toMatchObject({ project: 'nobody', milestone: null, milestones: [], issues: [], notOnIssue: { usd: 0, partial: false } });
+  it('a project nobody has seen is an empty answer, not an error; a request without a project is refused', async () => {
+    expect(await board({}, 'nobody')).toEqual({ project: 'nobody', milestone: null, milestones: [], issues: [] });
     expect((await app.inject({ url: '/api/board' })).statusCode).toBe(400);
-    expect((await app.inject({ url: '/api/board?project=mobile-app&tz=Mars/Base' })).statusCode).toBe(400);
   });
 });
 
@@ -281,16 +280,12 @@ describe('GET /api/board: what a row carries', () => {
     expect(await row(417)).not.toHaveProperty('title');
   });
 
-  it('cost is slice 2\'s: the issue\'s spend against its budget, with the mark, and "not on an issue" is the project\'s', async () => {
-    await send(start('s-415', 'fix/415-sync'), spend('s-415', T0 + MIN, 6), write('s-415', T0 + 2 * MIN), start('s-none', 'main'), spend('s-none', NOW0 - DAY, 4), read(NOW0 - MIN, [], issues(415, 417)));
-    await app.inject({ method: 'PUT', url: '/api/budget', payload: { project: 'mobile-app', milestone: M, usd: 7 } });
-    const b = await board();
-    expect(b.issues.find((i) => i.number === 415)).toMatchObject({ usd: 6, partial: false, budget: 7, mark: 'at80' });
-    expect(b.issues.find((i) => i.number === 417)).toMatchObject({ usd: 0, budget: 7, mark: null });
-    expect(b.notOnIssue).toEqual({ usd: 4, partial: false });
-    const budget = (await app.inject({ url: '/api/budget?project=mobile-app&tz=UTC' })).json();
-    expect(b.month).toBe(budget.month);
-    expect(b.notOnIssue).toEqual(budget.notOnIssue);
+  it('carries no cost: that is GET /api/budget\'s, which the page already reads and joins by issue number (a second pass over the requests here took the soak 70 MB over)', async () => {
+    await send(start('s-415', 'fix/415-sync'), spend('s-415', T0 + MIN, 6), write('s-415', T0 + 2 * MIN), read(NOW0 - MIN, [], issues(415)));
+    const r = (await row(415))!;
+    expect(r.stage).toBe('building');
+    for (const k of ['usd', 'partial', 'budget', 'mark']) expect(r, k).not.toHaveProperty(k);
+    expect((await app.inject({ url: '/api/budget?project=mobile-app&tz=UTC' })).json().issues).toEqual([expect.objectContaining({ number: 415, usd: 6 })]);
   });
 
   it('the sessions are the ones that reached it, newest first, with background ones marked, and at most 12 listed of the count', async () => {

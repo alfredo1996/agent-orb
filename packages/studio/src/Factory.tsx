@@ -27,12 +27,12 @@ export type BudgetData = { project: string; month: string; issues: IssueCost[]; 
 /** The stages of an issue, in order (the server works one out from what the agents did): the board's track has a segment for each. */
 export const STAGES = ['queued', 'building', 'reviewing', 'fixing', 'gate', 'ready', 'merged'] as const;
 export type BoardStage = (typeof STAGES)[number];
-/** One issue of GET /api/board. `pr` is its newest open PR, else its merged one; `ready` and `reason` are that open PR's (slice 1); `sessions` are the newest that reached it, `sessionCount` all of them. */
+/** One issue of GET /api/board. `pr` is its newest open PR, else its merged one; `ready` and `reason` are that open PR's (slice 1); `sessions` are the newest that reached it, `sessionCount` all of them. Its cost is /api/budget's. */
 export type BoardIssue = {
   number: number; title?: string; milestone: string | null; outside: boolean; stage: BoardStage; pr: { number: number; head: string | null; merged: boolean } | null; ready: boolean | null; reason: string | null;
-  usd: number; partial: boolean; budget: number | null; mark: 'at80' | 'at100' | null; sessions: { id: string; at: number; background?: true }[]; sessionCount: number;
+  sessions: { id: string; at: number; background?: true }[]; sessionCount: number;
 };
-export type BoardData = { project: string; milestone: string | null; month: string; milestones: { name: string; open: number }[]; issues: BoardIssue[]; notOnIssue: { usd: number; partial: boolean } };
+export type BoardData = { project: string; milestone: string | null; milestones: { name: string; open: number }[]; issues: BoardIssue[] };
 /** A group of containers on the Mac, as GET /api/machine groups and flags them (v0.4 slice 3, #29). `project` is the agent-orb project it belongs to, when it reaches one; `id` is the group's own
  * (a host's, so it keys a row); `since` is when its oldest container was made. */
 export type MachineGroup = {
@@ -93,7 +93,7 @@ export function budgetInput(text: string): { usd: number | null } | { error: str
 }
 
 /** An issue's cost against its budget: the figure (a floor when a request had no price), a bar, and how far it is. The bar's colour is the server's mark, never a percent worked out here. */
-export function CostCell({ issue, cost }: { issue: number | null | undefined; cost?: Pick<IssueCost, 'usd' | 'partial' | 'budget' | 'mark'> }) {
+export function CostCell({ issue, cost }: { issue: number | null | undefined; cost?: IssueCost }) {
   const lab = <span className="lab">Cost, estimate</span>;
   if (!issue) return <div className="costcell">{lab}<span className="why none">No issue</span></div>;
   if (!cost || (cost.usd === 0 && !cost.partial)) return <div className="costcell">{lab}<span className="why none">Nothing spent</span></div>;
@@ -209,7 +209,7 @@ function SessionsCell({ issue, live, project }: { issue: BoardIssue; live: Reado
   );
 }
 
-function BoardRow({ issue: i, project, live, openable, onOpen }: { issue: BoardIssue; project: string; live: ReadonlySet<string>; openable: ReadonlySet<number>; onOpen: OpenSheet }) {
+function BoardRow({ issue: i, project, live, openable, cost, onOpen }: { issue: BoardIssue; project: string; live: ReadonlySet<string>; openable: ReadonlySet<number>; cost?: ReadonlyMap<number, IssueCost>; onOpen: OpenSheet }) {
   const name = <b>{`#${i.number}${i.title ? ` ${i.title}` : ''}`}</b>;
   const open = i.pr && !i.pr.merged && openable.has(i.pr.number) ? i.pr.number : undefined; // an open PR the page holds: its sheet has the four checks, the findings and the budget
   const ready = i.pr?.merged ? <span className="why none">Merged</span> : !i.pr ? <span className="why none">No PR yet</span>
@@ -224,7 +224,7 @@ function BoardRow({ issue: i, project, live, openable, onOpen }: { issue: BoardI
       </div>
       <div className="stagecell"><span>{STAGE_LABEL[i.stage]}</span><Track stage={i.stage} /></div>
       <div><span className="lab">Ready</span>{ready}</div>
-      <CostCell issue={i.number} cost={i} />
+      {cost ? <CostCell issue={i.number} cost={cost.get(i.number)} /> : <div />}
       <SessionsCell issue={i} live={live} project={project} />
     </div>
   );
@@ -232,9 +232,10 @@ function BoardRow({ issue: i, project, live, openable, onOpen }: { issue: BoardI
 
 /**
  * The Board band (v0.4 slice 6, #32): one milestone's open issues, and any issue a session reached this week outside it whose PR has not merged, each with the stage the server worked out from
- * what the agents did, whether its PR is ready, its cost against its budget and its sessions. Under the rows, what this month spent on no issue. A title shows only if the plugin sent it (Content on full).
+ * what the agents did, whether its PR is ready, its cost against its budget and its sessions. The cost is /api/budget's, read once for the page and joined by issue number (`cost`; until it is read the
+ * cells are empty rather than "nothing spent"); under the rows, what this month spent on no issue. A title shows only if the plugin sent it (Content on full).
  */
-export function BoardBand({ data, live, openable, onOpen }: { data: BoardData; live: ReadonlySet<string>; openable: ReadonlySet<number>; onOpen: OpenSheet }) {
+export function BoardBand({ data, live, openable, cost, notOnIssue, onOpen }: { data: BoardData; live: ReadonlySet<string>; openable: ReadonlySet<number>; cost?: ReadonlyMap<number, IssueCost>; notOnIssue?: BudgetData['notOnIssue']; onOpen: OpenSheet }) {
   const inside = data.issues.filter((i) => !i.outside).length;
   const outside = data.issues.length - inside;
   return (
@@ -245,13 +246,15 @@ export function BoardBand({ data, live, openable, onOpen }: { data: BoardData; l
         : (
           <>
             <div className="bcols" aria-hidden="true"><span>Issue</span><span>Stage</span><span>Ready</span><span>Cost, estimate</span><span>Sessions</span></div>
-            {data.issues.map((i) => <BoardRow key={i.number} issue={i} project={data.project} live={live} openable={openable} onOpen={onOpen} />)}
+            {data.issues.map((i) => <BoardRow key={i.number} issue={i} project={data.project} live={live} openable={openable} cost={cost} onOpen={onOpen} />)}
           </>
         )}
-      <div className="notissue">
-        <span>Not on an issue: <b className="num">{usd(data.notOnIssue.usd, data.notOnIssue.partial)}</b> this month</span>
-        <span className="sub">Sessions with no PR, and turns after a session's last PR. Cost is an estimate by time windows.</span>
-      </div>
+      {notOnIssue && (
+        <div className="notissue">
+          <span>Not on an issue: <b className="num">{usd(notOnIssue.usd, notOnIssue.partial)}</b> this month</span>
+          <span className="sub">Sessions with no PR, and turns after a session's last PR. Cost is an estimate by time windows.</span>
+        </div>
+      )}
       {data.issues.some((i) => !i.title) && <div className="bnote">Issue titles show with Content on full.</div>}
     </section>
   );
@@ -529,8 +532,7 @@ export function Factory({ now, live }: { now: number; live: ReadonlySet<string> 
     let alive = true;
     const load = async () => {
       try {
-        const q = new URLSearchParams({ project, tz: Intl.DateTimeFormat().resolvedOptions().timeZone, ...(milestone ? { milestone } : {}) });
-        const res = await fetch(`/api/board?${q}`);
+        const res = await fetch(`/api/board?${new URLSearchParams({ project, ...(milestone ? { milestone } : {}) })}`);
         if (!res.ok) throw new Error(`The server answered ${res.status}.`);
         const body = (await res.json()) as BoardData;
         if (alive) setBoard(body), setBoardError(undefined);
@@ -579,7 +581,7 @@ export function Factory({ now, live }: { now: number; live: ReadonlySet<string> 
         <>
           <Reading said={factoryReading(shown)} />
           <NeedsYou prs={shown.prs} costs={costs} left={leftRunning(machine)} now={now} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />
-          {boarded && <BoardBand data={boarded} live={live} openable={new Set(shown.prs.map((p) => p.number))} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />}
+          {boarded && <BoardBand data={boarded} live={live} openable={new Set(shown.prs.map((p) => p.number))} cost={costs} notOnIssue={costed?.notOnIssue} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />}
           {!boarded && boardError && <section className="card board"><h2>Board</h2><p className="nothing">The board could not be read: {boardError}</p></section>}
           {costed && <BudgetCard data={costed} onSave={save} />}
         </>
