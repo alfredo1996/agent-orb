@@ -7,7 +7,7 @@ const NOW = Date.parse('2026-11-06T12:00:00Z');
 const MIN = 60_000;
 const ok: Cond = { ok: true, note: 'fine' };
 const pr = (over: Partial<PrMemory['conditions']> = {}, rest: Partial<PrMemory> = {}): PrMemory => ({
-  number: 416, head: 'fix/409-token-retry', headOid: 'e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3',
+  number: 416, head: 'fix/409-token-retry', headOid: 'e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3', ready: false,
   conditions: { findings: ok, gate: ok, bots: ok, clean: { ok: true, note: 'CLEAN' }, ...over }, ...rest,
 });
 const memory = (prs: PrMemory[], age = 3 * MIN): FactoryMemory => ({ readAt: NOW - age, prs });
@@ -135,10 +135,10 @@ describe('parseFactory: what the plugin keeps of GET /api/factory', () => {
   const served = { number: 416, head: 'fix/409-token-retry', issue: 409, headOid: 'e'.repeat(40), ready: false, reason: 'x', findings: [{ id: 'F1' }], dropped: 0,
     conditions: { findings: { ok: false, note: '2 findings open: 1 major, 1 minor' }, gate: { ok: null, note: 'No test run on eeeeeee' }, bots: { ok: true, note: 'a' }, clean: { ok: true, note: 'CLEAN' } } };
 
-  it('keeps the number, the branch, the head, the four conditions and when GitHub was read: nothing else', () => {
+  it('keeps the number, the branch, the head, the server\'s ready, the four conditions and when GitHub was read: nothing else', () => {
     expect(parseFactory(body([served]))).toEqual({
       readAt: NOW - MIN,
-      prs: [{ number: 416, head: 'fix/409-token-retry', headOid: 'e'.repeat(40), conditions: served.conditions }],
+      prs: [{ number: 416, head: 'fix/409-token-retry', headOid: 'e'.repeat(40), ready: false, conditions: served.conditions }],
     });
   });
 

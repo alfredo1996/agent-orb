@@ -118,6 +118,10 @@ Headless `claude -p --model sonnet` with a throwaway dev mod (not in the repo); 
 
 Not covered: an interactive session (the API is the same, only headless was run) and a background agent, which has no button. `$.turn.abort` rejects, naming both ids, when `turnId` is not the running turn's; the plugin reads that as "nothing to stop". The merge refusal's `tool.call` `{ deny }` is the refusal itself (the model receives its text as an error result, as the type documents); a let-through line goes to the person with `$.ui.log` and to the agent as the result's `context` ("what the model reads after the tool's result and the user never sees", the type documents). Both are run only against the engine tests' mock (`claude plugin test`), not a real session: that the engine shows `context` to the model as documented is not yet seen.
 
+## Phone push (2026-11-06, v0.4 slice 4, #30): failed twice
+
+A throwaway dev mod (not in the repo) called `$.tool.call({ tool: 'PushNotification', message, status: 'proactive' })` with Remote Control connected, 3 minutes after the owner left the Mac; the second run came after the owner checked the Claude app's notification permission on the phone. Both answered `{ pushSent: true, localSent: false }` ("Mobile push requested") and nothing reached the phone or the desktop (the comments on #30 have the log). So `PushNotification` reporting "requested" proves nothing about delivery, and v0.4's alerts call it nowhere: they use `$.ui.notify` alone (PROJECT.md §5, Alerts). From its type: `$.ui.notify` writes to the terminal's notification channel after the person's `Notification` hooks run, and answers `isSent: false` with `no-surface` for a `-p` run, the SDK and Claude Code Desktop; that last part is from the type's documentation and was not run.
+
 ## Cost note
 
 `--output-format json` shows Claude Code writing the prompt cache with **1-hour** entries (`ephemeral_1h_input_tokens`), while `usage` in the mod API does not split 5-minute from 1-hour writes. `pricing.json` prices every cache write as a 5-minute write, so cost runs low when the 1-hour cache is used. Tokens (the headline) are exact.

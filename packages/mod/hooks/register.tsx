@@ -3,8 +3,8 @@ import type { EngineInterface as $, Register } from 'claude-code'
 
 import type { OrbAgentRow, OrbEventRow, OrbView } from '../types'
 import {
-  BATCH, build, capText, changesArgv, checkStalls, commandClass, enqueue, errorClass, errorShape, filesTouched, fingerprintFiles, fingerprintsFrom, fmtTokens, goalNotice, hostName, isExcluded, mask, modelLabel, newOutbox, newTracker,
-  normalizeRemote, openIssuesArgv, openPrsArgv, parseChanges, parseFactory, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, toolContent, type ContentMode, type FactoryMemory, type Goal, type GoalSent,
+  BATCH, budgetNotice, build, capText, changesArgv, checkStalls, commandClass, enqueue, errorClass, errorShape, filesTouched, fingerprintFiles, fingerprintsFrom, fmtTokens, goalNotice, hostName, isExcluded, mask, modelLabel, newMarks, newOutbox, newTracker, newlyReady,
+  normalizeRemote, openIssuesArgv, openPrsArgv, parseBudget, parseChanges, parseFactory, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, readyNotice, staleAlerts, toolContent, type ContentMode, type FactoryMemory, type Goal, type GoalSent, type PrMemory,
   backgroundFromFrontmatter, familyOf, judgeMerge, mergesIn, modelCheck, modelFromFrontmatter, pricierNotice, remoteNamed, rejectedIn, roleFromFrontmatter, settle, statusText, stopWaits, takeBatch, tokensOf, usageOf,
   descriptionOf, FINDINGS_ASK, preloadOf, refsIn, type CatalogAgent, type CatalogSkill, type Ctx, type Ev, type Refs, type Role, type SkillLoad,
 } from './core.ts'
@@ -17,6 +17,7 @@ const TICK_MS = 2_000
 const ORPHAN_MS = 60_000 // another session's outbox untouched this long is taken over
 const GOAL_MS = 60_000 // v0.2 slice 3: the goal is asked again this often; v0.4 slice 5 (#31): and the open PRs' readiness, for the merge refusal, and the studio's stop
 const OPEN_PRS_MS = 5 * 60_000 // v0.4 slice 1 (#27): the open PRs are read from GitHub again this often
+const BUDGET_IDLE_MS = 10 * 60_000 // v0.4 slice 4 (#30): while no issue has a budget, the budget is asked this often instead of every minute
 const MACHINE_MS = 10 * 60_000 // v0.4 slice 3 (#29): the machine is sampled at most this often, by whichever session finds the last sample this old
 const MACHINE_CHECK_MS = 60_000 // and a running session looks at the store this often
 const MACHINE_KEY = 'machine:sampled'
@@ -39,6 +40,7 @@ let endpoint = 'http://127.0.0.1:4040'
 let token = ''
 let stallMs = 15 * 60_000
 let modelCeiling = 'sonnet' // v0.2 slice 2: haiku | sonnet | opus | off
+let alerts = true // #30: the stall, goal, budget and ready notifications; the setting's off sends none (the record and the status line go on)
 let askFindings = true // #34: every subagent is asked for the findings block; the setting's off leaves prompts as they are
 let contentSetting = 'off'
 let excludeList = ''
@@ -73,6 +75,10 @@ let factoryAt = 0
 let factoryBusy = false
 let stopAt = 0
 let stopBusy = false
+// v0.4 slice 4 (#30): when the budget was last asked for, whether a call is out, and whether the last answer had an issue with a budget (none: it is asked less often).
+let budgetAt = 0
+let budgetBusy = false
+let budgeted = false
 // v0.4 slice 3 (#29): when this session last looked at the store's machine timestamp, and excludeProjects as start() expanded it.
 let machineAt = 0
 let excludeEntries = ''
@@ -150,6 +156,33 @@ async function persist($: $) {
   else await $.store.delete(storeKey)
 }
 
+/**
+ * v0.4 slice 4 (#30): the one way an alert leaves, a native notification through Claude Code's own channel (`$.ui.notify`, the path a stall always took). Never a push to the phone: with Remote Control connected,
+ * `PushNotification` answered "requested" in two runs and nothing arrived (PROJECT.md §5). The engine reporting it unsent (no surface, no channel) is not retried, and the person is told nothing.
+ * ponytail: a session with no terminal (a `-p` run, the SDK, Claude Code Desktop) cannot show one and still uses the alert up; delete the key and keep the transition unseen when `isSent` is false if that is ever seen.
+ */
+async function send($: $, text: string, title: string) {
+  await $.ui.notify(text, { title }).catch(() => {})
+}
+
+/**
+ * `send`, once per key across every session on the machine: the key is written to the store, with its time, before the send, so a session that looks meanwhile skips it. Keys older than 30 days are forgotten at
+ * session start. With the setting off nothing is written and nothing is sent.
+ * ponytail: the store has no compare-and-set, so two sessions that look in the same instant may both send; the polls are a minute apart and not in step, so one writes the key before the other looks.
+ */
+async function alert($: $, key: string, text: string, title: string) {
+  if (!alerts) return
+  const k = `alert:${key}`
+  if ((await $.store.get(k)) !== undefined) return
+  await $.store.set(k, stamp())
+  void send($, text, title) // not waited for: a notification channel that is slow must not hold up the poll that asked (it carries the merge refusal's memory)
+}
+
+/** Remembers `seen` under `key` in the store, shared by every session, unless it is what the store held. */
+async function remember($: $, key: string, last: unknown, seen: unknown) {
+  if (JSON.stringify(last) !== JSON.stringify(seen)) await $.store.set(key, seen)
+}
+
 async function tick($: $) {
   if (!ctx) return
   const now = await $.clock.now()
@@ -157,16 +190,14 @@ async function tick($: $) {
   const { started, ended } = checkStalls(t, now, stallMs)
   for (const s of started) {
     push($, build.stall(ctx, 'start', s), { agent: label(s.agent), kind: 'stall.start', detail: `${s.tool ?? 'no events'} · ${Math.round(stallMs / 60_000)}m`, tone: 'bad' })
-    if (!notified.has(s.key)) {
-      notified.add(s.key)
-      void $.ui.notify(`${label(s.agent)}: ${s.tool ?? 'no events'} for ${Math.floor((now - s.since) / 60_000)} min`, { title: 'agent-orb: stalled' })
-    }
+    void alert($, `stall:${ctx.session_id}:${s.agent}:${s.since}`, `${label(s.agent)}: ${s.tool ?? 'no events'} for ${Math.floor((now - s.since) / 60_000)} min`, 'agent-orb: stalled').catch(() => {})
   }
   for (const s of ended) push($, build.stall(ctx, 'end', s), { agent: label(s.agent), kind: 'stall.end', detail: s.tool ?? 'events again' })
 
   if (ticks++ % 5 === 0) ctxPercent = (await $.session.usage().catch(() => undefined))?.context?.percent ?? ctxPercent
   if (now - goalAt >= GOAL_MS) void fetchGoal($).catch(() => {}) // off the tick's path: a slow server holds nothing up
   if (now - factoryAt >= GOAL_MS) void fetchFactory($).catch(() => {}) // and the same poll, for the merge refusal's memory
+  if (now - budgetAt >= (budgeted ? GOAL_MS : BUDGET_IDLE_MS)) void fetchBudget($).catch(() => {}) // and the budget marks, less often while no issue has a budget
   if (now - stopAt >= GOAL_MS) void takeStop($).catch(() => {}) // and the studio's stop: a stalled session is stopped within the minute
   if (now - openPrsAt >= OPEN_PRS_MS) void readOpenPrs($).catch(() => {}) // and a slow gh too
   if (now - machineAt >= MACHINE_CHECK_MS) void sampleMachine($, now).catch(() => {}) // and docker
@@ -435,13 +466,13 @@ async function fetchGoal($: $) {
     const answer = res.ok ? parseGoal(ctx.project.name, res.text) : undefined
     if (!answer) return
     goal = answer.goal ?? undefined
-    if (!goal) return
+    if (!goal || !alerts) return
     const key = `goal:${goal.project}:${goal.month}`
     const saved = await $.store.get(key)
     const { text, sent } = goalNotice(goal, saved && typeof saved === 'object' ? (saved as GoalSent) : {})
     if (!text) return
     await $.store.set(key, sent)
-    void $.ui.notify(text, { title: 'agent-orb: goal' }).catch(() => {})
+    void send($, text, 'agent-orb: goal') // the goal keeps its own record of what was sent (above), kept since v0.2; the stall, budget and ready alerts keep theirs per key (`alert`)
   } finally {
     goalBusy = false
   }
@@ -461,9 +492,51 @@ async function fetchFactory($: $) {
     factoryAt = await $.clock.now()
     const res = await $.http.fetch(`${endpoint}/api/factory?${new URLSearchParams({ project: ctx.project.name, remote })}`)
     const answer = res.ok ? parseFactory(res.text) : undefined
-    if (answer) factory = answer
+    if (answer) {
+      factory = answer
+      await alertReady($, answer.prs).catch(() => {}) // the memory is kept whatever the store or the notification does
+    }
   } finally {
     factoryBusy = false
+  }
+}
+
+/**
+ * v0.4 slice 4 (#30): a PR that is ready now and was not at the last poll alerts, once per PR and head. "Ready" is the server's verdict (old data is never ready); the last poll's ready set is kept per project in the store,
+ * so a session that starts finding a PR already ready does not call it news, and the first poll for a project is a baseline that alerts nothing. A PR that went not ready on its head and back is the same alert (the key has
+ * the head); one ready on a new head is a new one.
+ */
+async function alertReady($: $, prs: PrMemory[]) {
+  if (!ctx || !alerts) return
+  const at = `seen:ready:${ctx.project.name}`
+  const last = await $.store.get(at)
+  const { fresh, seen } = newlyReady(last, prs)
+  await remember($, at, last, seen)
+  for (const p of fresh) await alert($, `ready:${ctx.project.name}:${p.number}:${p.headOid}`, readyNotice(p.number), 'agent-orb: ready')
+}
+
+/**
+ * v0.4 slice 4 (#30): the issues' budget marks, at session start and then every minute from the tick while some issue has a budget, and every 10 minutes while none does (the answer says which; a budget set in
+ * the studio is noticed within that). A mark absent at the last poll and present now alerts, once per issue and mark; what each issue was at is kept per project in the store, with the first poll a baseline that alerts
+ * nothing. The marks are the server's (`/api/budget`, PROJECT.md §5); the figures are the page's estimates. A failure, or an answer that is not the server's, changes nothing. With the setting off nothing is asked.
+ */
+async function fetchBudget($: $) {
+  if (!ctx || !token || !alerts || budgetBusy) return
+  budgetBusy = true
+  try {
+    budgetAt = await $.clock.now()
+    const project = ctx.project.name
+    const res = await $.http.fetch(`${endpoint}/api/budget?${new URLSearchParams({ project, tz: timeZone() })}`)
+    const answer = res.ok ? parseBudget(res.text) : undefined
+    if (!answer) return
+    budgeted = answer.budgeted
+    const at = `seen:budget:${project}`
+    const last = await $.store.get(at)
+    const { fresh, seen } = newMarks(last, answer.marks)
+    await remember($, at, last, seen)
+    for (const m of fresh) await alert($, `budget:${project}:${m.issue}:${m.mark}`, budgetNotice(m), 'agent-orb: budget')
+  } finally {
+    budgetBusy = false
   }
 }
 
@@ -564,13 +637,17 @@ async function start($: $, interactive: boolean, cwd: string) {
   // Take over this session's queue (a hot reload) and any other session's left untouched (a crash, a quit).
   storeKey = `outbox:${sessionId}`
   const now = stamp()
-  for (const k of await $.store.keys()) {
+  const keys = await $.store.keys()
+  for (const k of keys) {
     if (!k.startsWith('outbox:')) continue
     const saved = (await $.store.get(k)) as { updatedAt: number; events: Ev[] } | undefined
     if (!saved || (k !== storeKey && now - saved.updatedAt < ORPHAN_MS)) continue
     for (const e of saved.events) enqueue(ob, e)
     if (k !== storeKey) await $.store.delete(k)
   }
+  // #30: an alert key sent more than 30 days ago is forgotten.
+  const sent = await Promise.all(keys.filter((k) => k.startsWith('alert:')).map(async (k): Promise<[string, unknown]> => [k, await $.store.get(k)]))
+  for (const k of staleAlerts(sent, now)) await $.store.delete(k)
 
   const home = (await $.env.get('HOME')) ?? ''
   const list = excludeList.replace(/(^|,)\s*~(?=\/|,|$)/g, `$1${home}`)
@@ -585,6 +662,7 @@ async function start($: $, interactive: boolean, cwd: string) {
   void sendPrs($, excluded).catch(() => {}) // and gh is a network call
   void fetchGoal($).catch(() => {}) // the goal is asked now, not at the first tick
   void fetchFactory($).catch(() => {}) // and so is the memory a merge is judged by
+  void fetchBudget($).catch(() => {}) // and the budget marks
   void readOpenPrs($).catch(() => {}) // and the open PRs too
   void sampleMachine($, now).catch(() => {}) // and the machine, if no session has sampled it these 10 minutes
   if (interactive) await $.command.register({ name: 'orb', description: 'agent-orb: active agents, tokens and the last events' })
@@ -596,6 +674,7 @@ export const register: Register = (on, options) => {
   stallMs = Math.max(1, Number(options.stallMinutes ?? 15)) * 60_000
   modelCeiling = String(options.modelCeiling ?? 'sonnet')
   askFindings = String(options.askFindings ?? 'on') !== 'off'
+  alerts = String(options.alerts ?? 'on') !== 'off'
   contentSetting = String(options.content ?? 'off')
   excludeList = String(options.excludeProjects ?? '')
 

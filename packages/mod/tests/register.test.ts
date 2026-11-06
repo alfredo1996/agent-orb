@@ -138,11 +138,26 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   })
   on('fs.read', (_$: any, e: any) => (spy.reads.push(e.path), { value: files[e.path] ?? '' }))
   on('ui.status', (_$: any, e: any) => (statuses.push(e.text), { value: undefined }))
-  on('ui.notify', (_$: any, e: any) => (notes.push(e.text), titles.push(e.title), { value: { isSent: true, channel: 'test' } }))
+  // #30: what the engine answers to a notification: sent, or not (`isSent: false`: no channel, no surface); `reject` is a failed write.
+  const notify = { isSent: true, reject: false }
+  on('ui.notify', (_$: any, e: any) => {
+    notes.push(e.text)
+    titles.push(e.title)
+    if (notify.reject) throw new Error('write failed')
+    return { value: notify.isSent ? { isSent: true, channel: 'test' } : { isSent: false, reason: 'no-surface' } }
+  })
   // v0.2 slice 3: GET /api/goal answers what `goal` says; a test sets it before or while the session runs.
   const goal = { goal: null as number | null, spent: 0, month: '2026-10', status: 200, mode: 'ok' as 'ok' | 'throw' | 'hang' | 'garbage', calls: [] as string[] }
+  // #30: GET /api/budget answers `budget.issues` (the rows as the server serves them); every request is recorded.
+  const budget = { issues: [] as any[], mode: 'ok' as 'ok' | 'throw' | 'garbage', calls: [] as string[] }
   on('http.fetch', (_$: any, e: any) => {
     spy.fetches.push(String(e.url))
+    if (String(e.url).includes('/api/budget')) {
+      budget.calls.push(e.url)
+      if (budget.mode === 'throw') throw new Error('connection refused')
+      const text = budget.mode === 'garbage' ? '<html>a proxy answered</html>' : JSON.stringify({ project: 'r', month: '2026-11', issues: budget.issues, notOnIssue: { usd: 0, partial: false }, milestones: [] })
+      return { value: { status: 200, ok: true, headers: {}, text } }
+    }
     if (String(e.url).includes('/api/factory')) {
       factory.calls.push(e.url)
       if (factory.mode === 'throw') throw new Error('connection refused')
@@ -178,7 +193,7 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   const engine = { model: 'claude-sonnet-5-5', agentId: 'a-child', prompts: [] as string[] }
   on('agent.spawn', (_$: any, e: any) => (engine.prompts.push(e.prompt), { model: engine.model, agentId: engine.agentId }))
   const sent = () => posts.flat()
-  return { clock, posts, sent, statuses, notes, titles, git, files, engine, hash, goal, tree, gh, repo, machine, dock, store, factory, stop, abort, logs, spy }
+  return { clock, posts, sent, statuses, notes, titles, git, files, engine, hash, goal, tree, gh, repo, machine, dock, store, factory, stop, abort, logs, spy, budget, notify }
 }
 
 // A stand-in for a git blob id: 40 hex characters that are a function of the text.
@@ -2559,4 +2574,279 @@ test('#31: a background agent is marked on its agent.spawn, and a foreground one
   const spawned = w.sent().filter((e) => e.kind === 'agent.spawn')
   expect(spawned.find((e) => e.agent_id === 'a-bg').data.background).toBe(true)
   expect(spawned.find((e) => e.agent_id === 'a-fg').data).not.toHaveProperty('background')
+})
+
+// ── #30: alerts. Desktop notifications through `$.ui.notify`, never `PushNotification` (PROJECT.md §5). One per key, the key kept in the store the sessions share. ──
+const OID = 'e4f5a6b'.padEnd(40, '0') // the head `served()` carries
+const alertKeys = (w: ReturnType<typeof world>) => Object.keys(w.store).filter((k) => k.startsWith('alert:'))
+const ready = (rest: object = {}) => served({}, { ready: true, ...rest })
+const issue = (number: number, usd: number, budget: number | null, mark: 'at80' | 'at100' | null) =>
+  ({ number, milestone: 'v0.4 Factory', usd, partial: false, whole: usd, windows: 0, budget, milestoneBudget: budget, source: budget === null ? null : 'milestone', mark })
+const noReload = async ($: any) => $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+
+test('#30: a stall alerts once and keeps its key in the store; a new stall, after the first ended, alerts again', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  const first = await stalls($, w, hang)
+  expect(w.notes).toHaveLength(1)
+  expect(w.notes[0]).toMatch(/^main: WebFetch for 15 min$/)
+  expect(w.titles).toEqual(['agent-orb: stalled'])
+  expect(alertKeys(w)).toEqual([`alert:stall:s-1:main:${first.since}`]) // the session, the agent and when the stall began
+  await w.clock.advance(10 * MIN) // still stalled, tick after tick
+  expect(w.notes).toHaveLength(1)
+  await first.finish()
+  expect(w.sent().filter((e) => e.kind === 'stall.end')).toHaveLength(1)
+  $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_b', command: 'pnpm test' }).catch(() => {}) // a new one
+  await w.clock.advance(20 * MIN)
+  expect(w.notes).toHaveLength(2)
+  expect(w.notes[1]).toMatch(/^main: Bash for 15 min$/)
+  expect(alertKeys(w)).toHaveLength(2)
+})
+
+test('#30: a silent agent that stalls twice in a session alerts both times: the key carries when the stall began', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  await boot($) // main is mid-turn and says nothing
+  await w.clock.advance(20 * MIN) // (see `stalls` for the margin)
+  expect(w.notes).toHaveLength(1)
+  expect(w.notes[0]).toMatch(/^main: no events for 15 min$/)
+  await $.turn.start({ text: 'go on', turnId: 't-2' }) // it speaks, so the stall ends
+  await w.clock.advance(2_000)
+  expect(w.sent().filter((e) => e.kind === 'stall.end')).toHaveLength(1)
+  await w.clock.advance(20 * MIN) // and goes quiet again
+  expect(w.sent().filter((e) => e.kind === 'stall.start')).toHaveLength(2)
+  expect(w.notes).toHaveLength(2)
+  expect(alertKeys(w)).toHaveLength(2)
+})
+
+test('#30: a PR that becomes ready alerts once, in the Alerts board\'s words, with its key in the store', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.factory.prs = [served()] // not ready
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.notes).toEqual([])
+  w.factory.prs = [ready()]
+  await w.clock.advance(60_000)
+  expect(w.notes).toEqual(['PR #416 is ready for your ok'])
+  expect(w.titles).toEqual(['agent-orb: ready'])
+  expect(alertKeys(w)).toEqual([`alert:ready:r:416:${OID}`])
+  await w.clock.advance(5 * MIN) // asked again and again
+  expect(w.notes).toHaveLength(1)
+})
+
+test('#30: the first poll finds a PR already ready and says nothing; what is ready is remembered in the store', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.factory.prs = [ready()]
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.notes).toEqual([])
+  expect(w.store['seen:ready:r']).toEqual([`416:${OID}`])
+  await w.clock.advance(5 * MIN)
+  expect(w.notes).toEqual([])
+})
+
+test('#30: after a reload the store says the PR was ready at the last poll, so a ready PR is not news; the memory is the store\'s, not a variable\'s', opts, async ($: any, on: any) => {
+  const w = world(on, undefined, true, { 'seen:ready:r': [`416:${OID}`] }) // and no alert key: it is the memory that keeps it quiet
+  w.factory.prs = [ready()]
+  await boot($)
+  await w.clock.advance(5 * MIN)
+  expect(w.notes).toEqual([])
+})
+
+test('#30: a session that starts when the store says the PR was not ready at the last poll, and finds it ready, alerts', opts, async ($: any, on: any) => {
+  const w = world(on, undefined, true, { 'seen:ready:r': [] })
+  w.factory.prs = [ready()]
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.notes).toEqual(['PR #416 is ready for your ok'])
+})
+
+test('#30: a PR ready again on a new head alerts again; on the same head, it does not', opts, async ($: any, on: any) => {
+  const OLD = 'a1a1a1a'.padEnd(40, '0')
+  const w = world(on, undefined, true, { 'seen:ready:r': [`416:${OLD}`], [`alert:ready:r:416:${OLD}`]: T0 - 60 * MIN })
+  w.factory.prs = [ready()] // pushed since: another head, ready
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.notes).toEqual(['PR #416 is ready for your ok'])
+  expect(alertKeys(w).sort()).toEqual([`alert:ready:r:416:${OLD}`, `alert:ready:r:416:${OID}`].sort())
+  w.factory.prs = [served()] // a bot comments: not ready
+  await w.clock.advance(60_000)
+  w.factory.prs = [ready()] // and ready again, on the head it alerted for
+  await w.clock.advance(60_000)
+  expect(w.notes).toHaveLength(1)
+})
+
+test('#30: two sessions on one machine send one alert: the second finds the key the first wrote, whatever it remembers of the last poll', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.factory.prs = [served()]
+  await boot($)
+  await w.clock.advance(2_000)
+  w.factory.prs = [ready()]
+  await w.clock.advance(60_000)
+  expect(w.notes).toHaveLength(1)
+  w.store['seen:ready:r'] = [] // the second session's last poll found it not ready, as a session with another history would
+  await noReload($)
+  await w.clock.advance(2_000)
+  expect(w.notes).toHaveLength(1)
+  expect(alertKeys(w)).toHaveLength(1)
+})
+
+test('#30: a key another session wrote is enough: a PR that the memory calls news is still sent once', opts, async ($: any, on: any) => {
+  const w = world(on, undefined, true, { 'seen:ready:r': [], [`alert:ready:r:416:${OID}`]: T0 - 2_000 })
+  w.factory.prs = [ready()]
+  await boot($)
+  await w.clock.advance(5 * MIN)
+  expect(w.notes).toEqual([])
+})
+
+test('#30: an issue\'s budget alerts at 80% and at 100%, each once, in the Alerts board\'s words', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.budget.issues = [issue(407, 40, 80, null)]
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.budget.calls).toHaveLength(1) // at session start
+  const url = new URL(w.budget.calls[0]!)
+  expect(`${url.origin}${url.pathname}`).toBe('http://127.0.0.1:4040/api/budget')
+  expect(url.searchParams.get('project')).toBe('r')
+  expect(url.searchParams.get('tz')).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
+  expect(w.notes).toEqual([])
+  w.budget.issues = [issue(407, 64, 80, 'at80')]
+  await w.clock.advance(60_000)
+  expect(w.notes).toEqual(['#407: $64 of $80, 80% (estimate)'])
+  await w.clock.advance(5 * MIN)
+  expect(w.notes).toHaveLength(1)
+  w.budget.issues = [issue(407, 80, 80, 'at100')]
+  await w.clock.advance(60_000)
+  expect(w.notes).toEqual(['#407: $64 of $80, 80% (estimate)', '#407: $80 of $80, 100% (estimate)'])
+  await w.clock.advance(5 * MIN)
+  expect(w.notes).toHaveLength(2)
+  expect(w.titles).toEqual(['agent-orb: budget', 'agent-orb: budget'])
+  expect(alertKeys(w).sort()).toEqual(['alert:budget:r:407:100', 'alert:budget:r:407:80'])
+})
+
+test('#30: an issue that jumps from under 80% past its budget alerts for the 100% only; another issue at a mark is its own alert', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.budget.issues = [issue(407, 10, 80, null), issue(408, 10, 80, null)]
+  await boot($)
+  await w.clock.advance(2_000)
+  w.budget.issues = [issue(407, 95, 80, 'at100'), issue(408, 70, 80, 'at80')]
+  await w.clock.advance(60_000)
+  expect(w.notes).toEqual(['#407: $95 of $80, 100% (estimate)', '#408: $70 of $80, 80% (estimate)'])
+})
+
+test('#30: the first poll finds an issue already at a mark and says nothing; the mark is remembered in the store', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.budget.issues = [issue(407, 70, 80, 'at80')]
+  await boot($)
+  await w.clock.advance(5 * MIN)
+  expect(w.notes).toEqual([])
+  expect(w.store['seen:budget:r']).toEqual({ 407: 80 })
+})
+
+test('#30: after a reload the store says the issue was at that mark at the last poll, so it is not news; the memory is the store\'s', opts, async ($: any, on: any) => {
+  const w = world(on, undefined, true, { 'seen:budget:r': { 407: 80 } }) // and no alert key
+  w.budget.issues = [issue(407, 70, 80, 'at80')]
+  await boot($)
+  await w.clock.advance(5 * MIN)
+  expect(w.notes).toEqual([])
+})
+
+test('#30: a budget key another session wrote keeps a mark the memory calls news from being sent twice', opts, async ($: any, on: any) => {
+  const w = world(on, undefined, true, { 'seen:budget:r': {}, 'alert:budget:r:407:80': T0 - 2_000 })
+  w.budget.issues = [issue(407, 70, 80, 'at80')]
+  await boot($)
+  await w.clock.advance(5 * MIN)
+  expect(w.notes).toEqual([])
+})
+
+test('#30: the budget is asked every minute while the project has one, and every ten minutes while it has none', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const none = world(on)
+  none.budget.issues = [issue(407, 10, null, null)]
+  await boot($)
+  await none.clock.advance(9 * MIN)
+  expect(none.budget.calls).toHaveLength(1) // the start's
+  await none.clock.advance(2 * MIN)
+  expect(none.budget.calls).toHaveLength(2) // past the tenth minute
+  none.budget.issues = [issue(407, 10, 80, null)]
+  await none.clock.advance(8 * MIN) // 19 minutes in
+  expect(none.budget.calls).toHaveLength(2) // it has a budget now, but is next asked at the tenth minute after the last time
+  await none.clock.advance(2.5 * MIN) // 21 and a half: asked at 20, which found the budget, and again a minute later
+  expect(none.budget.calls).toHaveLength(4)
+})
+
+test('#30: a budget answer that fails, or is not the server\'s, changes nothing and sends nothing', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.budget.issues = [issue(407, 10, 80, null)]
+  await boot($)
+  await w.clock.advance(2_000)
+  for (const mode of ['throw', 'garbage'] as const) {
+    w.budget.mode = mode
+    w.budget.issues = [issue(407, 90, 80, 'at100')] // what the server would say
+    await w.clock.advance(2 * MIN)
+  }
+  expect(w.notes).toEqual([])
+  w.budget.mode = 'ok'
+  await w.clock.advance(60_000)
+  expect(w.notes).toEqual(['#407: $90 of $80, 100% (estimate)']) // and it recovers
+})
+
+test('#30: with alerts off no alert is sent: not a stall, a goal, a ready PR or a budget mark, and the page and the status line go on', { options: { token: 'tok', stallMinutes: 15, alerts: 'off' }, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  w.goal.goal = 2500
+  w.goal.spent = 2540
+  w.factory.prs = [served()]
+  w.budget.issues = [issue(407, 10, 80, null)]
+  await boot($)
+  await w.clock.advance(2_000)
+  w.factory.prs = [ready()]
+  w.budget.issues = [issue(407, 90, 80, 'at100')]
+  await stalls($, w, hang)
+  expect(w.sent().some((e) => e.kind === 'stall.start')).toBe(true) // the record is kept
+  expect(w.statuses.some((s) => /^⚠ main: WebFetch/.test(s ?? ''))).toBe(true) // and so is the status line
+  await w.clock.advance(5 * MIN)
+  expect(w.notes).toEqual([])
+  expect(w.budget.calls).toEqual([]) // nothing is asked for what would not be sent
+  expect(Object.keys(w.store).filter((k) => /^(alert|seen|goal):/.test(k))).toEqual([])
+})
+
+test('#30: the alerts setting is on unless it says off', { options: { token: 'tok', alerts: 'on' } }, async ($: any, on: any) => {
+  const w = world(on)
+  w.goal.goal = 2500
+  w.goal.spent = 2540
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.notes).toEqual(['r is over its October goal: $2,540 of $2,500'])
+  expect(w.titles).toEqual(['agent-orb: goal'])
+})
+
+test('#30: a notification the engine did not send (no surface) is not retried and says nothing to the person; nor is a failed write', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.notify.isSent = false
+  w.factory.prs = [served()]
+  await boot($)
+  await w.clock.advance(2_000)
+  w.factory.prs = [ready()]
+  await w.clock.advance(5 * MIN)
+  expect(w.notes).toEqual(['PR #416 is ready for your ok']) // one attempt
+  expect(w.logs).toEqual([])
+  w.notify.reject = true
+  w.factory.prs = [ready({ number: 417, headOid: 'b'.repeat(40) })]
+  await w.clock.advance(5 * MIN)
+  expect(w.notes).toHaveLength(2) // tried once, and not again
+  expect(w.logs).toEqual([])
+  expect(lineOf(w)).toMatch(/^👥 1/) // the tick goes on
+})
+
+test('#30: a session start forgets alert keys older than 30 days, and touches no other key', opts, async ($: any, on: any) => {
+  const day = 24 * 60 * MIN
+  const w = world(on, undefined, true, {
+    'alert:ready:r:1:aaa': T0 - 31 * day, 'alert:budget:r:2:80': T0 - 29 * day, 'alert:stall:old': 'yes',
+    'goal:r:2026-09': { at80: true }, 'seen:ready:r': [], 'seen:budget:r': {}, 'machine:sampled': T0 - 99 * day,
+  })
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(alertKeys(w)).toEqual(['alert:budget:r:2:80'])
+  expect(w.store['goal:r:2026-09']).toEqual({ at80: true })
+  expect(w.store['seen:ready:r']).toEqual([])
 })

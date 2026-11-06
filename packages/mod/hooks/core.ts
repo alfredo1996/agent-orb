@@ -385,8 +385,8 @@ export function commandClass(command: string): CommandClass {
 
 /** The server's Cond (api/factory.ts): ok true holds, false is a definite no, null is not known. */
 export type Cond = { ok: boolean | null; note: string };
-/** What the plugin keeps of an open PR from GET /api/factory: enough to judge a merge, nothing it would have to fetch. `open`: its open findings, when the server named them (#31 R22). */
-export type PrMemory = { number: number; head: string | null; headOid: string; conditions: Record<'findings' | 'gate' | 'bots' | 'clean', Cond>; open?: { id: string; severity: string }[] };
+/** What the plugin keeps of an open PR from GET /api/factory: enough to judge a merge, nothing it would have to fetch. `open`: its open findings, when the server named them (#31 R22). `ready`: the server's own verdict (old data is never ready), which the alerts read (#30). */
+export type PrMemory = { number: number; head: string | null; headOid: string; ready: boolean; conditions: Record<'findings' | 'gate' | 'bots' | 'clean', Cond>; open?: { id: string; severity: string }[] };
 /** `readAt` is when GitHub was read (epoch ms), 0 when it never was. */
 export type FactoryMemory = { readAt: number; prs: PrMemory[] };
 export const REFUSE_MS = 10 * 60_000; // as the server's STALE_MS (api/factory.ts): older data is not trusted to refuse
@@ -421,7 +421,7 @@ export function parseFactory(text: string): FactoryMemory | undefined {
     const conds = CONDS.map((k) => condOf(p?.conditions?.[k]));
     if (!p || !Number.isInteger(p.number) || p.number < 1 || typeof p.headOid !== 'string' || !(p.head === null || p.head === undefined || typeof p.head === 'string') || !conds.every(Boolean)) return [];
     const open = openFindings(p.findings);
-    return [{ number: p.number, head: p.head ?? null, headOid: p.headOid, conditions: Object.fromEntries(CONDS.map((k, i) => [k, conds[i]])) as PrMemory['conditions'], ...(open && { open }) }];
+    return [{ number: p.number, head: p.head ?? null, headOid: p.headOid, ready: p.ready === true, conditions: Object.fromEntries(CONDS.map((k, i) => [k, conds[i]])) as PrMemory['conditions'], ...(open && { open }) }];
   });
   return { readAt: body.readAt, prs };
 }
@@ -1125,6 +1125,59 @@ export function goalNotice(g: Goal, sent: GoalSent): { text?: string; sent: Goal
   if (atLeast80(g) && !sent.at80) return { text: `${g.project} is at ${percent(g)}% of its ${month} goal (${usd(g.spent)} of ${usd(g.goal)})`, sent: { ...sent, at80: true } };
   return { sent };
 }
+
+// ── Alerts (v0.4 slice 4, #30) ───────────────────────────────────────────────
+// Desktop notifications through `$.ui.notify`, never a phone push (PROJECT.md §5: `PushNotification` answered "requested" twice and nothing arrived). What is worth one is decided here; once per key across sessions is the plugin's.
+
+/** An alert key kept in the store is forgotten after this long. */
+export const ALERT_KEEP_MS = 30 * 24 * 3_600_000;
+
+/** One issue at a budget mark, from GET /api/budget: the server's own mark, what the issue has cost (an estimate) and its budget, in dollars. */
+export type BudgetMark = { issue: number; mark: 80 | 100; spent: number; budget: number };
+
+/**
+ * The server's answer to GET /api/budget, reduced to what an alert needs: whether any issue has a budget (the plugin asks less often while none does) and each issue at a mark. The mark is the
+ * server's (`markOf`), not worked out again here. Nothing when the text is not that answer (the last one stays); a row that is malformed is left out.
+ */
+export function parseBudget(text: string): { budgeted: boolean; marks: BudgetMark[] } | undefined {
+  let body: { issues?: unknown } | null;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!body || typeof body !== 'object' || !Array.isArray(body.issues)) return undefined;
+  const rows = body.issues.filter((r: Record<string, any> | null) => r && Number.isInteger(r.number) && r.number > 0 && typeof r.usd === 'number' && Number.isFinite(r.usd)
+    && (r.budget === null || (typeof r.budget === 'number' && r.budget > 0)) && (r.mark === null || r.mark === 'at80' || r.mark === 'at100')) as { number: number; usd: number; budget: number | null; mark: 'at80' | 'at100' | null }[];
+  return {
+    budgeted: rows.some((r) => r.budget !== null),
+    marks: rows.flatMap((r): BudgetMark[] => (r.mark && r.budget !== null ? [{ issue: r.number, mark: r.mark === 'at80' ? 80 : 100, spent: r.usd, budget: r.budget }] : [])),
+  };
+}
+
+/** `#407: $64 of $80, 80% (estimate)`: the Alerts board's wording, minus the issue's title, which the budget answer does not carry. Whole dollars, like the goal's. */
+export const budgetNotice = (m: BudgetMark) => `#${m.issue}: ${usd(m.spent)} of ${usd(m.budget)}, ${m.mark}% (estimate)`;
+export const readyNotice = (pr: number) => `PR #${pr} is ready for your ok`;
+
+/**
+ * The PRs that are ready now and were not at the last poll, and the ready set to remember (`number:head`, so a PR ready again on a new head is new). `last` is what the store held: with none (the first
+ * poll for this project, or a value that is not a list) nothing alerts, because what is ready already is not news.
+ */
+export function newlyReady(last: unknown, prs: PrMemory[]): { fresh: PrMemory[]; seen: string[] } {
+  const id = (p: PrMemory) => `${p.number}:${p.headOid}`;
+  const before = Array.isArray(last) ? new Set(last) : undefined;
+  return { fresh: before ? prs.filter((p) => p.ready && !before.has(id(p))) : [], seen: prs.filter((p) => p.ready).map(id).sort() };
+}
+
+/** The same for budget marks: an issue's mark now, against its mark at the last poll (`last` is a record of issue to mark). A raised budget drops the mark, so it can alert again. */
+export function newMarks(last: unknown, marks: BudgetMark[]): { fresh: BudgetMark[]; seen: Record<number, number> } {
+  const before = last && typeof last === 'object' && !Array.isArray(last) ? (last as Record<string, unknown>) : undefined;
+  return { fresh: before ? marks.filter((m) => before[m.issue] !== m.mark) : [], seen: Object.fromEntries(marks.map((m) => [m.issue, m.mark])) };
+}
+
+/** The store keys under `alert:` that are old (more than 30 days) or hold no time, from `[key, value]` pairs. A future time is kept: the clock moved. Nothing else in the store is judged. */
+export const staleAlerts = (entries: [string, unknown][], now: number) =>
+  entries.filter(([k, at]) => k.startsWith('alert:') && !(typeof at === 'number' && now - at <= ALERT_KEEP_MS)).map(([k]) => k);
 
 // ── Live tracking, for the stall alert and the status line ───────────────────
 

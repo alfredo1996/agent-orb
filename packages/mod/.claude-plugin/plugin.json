@@ -49,6 +49,16 @@
       ],
       "default": "on"
     },
+    "alerts": {
+      "type": "string",
+      "title": "Alerts",
+      "description": "on: a desktop notification when a session stalls, when an issue reaches 80% and 100% of its budget, when a PR is ready for your ok, and at 80% and past the monthly goal; off sends none",
+      "options": [
+        "on",
+        "off"
+      ],
+      "default": "on"
+    },
     "content": {
       "type": "string",
       "title": "Content",
