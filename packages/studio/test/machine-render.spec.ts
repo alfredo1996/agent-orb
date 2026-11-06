@@ -263,7 +263,7 @@ describe('the Factory page, as it is first drawn', () => {
   it('its subtitle names the three bands of the approved mockup', () => {
     vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} })); // the page asks whether the screen is a phone's
     try {
-      const html = renderToStaticMarkup(createElement(Factory, { now: NOW }));
+      const html = renderToStaticMarkup(createElement(Factory, { now: NOW, live: new Set<string>() }));
       expect(plain(html)).toContain("What's blocked, what's ready, and what's left running");
     } finally {
       vi.unstubAllGlobals();

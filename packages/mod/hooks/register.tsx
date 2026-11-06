@@ -350,7 +350,7 @@ async function readOpenPrs($: $) {
     if (prs && ctx) {
       // #28: the open issues' milestones ride in the same event. A read that fails leaves `issues` out, so the server keeps the last.
       const i = await $.process.run(openIssuesArgv, { cwd: checkout, timeoutMs: 60_000 }).catch(() => undefined)
-      const issues = i && i.exitCode === 0 ? parseOpenIssues(i.stdout, !excluded) : undefined
+      const issues = i && i.exitCode === 0 ? parseOpenIssues(i.stdout, !excluded, text) : undefined
       if (ctx) push($, build.projectOpenPrs(ctx, prs, issues))
     }
   } finally {

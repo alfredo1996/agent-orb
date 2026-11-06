@@ -212,7 +212,8 @@ export const Event = z.discriminatedUnion('kind', [
   // The open PRs as gh lists them, every 5 minutes while a session runs: numbers, the branch (none for an excluded project), the head, the merge state, each check's name
   // and result, each bot's latest comment time. Never a comment's text, a title or a body. `last_commit_at` is the head commit's time, when gh listed it.
 // #28 (issue cost): `created_at` is when the PR opened, and `issue` the one it closes (the branch's number, else the first `Closes #N` of its body, read on the machine: only the number
-// travels). `issues` is the open issues' numbers and their milestone's title (none for an excluded project): absent, a read says nothing about them.
+// travels). `issues` is the open issues' numbers and their milestone's title (none for an excluded project): absent, a read says nothing about them. #32: an issue's own `title` rides
+// with them only with Content on full (the board names its rows with it); with Content off a read carries none, and the server drops the one it held.
   Base.extend({ kind: z.literal('project.open_prs'), data: z.object({
     prs: z.array(z.object({
       number: z.number().int().positive(),
@@ -226,7 +227,7 @@ export const Event = z.discriminatedUnion('kind', [
       checks: z.array(z.object({ name: id.max(200), state: z.enum(['pass', 'fail', 'pending']), ci: z.literal(true).optional() })).max(200),
       bots: z.array(z.object({ author: id.max(100), at: z.number().int().positive() })).max(50),
     })).max(100),
-    issues: z.array(z.object({ number: z.number().int().positive(), milestone: id.max(200).optional() })).max(500).optional(),
+    issues: z.array(z.object({ number: z.number().int().positive(), milestone: id.max(200).optional(), title: z.string().min(1).transform((s) => s.slice(0, 200)).optional() })).max(500).optional(),
   }) }),
   // v0.4 slice 3 (#29, Factory): what runs on the Mac, about the host and not the session (the sampling session's project and id ride along as on any event). Free and total memory in bytes,
   // Docker's state (`absent`: no docker binary; `stopped`: the daemon does not answer), and the running containers: a name, when it was created, its state and health, its memory in bytes

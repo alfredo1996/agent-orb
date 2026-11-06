@@ -93,47 +93,57 @@ const FATE_ORDER: Fate[] = ['open', 'dismissed', 'fixed']; // the sheet's order:
 const Query = z.object({ project: z.string().min(1), remote: z.string().min(1).optional() });
 const STALE_MS = 10 * 60_000; // two reads missed (the plugin reads every 5 minutes): no session reads this repo now, and the merge refusal (#31) stops trusting it too
 
+/**
+ * The open PRs of a project as the plugin last read them, each with its verdict: what GET /api/factory answers, and what the board (#32) takes each issue's readiness from. `projectId` and
+ * `gate` (the latest test run on the head, and when it ran) are for the board; the route leaves them out.
+ */
+export function openPrs(store: Store, content: ContentStore, now: number, project: string, remote: string | null) {
+  // Every project row with the name, like the goal (a repo seen from two machines is two rows when it has no remote); with a remote, that repository's rows alone.
+  const readAt = get(store, 'SELECT max(prs_read_at) AS at FROM projects WHERE name = :project AND (:remote IS NULL OR git_remote = :remote)', { project, remote })?.at ?? null;
+  // #28: the issue each PR closes is on its pull_requests row (the open-PR read put it there), which the cost on the page is matched to.
+  const rows = all(store, `SELECT o.*, pr.issue AS issue FROM open_prs o JOIN projects p ON p.id = o.project_id
+    LEFT JOIN pull_requests pr ON pr.id = o.project_id || ':' || o.number WHERE p.name = :project AND (:remote IS NULL OR p.git_remote = :remote)`, { project, remote });
+  const prs = rows.map((r) => {
+    const pr: PrState = { headOid: r.head_oid, mergeState: r.merge_state, lastCommitAt: r.last_commit_at ?? undefined, checks: JSON.parse(r.checks), bots: JSON.parse(r.bots) };
+    // A PR's findings are the reports that named it (```orb-findings #416) and those made on its head branch, the latest fate of each id winning across both. Its
+    // dropped count is the named reports' when there are any: those are the ones written for this PR.
+    const refs = { p: r.project_id, pr: `pr:${r.number}`, b: r.head ?? `pr:${r.number}` };
+    const reports = all(store, 'SELECT ref, dropped, ts FROM finding_reports WHERE project_id = :p AND ref IN (:pr, :b)', refs);
+    const named = reports.find((x) => x.ref === refs.pr);
+    const report = reports.length ? { dropped: (named ?? reports[0]!).dropped as number, ts: Math.max(...reports.map((x) => x.ts as number)) } : undefined;
+    const latest = new Map<string, Row>();
+    for (const f of all(store, 'SELECT ref, id, severity, file, fate, ts FROM findings WHERE project_id = :p AND ref IN (:pr, :b)', refs)) {
+      if (!(latest.get(f.id)?.ts >= f.ts)) latest.set(f.id, f);
+    }
+    const list = [...latest.values()];
+    const gate = get(store, 'SELECT result, ts FROM gates WHERE project_id = :p AND substr(:oid, 1, length(commit_sha)) = commit_sha ORDER BY ts DESC LIMIT 1', { p: r.project_id, oid: r.head_oid });
+    // A title may have come with either ref's report (a branch round with Content on, then a numbered one): the latest ref's first. A reason only with the latest fate.
+    const text = content.get(list.flatMap((f) => [refs.pr, refs.b].map((ref) => ({ node: 'finding' as const, id: findingId(r.project_id, ref, f.id) }))));
+    const findings = list
+      .toSorted((a, b) => FATE_ORDER.indexOf(a.fate) - FATE_ORDER.indexOf(b.fate) || rank(a.severity) - rank(b.severity) || (a.id < b.id ? -1 : 1))
+      .map((f) => {
+        const t = text.get(`finding:${findingId(r.project_id, f.ref, f.id)}`);
+        const title = t?.title ?? text.get(`finding:${findingId(r.project_id, f.ref === refs.pr ? refs.b : refs.pr, f.id)}`)?.title;
+        return { id: f.id, severity: f.severity, file: f.file, fate: f.fate, ...(title ? { title } : {}), ...(f.fate === 'dismissed' && t?.why ? { why: t.why } : {}) };
+      });
+    const ledger: Ledger = report ? { findings: list as { severity: string; fate: Fate }[], dropped: report.dropped, at: report.ts } : undefined;
+    let verdict = ready(pr, ledger, gate as { result: 'pass' | 'fail' } | undefined);
+    // Old data is never "ready": a PR can have moved since. Its conditions still show as they were read.
+    if (verdict.ready && readAt !== null && now - readAt > STALE_MS) verdict = { ...verdict, ready: false, reason: `Was ready when GitHub was last read, ${Math.floor((now - readAt) / 60_000)} min ago` };
+    return {
+      number: r.number as number, head: (r.head ?? null) as string | null, issue: (r.issue ?? null) as number | null, headOid: r.head_oid as string, ...verdict, findings, dropped: report?.dropped ?? 0,
+      projectId: r.project_id as string, gate: gate ? { result: gate.result as 'pass' | 'fail', ts: gate.ts as number } : null,
+    };
+  });
+  // Not ready first (they need you), then the newest PR.
+  return { project, readAt: readAt as number | null, prs: prs.toSorted((a, b) => Number(a.ready) - Number(b.ready) || b.number - a.number) };
+}
+
 export function factory(app: FastifyInstance, { store, content, now = Date.now }: { store: Store; content: ContentStore; now?: () => number }) {
   app.get('/api/factory', async (req, reply) => {
     const q = Query.safeParse(req.query);
     if (!q.success) return reply.code(400).send({ error: 'give a project', issues: q.error.issues });
-    const { project } = q.data;
-    const remote = q.data.remote ?? null;
-    // Every project row with the name, like the goal (a repo seen from two machines is two rows when it has no remote); with a remote, that repository's rows alone.
-    const readAt = get(store, 'SELECT max(prs_read_at) AS at FROM projects WHERE name = :project AND (:remote IS NULL OR git_remote = :remote)', { project, remote })?.at ?? null;
-    // #28: the issue each PR closes is on its pull_requests row (the open-PR read put it there), which the cost on the page is matched to.
-    const rows = all(store, `SELECT o.*, pr.issue AS issue FROM open_prs o JOIN projects p ON p.id = o.project_id
-      LEFT JOIN pull_requests pr ON pr.id = o.project_id || ':' || o.number WHERE p.name = :project AND (:remote IS NULL OR p.git_remote = :remote)`, { project, remote });
-    const prs = rows.map((r) => {
-      const pr: PrState = { headOid: r.head_oid, mergeState: r.merge_state, lastCommitAt: r.last_commit_at ?? undefined, checks: JSON.parse(r.checks), bots: JSON.parse(r.bots) };
-      // A PR's findings are the reports that named it (```orb-findings #416) and those made on its head branch, the latest fate of each id winning across both. Its
-      // dropped count is the named reports' when there are any: those are the ones written for this PR.
-      const refs = { p: r.project_id, pr: `pr:${r.number}`, b: r.head ?? `pr:${r.number}` };
-      const reports = all(store, 'SELECT ref, dropped, ts FROM finding_reports WHERE project_id = :p AND ref IN (:pr, :b)', refs);
-      const named = reports.find((x) => x.ref === refs.pr);
-      const report = reports.length ? { dropped: (named ?? reports[0]!).dropped as number, ts: Math.max(...reports.map((x) => x.ts as number)) } : undefined;
-      const latest = new Map<string, Row>();
-      for (const f of all(store, 'SELECT ref, id, severity, file, fate, ts FROM findings WHERE project_id = :p AND ref IN (:pr, :b)', refs)) {
-        if (!(latest.get(f.id)?.ts >= f.ts)) latest.set(f.id, f);
-      }
-      const list = [...latest.values()];
-      const gate = get(store, 'SELECT result FROM gates WHERE project_id = :p AND substr(:oid, 1, length(commit_sha)) = commit_sha ORDER BY ts DESC LIMIT 1', { p: r.project_id, oid: r.head_oid });
-      // A title may have come with either ref's report (a branch round with Content on, then a numbered one): the latest ref's first. A reason only with the latest fate.
-      const text = content.get(list.flatMap((f) => [refs.pr, refs.b].map((ref) => ({ node: 'finding' as const, id: findingId(r.project_id, ref, f.id) }))));
-      const findings = list
-        .toSorted((a, b) => FATE_ORDER.indexOf(a.fate) - FATE_ORDER.indexOf(b.fate) || rank(a.severity) - rank(b.severity) || (a.id < b.id ? -1 : 1))
-        .map((f) => {
-          const t = text.get(`finding:${findingId(r.project_id, f.ref, f.id)}`);
-          const title = t?.title ?? text.get(`finding:${findingId(r.project_id, f.ref === refs.pr ? refs.b : refs.pr, f.id)}`)?.title;
-          return { id: f.id, severity: f.severity, file: f.file, fate: f.fate, ...(title ? { title } : {}), ...(f.fate === 'dismissed' && t?.why ? { why: t.why } : {}) };
-        });
-      const ledger: Ledger = report ? { findings: list as { severity: string; fate: Fate }[], dropped: report.dropped, at: report.ts } : undefined;
-      let verdict = ready(pr, ledger, gate as { result: 'pass' | 'fail' } | undefined);
-      // Old data is never "ready": a PR can have moved since. Its conditions still show as they were read.
-      if (verdict.ready && readAt !== null && now() - readAt > STALE_MS) verdict = { ...verdict, ready: false, reason: `Was ready when GitHub was last read, ${Math.floor((now() - readAt) / 60_000)} min ago` };
-      return { number: r.number as number, head: (r.head ?? null) as string | null, issue: (r.issue ?? null) as number | null, headOid: r.head_oid as string, ...verdict, findings, dropped: report?.dropped ?? 0 };
-    });
-    // Not ready first (they need you), then the newest PR.
-    return { project, readAt, prs: prs.toSorted((a, b) => Number(a.ready) - Number(b.ready) || b.number - a.number) };
+    const { prs, ...rest } = openPrs(store, content, now(), q.data.project, q.data.remote ?? null);
+    return { ...rest, prs: prs.map(({ projectId, gate, ...pr }) => pr) };
   });
 }

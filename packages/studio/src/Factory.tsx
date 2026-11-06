@@ -8,7 +8,8 @@ import { PageHeader, ProjectSelect, Reading, useProject, type Said } from './kit
 // reason it isn't ready for your ok, or "Ready for your ok", and its findings in a sheet. Nothing here merges: the merge stays yours.
 // Slice 2 (#28) adds each PR's issue cost against its budget (the cost cell, the Budget card and the sheet's field), from GET and PUT /api/budget; every figure is an estimate and
 // nothing is ever stopped. Slice 3 (#29) adds the Machine band (the Mac's free memory and its containers by project, from GET /api/machine) and a "Left running" row in Needs you for
-// each group the server flags; nothing here removes a container. The board comes with slice 6.
+// each group the server flags; nothing here removes a container. Slice 6 (#32) adds the Board band between Needs you and the Budget card, from GET /api/board: one milestone at a time, a row
+// per issue with its stage on a track of seven, whether its PR is ready, its cost against its budget and its sessions with a link to Live. The board repeats no session's state.
 
 type Cond = { ok: boolean | null; note: string };
 export type FactoryFinding = { id: string; severity: string; file: string; fate: 'open' | 'dismissed' | 'fixed'; title?: string; why?: string };
@@ -23,6 +24,15 @@ export type IssueCost = {
   number: number; milestone: string | null; usd: number; partial: boolean; whole: number; windows: number; budget: number | null; milestoneBudget: number | null; source: 'issue' | 'milestone' | null; mark: 'at80' | 'at100' | null;
 };
 export type BudgetData = { project: string; month: string; issues: IssueCost[]; notOnIssue: { usd: number; partial: boolean }; milestones: { name: string; budget: number | null }[] };
+/** The stages of an issue, in order (the server works one out from what the agents did): the board's track has a segment for each. */
+export const STAGES = ['queued', 'building', 'reviewing', 'fixing', 'gate', 'ready', 'merged'] as const;
+export type BoardStage = (typeof STAGES)[number];
+/** One issue of GET /api/board. `pr` is its newest open PR, else its merged one; `ready` and `reason` are that open PR's (slice 1); `sessions` are the newest that reached it, `sessionCount` all of them. */
+export type BoardIssue = {
+  number: number; title?: string; milestone: string | null; outside: boolean; stage: BoardStage; pr: { number: number; head: string | null; merged: boolean } | null; ready: boolean | null; reason: string | null;
+  usd: number; partial: boolean; budget: number | null; mark: 'at80' | 'at100' | null; sessions: { id: string; at: number; background?: true }[]; sessionCount: number;
+};
+export type BoardData = { project: string; milestone: string | null; month: string; milestones: { name: string; open: number }[]; issues: BoardIssue[]; notOnIssue: { usd: number; partial: boolean } };
 /** A group of containers on the Mac, as GET /api/machine groups and flags them (v0.4 slice 3, #29). `project` is the agent-orb project it belongs to, when it reaches one; `id` is the group's own
  * (a host's, so it keys a row); `since` is when its oldest container was made. */
 export type MachineGroup = {
@@ -83,7 +93,7 @@ export function budgetInput(text: string): { usd: number | null } | { error: str
 }
 
 /** An issue's cost against its budget: the figure (a floor when a request had no price), a bar, and how far it is. The bar's colour is the server's mark, never a percent worked out here. */
-export function CostCell({ issue, cost }: { issue: number | null | undefined; cost?: IssueCost }) {
+export function CostCell({ issue, cost }: { issue: number | null | undefined; cost?: Pick<IssueCost, 'usd' | 'partial' | 'budget' | 'mark'> }) {
   const lab = <span className="lab">Cost, estimate</span>;
   if (!issue) return <div className="costcell">{lab}<span className="why none">No issue</span></div>;
   if (!cost || (cost.usd === 0 && !cost.partial)) return <div className="costcell">{lab}<span className="why none">Nothing spent</span></div>;
@@ -128,7 +138,7 @@ function BudgetField({ label, value, placeholder, onSave }: { label: string; val
   );
 }
 
-/** What the milestones' defaults are, where to set them, and the month's spend on no issue. The numbers and warnings are the server's. */
+/** What the milestones' defaults are and where to set them. The numbers and warnings are the server's; the month's spend on no issue is on the board (#32). */
 export function BudgetCard({ data, onSave }: { data: BudgetData; onSave: Save }) {
   const own = data.issues.filter((i) => i.source === 'issue');
   const none = !own.length && data.milestones.every((m) => m.budget === null);
@@ -142,10 +152,6 @@ export function BudgetCard({ data, onSave }: { data: BudgetData; onSave: Save })
         {own.length > 0 && (
           <span className="sub">{own.length === 1 ? 'One issue has its own budget' : `${own.length} issues have their own budget`}: {own.map((i) => `#${i.number}, ${usd(i.budget!)}`).join('; ')}. Set it on the PR's sheet.</span>
         )}
-      </div>
-      <div className="notissue">
-        <span>Not on an issue: <b className="num">{usd(data.notOnIssue.usd, data.notOnIssue.partial)}</b> this month</span>
-        <span className="sub">Sessions with no PR, and turns after a session's last PR. Cost is an estimate by time windows.</span>
       </div>
     </section>
   );
@@ -168,6 +174,96 @@ function CostSection({ issue, cost, onSave }: { issue: number | null | undefined
       <BudgetField label="Budget for this issue" value={c.source === 'issue' ? c.budget : null} placeholder={dflt} onSave={(u) => onSave({ issue }, u)} />
       <span className="sub">{dflt !== null ? `Milestone default: ${usd(dflt)}` : 'No milestone default'}</span>
     </section>
+  );
+}
+
+const STAGE_LABEL: Record<BoardStage, string> = { queued: 'Queued', building: 'Building', reviewing: 'Reviewing', fixing: 'Fixing', gate: 'Gate', ready: 'Ready', merged: 'Merged' };
+
+/** Seven segments, one a stage: those before the issue's stage lit, its own marked, green once the issue is ready or merged. */
+function Track({ stage }: { stage: BoardStage }) {
+  const at = STAGES.indexOf(stage);
+  return (
+    <span className={stage === 'ready' || stage === 'merged' ? 'trk good' : 'trk'} role="img" aria-label={`Stage ${at + 1} of ${STAGES.length}: ${STAGE_LABEL[stage]}`}>
+      {STAGES.map((s, i) => <i key={s} className={i < at ? 'on' : i === at ? 'now' : ''} />)}
+    </span>
+  );
+}
+
+/**
+ * The issue's sessions: a link to Live for each one Live shows (a session that ended more than ten minutes ago is not there, so it is counted, not linked), and "agent view" when one of them
+ * is a background session, which is where it can be answered. The link carries the project so the page you come back to is the one you left. The state of a session is Live's, never repeated here.
+ */
+function SessionsCell({ issue, live, project }: { issue: BoardIssue; live: ReadonlySet<string>; project: string }) {
+  const here = issue.sessions.filter((s) => live.has(s.id));
+  const earlier = issue.sessionCount - here.length;
+  return (
+    <div>
+      <span className="lab">Sessions</span>
+      <div className="links">
+        {here.map((s) => <a key={s.id} href={`#/live?session=${encodeURIComponent(s.id)}&project=${encodeURIComponent(project)}`}>{here.length > 1 ? `Live ${s.id.slice(0, 6)}` : 'Live'}</a>)}
+        {issue.sessions.some((s) => s.background) && <span title="Background session">agent view</span>}
+        {earlier > 0 && <span className="none">{earlier} earlier</span>}
+        {issue.sessionCount === 0 && <span className="none">None</span>}
+      </div>
+    </div>
+  );
+}
+
+function BoardRow({ issue: i, project, live, openable, onOpen }: { issue: BoardIssue; project: string; live: ReadonlySet<string>; openable: ReadonlySet<number>; onOpen: OpenSheet }) {
+  const name = <b>{`#${i.number}${i.title ? ` ${i.title}` : ''}`}</b>;
+  const open = i.pr && !i.pr.merged && openable.has(i.pr.number) ? i.pr.number : undefined; // an open PR the page holds: its sheet has the four checks, the findings and the budget
+  const ready = i.pr?.merged ? <span className="why none">Merged</span> : !i.pr ? <span className="why none">No PR yet</span>
+    : i.ready ? <span className="why yes">Ready for your ok</span> : <span className="why no">{i.reason ?? 'Not ready'}</span>;
+  return (
+    <div className={i.stage === 'merged' ? 'brow merged' : 'brow'} data-issue={i.number}>
+      <div className="bissue">
+        {open !== undefined
+          ? <button type="button" className="open" aria-label={`Issue #${i.number}: see the checks of PR #${open}`} onClick={(e) => onOpen(open, e.currentTarget)}>{name}</button>
+          : name}
+        <small>{i.pr ? `PR #${i.pr.number}${i.pr.merged ? ', merged' : ''}` : 'No PR'}{i.outside && ` · outside this milestone, ${i.milestone ?? 'in none'}`}</small>
+      </div>
+      <div className="stagecell"><span>{STAGE_LABEL[i.stage]}</span><Track stage={i.stage} /></div>
+      <div><span className="lab">Ready</span>{ready}</div>
+      <CostCell issue={i.number} cost={i} />
+      <SessionsCell issue={i} live={live} project={project} />
+    </div>
+  );
+}
+
+/**
+ * The Board band (v0.4 slice 6, #32): one milestone's open issues, and any issue a session reached this week outside it whose PR has not merged, each with the stage the server worked out from
+ * what the agents did, whether its PR is ready, its cost against its budget and its sessions. Under the rows, what this month spent on no issue. A title shows only if the plugin sent it (Content on full).
+ */
+export function BoardBand({ data, live, openable, onOpen }: { data: BoardData; live: ReadonlySet<string>; openable: ReadonlySet<number>; onOpen: OpenSheet }) {
+  const inside = data.issues.filter((i) => !i.outside).length;
+  const outside = data.issues.length - inside;
+  return (
+    <section className="card board" aria-labelledby="fboard-h">
+      <h2 id="fboard-h">Board{data.milestone !== null && ` · ${data.milestone}`} {data.issues.length > 0 && <span className="hint">{count(inside, 'issue')}{outside > 0 && `, plus ${outside} in flight outside it`}</span>}</h2>
+      {data.issues.length === 0
+        ? <p className="nothing">{data.milestone === null ? 'No open issue has a milestone, so there is nothing to follow yet. The plugin reads the open issues from GitHub while a session runs in this repo, with gh logged in.' : `No open issue in ${data.milestone}, and none in flight.`}</p>
+        : (
+          <>
+            <div className="bcols" aria-hidden="true"><span>Issue</span><span>Stage</span><span>Ready</span><span>Cost, estimate</span><span>Sessions</span></div>
+            {data.issues.map((i) => <BoardRow key={i.number} issue={i} project={data.project} live={live} openable={openable} onOpen={onOpen} />)}
+          </>
+        )}
+      <div className="notissue">
+        <span>Not on an issue: <b className="num">{usd(data.notOnIssue.usd, data.notOnIssue.partial)}</b> this month</span>
+        <span className="sub">Sessions with no PR, and turns after a session's last PR. Cost is an estimate by time windows.</span>
+      </div>
+      {data.issues.some((i) => !i.title) && <div className="bnote">Issue titles show with Content on full.</div>}
+    </section>
+  );
+}
+
+/** The header's milestone slot: the milestones with an open issue, the board's own choice selected. A milestone asked for that has none is still the one shown. */
+export function MilestoneSelect({ milestones, value, onChange }: { milestones: { name: string; open: number }[]; value: string | null; onChange: (name: string) => void }) {
+  return (
+    <select aria-label="Milestone" value={value ?? ''} disabled={!milestones.length} onChange={(e) => onChange(e.target.value)}>
+      {value !== null && !milestones.some((m) => m.name === value) && <option value={value}>{value}</option>}
+      {milestones.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
+    </select>
   );
 }
 
@@ -378,10 +474,14 @@ export function PrSheet({ pr, readAt, now, sheet, onClose, cost, onSave }: { pr:
   );
 }
 
-export function Factory({ now }: { now: number }) {
+/** `live`: the sessions Live shows right now, which the board's links can reach. */
+export function Factory({ now, live }: { now: number; live: ReadonlySet<string> }) {
   const { project, projects } = useProject(true); // one project: the page reads one repo's PRs
   const [data, setData] = useState<FactoryData>();
   const [budget, setBudget] = useState<BudgetData>();
+  const [board, setBoard] = useState<BoardData>();
+  const [boardError, setBoardError] = useState<string>();
+  const [chosen, setChosen] = useState<{ project: string; milestone: string }>(); // the milestone picked, for the project it was picked in; none: the server's choice
   const [machine, setMachine] = useState<MachineData>();
   const [machineError, setMachineError] = useState<string>();
   const [error, setError] = useState<string>();
@@ -422,7 +522,32 @@ export function Factory({ now }: { now: number }) {
     };
   }, [project]);
 
+  // The board is its own read: the milestone changes it alone, and a failure leaves the rest of the page as it was.
+  const milestone = chosen?.project === project ? chosen.milestone : undefined;
+  useEffect(() => {
+    if (!project) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const q = new URLSearchParams({ project, tz: Intl.DateTimeFormat().resolvedOptions().timeZone, ...(milestone ? { milestone } : {}) });
+        const res = await fetch(`/api/board?${q}`);
+        if (!res.ok) throw new Error(`The server answered ${res.status}.`);
+        const body = (await res.json()) as BoardData;
+        if (alive) setBoard(body), setBoardError(undefined);
+      } catch (e) {
+        if (alive) setBoardError((e as Error).message);
+      }
+    };
+    void load();
+    const t = setInterval(load, REFRESH_MS);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [project, milestone]);
+
   const shown = data && data.project === project ? data : undefined; // a project just picked never wears the last one's PRs
+  const boarded = board && board.project === project ? board : undefined;
   const costed = budget && budget.project === project ? budget : undefined;
   const costs = costed && new Map(costed.issues.map((i) => [i.number, i]));
   const save: Save = async (target, amount) => {
@@ -446,13 +571,16 @@ export function Factory({ now }: { now: number }) {
   }, [shown, picked]);
   return (
     <main className="factory">
-      <PageHeader title="Factory" sub="What's blocked, what's ready, and what's left running" views={shown ? <Asof readAt={shown.readAt} now={now} /> : <span />} project={<ProjectSelect one />} />
+      <PageHeader title="Factory" sub="What's blocked, what's ready, and what's left running" views={shown ? <Asof readAt={shown.readAt} now={now} /> : <span />} project={<ProjectSelect one />}
+        period={<MilestoneSelect milestones={boarded?.milestones ?? []} value={boarded?.milestone ?? null} onChange={(m) => setChosen({ project, milestone: m })} />} />
       {error && <div className="empty"><b>Factory could not load.</b><span>{error}</span></div>}
       {projects?.length === 0 && <div className="empty"><b>Nothing recorded yet.</b><span>Factory starts when a session runs with the agent-orb plugin.</span></div>}
       {shown && (
         <>
           <Reading said={factoryReading(shown)} />
           <NeedsYou prs={shown.prs} costs={costs} left={leftRunning(machine)} now={now} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />
+          {boarded && <BoardBand data={boarded} live={live} openable={new Set(shown.prs.map((p) => p.number))} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />}
+          {!boarded && boardError && <section className="card board"><h2>Board</h2><p className="nothing">The board could not be read: {boardError}</p></section>}
           {costed && <BudgetCard data={costed} onSave={save} />}
         </>
       )}

@@ -102,10 +102,8 @@ describe('the budget card', () => {
     expect(plain(card(data({ milestones: [] })))).toContain('No open issue has a milestone, so there is no default to set. An issue\'s own budget is on its PR\'s sheet.');
   });
 
-  it('says what was spent on no issue this month, and what that is', () => {
-    expect(plain(card(data()))).toContain('Not on an issue: $15.00 this month');
-    expect(plain(card(data()))).toContain('Sessions with no PR, and turns after a session\'s last PR. Cost is an estimate by time windows.');
-    expect(plain(card(data({ notOnIssue: { usd: 15, partial: true } })))).toContain('Not on an issue: ≥ $15.00 this month');
+  it('leaves what was spent on no issue to the board (#32), which shows it under its rows', () => {
+    expect(plain(card(data()))).not.toContain('Not on an issue');
   });
 
   it('says it warns at 80% and 100% and never stops anything', () => {

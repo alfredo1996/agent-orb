@@ -34,4 +34,16 @@ describe('opening a history file made before #28', () => {
 
     openStore(path).close(); // the second open meets "duplicate column name" and goes on, as a second process opening the file would
   });
+
+  it('#32: an open_issues table made by #28 has no title; opening takes the column and keeps its rows', () => {
+    const path = join(dir, 'before-32.db');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
+      INSERT INTO open_issues (project_id, number, milestone) VALUES ('p', 409, 'v0.4 Factory');`);
+    old.close();
+    const db = openStore(path);
+    expect(columns(db, 'open_issues')).toEqual(expect.arrayContaining(['milestone', 'title']));
+    expect({ ...get(db, 'SELECT number, milestone, title FROM open_issues') }).toEqual({ number: 409, milestone: 'v0.4 Factory', title: null });
+    db.close();
+  });
 });

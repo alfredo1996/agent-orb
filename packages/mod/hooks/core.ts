@@ -839,15 +839,15 @@ export function parseFindings(report: string, text: (s: string) => string | unde
 export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };
 // created_at is when the PR opened and issue the one it closes (#28): the body is read for `Closes #N` and goes no further.
 export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; created_at?: number; issue?: number; checks: Check[]; bots: { author: string; at: number }[] };
-export type OpenIssue = { number: number; milestone?: string };
+export type OpenIssue = { number: number; milestone?: string; title?: string };
 // gh's `commits` asks GitHub for 100 commits of 100 authors a PR, and GitHub refuses a query of more than 500,000 nodes before running it: 50 PRs fail, on every repo.
 const OPEN_PRS_MAX = 40;
 const OPEN_PRS_BUDGET = 250_000; // characters of JSON, as PRS_BUDGET: 100 PRs of 200 checks would pass the server's 1 MB request, and a refused event is lost
 
 /** The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time; and (#28) when the PR opened and its body, for the issue it closes. */
 export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', String(OPEN_PRS_MAX), '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body'];
-/** The open issues' numbers and milestones (#28): what a milestone's budget default is matched to. gh lists at most 200 here; a read keeps at most 500. */
-export const openIssuesArgv = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone'];
+/** The open issues' numbers and milestones (#28): what a milestone's budget default is matched to. #32: and their titles, which only name a row of the board and leave only with Content on full. gh lists at most 200 here; a read keeps at most 500. */
+export const openIssuesArgv = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title'];
 const OPEN_ISSUES_MAX = 500;
 
 // The issue a branch names, as shared/src/issue.ts reads it (the plugin imports nothing from shared; contract.spec.ts holds the two to one table).
@@ -929,10 +929,11 @@ export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined
 }
 
 /**
- * The open issues in `openIssuesArgv`'s output: a number and its milestone's title, never an issue's title or body. `titles: false` (an excluded project) leaves the milestone out:
- * a title is a name. Nothing when the output is not gh's list; an empty list is a read of no open issues. At most 500.
+ * The open issues in `openIssuesArgv`'s output: a number and its milestone's title, and (#32) the issue's own title when `text` gives it, never a body. `milestones: false` (an excluded
+ * project) leaves the milestone out: a title is a name. `text` decides whether the issue's title travels: the plugin passes its Content helper (masked, and nothing unless Content is on full);
+ * without it, none does. Nothing when the output is not gh's list; an empty list is a read of no open issues. At most 500.
  */
-export function parseOpenIssues(stdout: string, titles = true): OpenIssue[] | undefined {
+export function parseOpenIssues(stdout: string, milestones = true, text?: (s: string) => string | undefined): OpenIssue[] | undefined {
   let list: unknown;
   try {
     list = JSON.parse(stdout);
@@ -943,8 +944,9 @@ export function parseOpenIssues(stdout: string, titles = true): OpenIssue[] | un
   const issues: OpenIssue[] = [];
   for (const i of list as Record<string, any>[]) {
     if (typeof i?.number !== 'number' || !Number.isInteger(i.number) || i.number < 1) continue;
-    const title = titles && typeof i.milestone?.title === 'string' && i.milestone.title ? i.milestone.title.slice(0, 200) : undefined;
-    issues.push({ number: i.number, ...(title ? { milestone: title } : {}) });
+    const milestone = milestones && typeof i.milestone?.title === 'string' && i.milestone.title ? i.milestone.title.slice(0, 200) : undefined;
+    const title = text && typeof i.title === 'string' && i.title ? text(i.title)?.slice(0, 200) : undefined;
+    issues.push({ number: i.number, ...(milestone ? { milestone } : {}), ...(title ? { title } : {}) });
     if (issues.length >= OPEN_ISSUES_MAX) break;
   }
   return issues;

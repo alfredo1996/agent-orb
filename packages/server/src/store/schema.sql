@@ -116,7 +116,8 @@ CREATE TABLE IF NOT EXISTS finding_reports (project_id TEXT NOT NULL, ref TEXT N
 -- v0.4 slice 2 (#28, issue cost). open_issues: the open issues' numbers and milestones as the plugin last read them, a snapshot per project replaced like open_prs (a read
 -- with no `issues` leaves it). budgets: the owner's, set by PUT /api/budget and never by the writer, per project *name* like goal_usd: kind 'milestone' (key the milestone's title:
 -- the default for each issue in it) or 'issue' (key the number: that issue's own budget, which wins). No default ships: with none, nothing warns.
-CREATE TABLE IF NOT EXISTS open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
+-- title (#32) is the issue's own title, sent only with Content on full: the board names its rows with it, and a read without one clears it.
+CREATE TABLE IF NOT EXISTS open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, title TEXT, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS budgets (project TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, usd REAL NOT NULL, PRIMARY KEY (project, kind, key)) WITHOUT ROWID;
 -- A test run's result per project and commit, from a run on a clean tree (#34; 7 to 64 hex characters, matched against a PR's head by prefix): the latest wins.
 CREATE TABLE IF NOT EXISTS gates (project_id TEXT NOT NULL, commit_sha TEXT NOT NULL, result TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (project_id, commit_sha)) WITHOUT ROWID;

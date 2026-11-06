@@ -590,6 +590,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .needs code, .sess .agent code { font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
 
 .sess { overflow: hidden; }
+.sess:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } /* the card a Factory board link named (#32) */
 .shead { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 32px; align-items: end; padding: 18px 20px 14px; }
 .who { display: grid; gap: 4px; min-width: 0; }
 .who .l1 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
@@ -710,15 +711,50 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .bfield input { width: 120px; font-family: var(--mono); }
 .bfield input[aria-invalid="true"] { border-color: var(--bad-line); }
 .bfield .gerr { margin: 0; font-size: 13px; color: var(--bad); }
-.budget .notissue { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 14px; }
-.budget .notissue .sub { font-size: 13px; color: var(--muted); }
 .factory-sheet .ledger2 { display: grid; gap: 6px; }
 .factory-sheet .ledger2 > div { display: flex; justify-content: space-between; gap: 12px; }
 @container (max-width: 700px) { /* after the rules above: the same specificity, so the later one wins */
   .factory .needs.withcost .need { grid-template-columns: minmax(0, 1fr) auto; }
   .factory .needs .costcell { grid-column: 1; }
   .factory .needs.withcost .need .btn { grid-row: 2 / span 3; }
-  .budget .bbody, .budget .notissue { padding-left: 16px; padding-right: 16px; }
+  .budget .bbody { padding-left: 16px; padding-right: 16px; }
+}
+/* The Board band (v0.4 slice 6, #32; design/v0.4-factory.html, the Board). Like the other bands, it narrows with its container: on a phone each row is a stack with its labels shown. */
+.board .nothing { margin: 0; padding: 14px 20px; color: var(--muted); font-size: 14px; }
+.board .bcols, .board .brow { display: grid; grid-template-columns: minmax(200px, 2fr) 160px minmax(170px, 1.3fr) 150px 112px; gap: 16px; align-items: center; padding: 12px 20px; }
+.board .bcols { padding-block: 8px; background: var(--sunk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
+.board .brow + .brow { border-top: 1px solid var(--line); }
+.board .brow.merged { color: var(--muted); }
+.board .bissue { display: grid; gap: 2px; min-width: 0; }
+.board .bissue b { font-weight: 600; overflow-wrap: anywhere; }
+.board .bissue small { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.board .open { all: unset; cursor: pointer; display: block; min-width: 0; }
+.board .open:hover b, .board .open:focus-visible b { color: var(--accent-ink); }
+.board .open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.board .lab { display: none; font-size: 12px; font-weight: 500; color: var(--muted); }
+.board .stagecell { display: grid; gap: 5px; }
+.board .stagecell > span:first-child { font-size: 13px; font-weight: 500; }
+.trk { display: flex; gap: 3px; }
+.trk i { flex: 1; height: 6px; border-radius: 2px; background: var(--border-strong); }
+.trk i.on { background: var(--data); }
+.trk i.now { background: var(--accent); }
+.trk.good i.now, .trk.good i.on { background: var(--ok-dot); }
+.board .why { font-size: 13px; overflow-wrap: anywhere; }
+.board .why.no { color: var(--wait); }
+.board .why.yes { color: var(--ok); font-weight: 600; }
+.board .why.none { color: var(--faint); }
+.board .costcell .lab { display: none; }
+.board .links { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; }
+.board .links a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+.board .links .none { color: var(--faint); }
+.board .notissue { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.board .notissue .sub { font-size: 13px; color: var(--muted); }
+.board .bnote { padding: 10px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); border-radius: 0 0 14px 14px; }
+@container (max-width: 700px) {
+  .board .bcols { display: none; }
+  .board .brow { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 16px; }
+  .board .lab, .board .costcell .lab { display: block; }
+  .board .nothing, .board .notissue, .board .bnote { padding-left: 16px; padding-right: 16px; }
 }
 /* Machine (v0.4 slice 3, #29; design/v0.4-factory.html, the Machine band). Like the other bands, it narrows with its container, not the window. */
 .machine { scroll-margin-top: 16px; }

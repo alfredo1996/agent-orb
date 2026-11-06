@@ -237,7 +237,7 @@ function writeRows(db: Store, ev: Event[], source: Source) {
     }
     if (e.data.issues) { // absent says nothing about the issues: the last read stands
       run(db, 'DELETE FROM open_issues WHERE project_id = :project', { project });
-      for (const i of e.data.issues) run(db, 'INSERT OR REPLACE INTO open_issues (project_id, number, milestone) VALUES (:project, :number, :milestone)', { project, number: i.number, milestone: i.milestone });
+      for (const i of e.data.issues) run(db, 'INSERT OR REPLACE INTO open_issues (project_id, number, milestone, title) VALUES (:project, :number, :milestone, :title)', { project, number: i.number, milestone: i.milestone, title: i.title });
     }
   }
   // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it

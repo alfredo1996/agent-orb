@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ago, contextMeter, duration, modelLabel, plural, readTokens, stateLabel, usd } from './format.ts';
 import { rowKey, useHistory, type Open, type Picked } from './History.tsx';
 import { Explain, PageHeader } from './kit.tsx';
@@ -16,8 +16,26 @@ export type Session = {
   content?: 'off' | 'full' | 'excluded'; stoppedAt?: number; stoppedAborted?: boolean; skills?: { skill: string; count: number; by: { who: string; count: number }[] }[];
 };
 
-export function Live({ list, all, now }: { list: Session[]; all: Record<string, Session>; now: number }) {
+/**
+ * A link from the Factory board names a session (`#/live?session=<id>`, #32; the app reads it out of the hash and passes it as `wanted`): once its card is on the page it is brought into view
+ * and focused, once. A session Live does not show, because it ended more than ten minutes ago, is given up on as soon as the list has loaded without it.
+ */
+function useWantedSession(list: Session[], wanted: string | null) {
+  const want = useRef<string | null | undefined>(undefined);
+  if (want.current === undefined) want.current = wanted; // as the view opens: the link's session, not one a later render is handed
+  useEffect(() => {
+    if (!want.current) return;
+    const card = document.getElementById(`session-${want.current}`);
+    if (!card && !list.length) return; // the stream has not spoken yet
+    want.current = null;
+    card?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    card?.focus({ preventScroll: true });
+  }, [list]);
+}
+
+export function Live({ list, all, now, wanted = null }: { list: Session[]; all: Record<string, Session>; now: number; wanted?: string | null }) {
   const { picked, open, drawer } = useHistory(all, now);
+  useWantedSession(list, wanted);
   return (
     <main className="live">
       <PageHeader title="Live" sub={<span>{liveSentence(list)}</span>} />
@@ -142,7 +160,7 @@ export function NeedRow({ n, project, branch, now, mode, sentAt, onOpen, onStop 
 
 function SessionCard({ s, now, picked, onOpen }: { s: Session; now: number; picked?: Picked; onOpen: Open }) {
   return (
-    <section className="card sess" aria-label={`Session ${s.project}`}>
+    <section className="card sess" id={`session-${s.id}`} tabIndex={-1} aria-label={`Session ${s.project}`}>
       <div className="shead">
         <div className="who">
           <div className="l1">

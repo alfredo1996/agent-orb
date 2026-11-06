@@ -1677,7 +1677,7 @@ const OPEN_LIST = JSON.stringify([{
 }])
 const openSent = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'project.open_prs')
 const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']
-const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone']
+const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title']
 
 test('v0.4 slice 1: the open PRs are read in the checkout at session start and every 5 minutes after, and no comment text, title or commit message leaves', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
   const w = world(on)
@@ -1750,6 +1750,39 @@ test('v0.4 slice 2: a gh issue list that fails still sends the PRs, with no issu
   await w.clock.advance(5 * MIN + 2_000)
   await w.clock.advance(2_000)
   expect(openSent(w).map((e) => e.data.issues)).toEqual([undefined, [{ number: 409 }, { number: 410 }]])
+})
+
+// v0.4 slice 6 (#32): an issue's title names a row of the board, so it leaves only with Content on full, masked; an excluded project sends numbers only.
+test('v0.4 slice 6: the open issues\' titles travel with Content on full, masked, and only then', { options: { token: 'tok', content: 'full' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = JSON.stringify([{ number: 409, title: 'Retry after an expired token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789', body: 'private text', milestone: { title: 'v0.4 Factory' } }, { number: 410, milestone: null }])
+  await boot($)
+  await w.clock.advance(2_000)
+  const issues = openSent(w)[0]!.data.issues
+  expect(issues[0]).toMatchObject({ number: 409, milestone: 'v0.4 Factory', title: expect.stringContaining('Retry after an expired token') })
+  expect(issues[0].title).not.toContain('sk-ant-api03')
+  expect(issues[1]).toEqual({ number: 410 })
+  expect(JSON.stringify(w.sent())).not.toMatch(/private text/)
+})
+
+test('v0.4 slice 6: with Content off, or in an excluded project, no issue title leaves', { options: { token: 'tok' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = ISSUE_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }])
+})
+
+test('v0.4 slice 6: an excluded project sends issue numbers alone, whatever Content is set to', { options: { token: 'tok', content: 'full', excludeProjects: 'o/r' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = ISSUE_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409 }, { number: 410 }])
+  expect(JSON.stringify(w.sent())).not.toMatch(/Retry after|v0.4 Factory/)
 })
 
 // v0.4 slice 3 (#29, Factory): the Mac's free memory and its running containers, sampled once per machine however many sessions run. Only names, a few labels, state, health and memory leave.
