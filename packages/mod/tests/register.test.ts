@@ -2157,6 +2157,23 @@ test('#31 R6: a cd earlier in the command, or GH_REPO set for it, may mean anoth
   expect((await merge($, 'cd ../other && gh pr merge 12 --repo o/r')).deny).toContain("PR #12 isn't ready") // --repo names it: this one, judged
 })
 
+test('#31 R6 round 2: `cd /abs/path/to/repo && gh pr merge 12` is this repository: it is judged. A cd anywhere else still goes ahead', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on) // the session's root is /repo
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  for (const command of ['cd /repo && gh pr merge 12', 'cd /repo/packages/mod && gh pr merge 12 --squash', 'cd packages/mod && gh pr merge 12', 'cd /repo/ && git push && gh pr merge 12', 'bash -c "cd /repo && gh pr merge 12"']) {
+    expect((await merge($, command)).deny, command).toContain("PR #12 isn't ready")
+  }
+  expect(reached.n).toBe(0)
+  expect(w.logs).toEqual([])
+  for (const command of ['cd /repo-old && gh pr merge 12', 'cd /other/repo && gh pr merge 12', 'cd /repo/../other && gh pr merge 12', 'cd ~/repo && gh pr merge 12', 'cd $REPO && gh pr merge 12', 'cd /repo && cd .. && gh pr merge 12']) {
+    expect((await merge($, command)).text, command).toBe('Merged #416')
+  }
+  expect(reached.n).toBe(6)
+  expect(w.logs.every((l) => l.endsWith('a `cd` earlier in the command may have changed the repository. The merge goes ahead.'))).toBe(true)
+  expect(w.logs.length).toBe(6)
+})
+
 test('#31 R7: --disable-auto is not a merge (it turns auto-merge off), and --auto is judged like any other', opts, async ($: any, on: any) => {
   const reached = beneath(on)
   const w = world(on)
@@ -2167,27 +2184,62 @@ test('#31 R7: --disable-auto is not a merge (it turns auto-merge off), and --aut
   expect(reached.n).toBe(1)
 })
 
-test('#31 R8: a branch that moved since GitHub was read is not judged by the head that was read; read from refs/heads or packed-refs, with no process', opts, async ($: any, on: any) => {
+// #31 R8, round 2: `gh pr merge` merges the PR's remote head, so it is the remote-tracking ref (`refs/remotes/<remote>/<branch>`, the remote that is the session's) the memory's head is compared with:
+// an unpushed local commit does not move it, and a push from this checkout does.
+const CONFIG = '[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n'
+const TRACKING = '/repo/.git/refs/remotes/origin/fix/409-token-retry'
+
+test('#31 R8: a push since GitHub was read moves the remote-tracking ref, and the merge is not judged by the head that was read; loose or packed, with no process', opts, async ($: any, on: any) => {
   const reached = beneath(on)
   const w = world(on)
+  w.files['/repo/.git/config'] = CONFIG
   await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
   const procs = w.spy.procs.length
   const head = 'e4f5a6b'.padEnd(40, '0')
-  const branch = '/repo/.git/refs/heads/fix/409-token-retry'
-  w.files[branch] = `${'b'.repeat(40)}\n` // pushed again since: the memory's "open finding" is the old head's
+  w.files[TRACKING] = `${'b'.repeat(40)}\n` // pushed again from this checkout since: the memory's "open finding" is the old head's
   expect((await merge($, 'gh pr merge 416', 'toolu_a')).text).toBe('Merged #416')
   expect(w.logs).toEqual(["agent-orb can't say PR #416 is ready: the branch moved since GitHub was read. The merge goes ahead."])
-  w.files[branch] = `${head}\n` // the same head GitHub was read at: judged
+  w.files[TRACKING] = `${head}\n` // the same head GitHub was read at: judged
   expect((await merge($, 'gh pr merge 416', 'toolu_b')).deny).toContain("PR #416 isn't ready")
-  delete w.files[branch] // packed, as git leaves a branch after `git pack-refs` or a clone
-  w.files['/repo/.git/packed-refs'] = `# pack-refs with: peeled fully-peeled sorted\n${'c'.repeat(40)} refs/heads/fix/409-token-retry\n${head} refs/heads/other\n`
+  delete w.files[TRACKING] // packed, as git leaves a ref after `git pack-refs` or a clone
+  w.files['/repo/.git/packed-refs'] = `# pack-refs with: peeled fully-peeled sorted\n${'c'.repeat(40)} refs/remotes/origin/fix/409-token-retry\n${head} refs/remotes/origin/other\n`
   expect((await merge($, 'gh pr merge 416', 'toolu_c')).text).toBe('Merged #416')
-  w.files['/repo/.git/packed-refs'] = `${head} refs/heads/fix/409-token-retry\n`
+  w.files['/repo/.git/packed-refs'] = `${head} refs/remotes/origin/fix/409-token-retry\n`
   expect((await merge($, 'gh pr merge 416', 'toolu_d')).deny).toContain("PR #416 isn't ready")
   w.files['/repo/.git/packed-refs'] = ''
-  expect((await merge($, 'gh pr merge 416', 'toolu_e')).deny).toContain("PR #416 isn't ready") // no such branch here: nothing to compare
+  expect((await merge($, 'gh pr merge 416', 'toolu_e')).deny).toContain("PR #416 isn't ready") // no such ref here: nothing to compare
   expect(reached.n).toBe(2)
   expect(w.spy.procs.length).toBe(procs)
+})
+
+test('#31 R8 round 2: an unpushed local commit is not "moved": gh merges the remote head, which has not changed', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/config'] = CONFIG
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  w.files[TRACKING] = `${'e4f5a6b'.padEnd(40, '0')}\n` // what GitHub holds, as this checkout last knew it
+  w.files['/repo/.git/refs/heads/fix/409-token-retry'] = `${'d'.repeat(40)}\n` // a local commit that was never pushed
+  expect((await merge($, 'gh pr merge 416')).deny).toContain("PR #416 isn't ready")
+  w.files['/repo/.git/packed-refs'] = `${'d'.repeat(40)} refs/heads/fix/409-token-retry\n`
+  delete w.files['/repo/.git/refs/heads/fix/409-token-retry']
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).deny).toContain("PR #416 isn't ready") // packed, too
+  expect(reached.n).toBe(0)
+  expect(w.logs).toEqual([])
+})
+
+test('#31 R8 round 2: the remote is the one whose url is the session\'s, not a name guessed; with none, or its ref missing, nothing is compared and the merge is judged', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/config'] = '[remote "fork"]\n\turl = git@github.com:me/r.git\n[remote "gh"]\n\turl = https://github.com/o/r.git\n'
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  w.files['/repo/.git/refs/remotes/fork/fix/409-token-retry'] = `${'b'.repeat(40)}\n` // another remote's ref says nothing about this repository's PR
+  w.files['/repo/.git/refs/remotes/origin/fix/409-token-retry'] = `${'b'.repeat(40)}\n` // and nor does one named origin that is not the session's remote
+  expect((await merge($, 'gh pr merge 416', 'toolu_a')).deny).toContain("PR #416 isn't ready")
+  w.files['/repo/.git/refs/remotes/gh/fix/409-token-retry'] = `${'b'.repeat(40)}\n` // the session's remote is called gh
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).text).toBe('Merged #416')
+  w.files['/repo/.git/config'] = '' // no config to read: no remote to name
+  expect((await merge($, 'gh pr merge 416', 'toolu_c')).deny).toContain("PR #416 isn't ready")
+  expect(reached.n).toBe(1)
 })
 
 test('#31 R14: a merge let through tells the agent so, after the tool\'s own result, and the person in the transcript; the result itself is untouched', opts, async ($: any, on: any) => {

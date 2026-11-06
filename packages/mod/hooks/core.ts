@@ -431,6 +431,19 @@ export function parseFactory(text: string): FactoryMemory | undefined {
  * leaves the repository open to doubt (a `cd` earlier in it, or GH_REPO set for it: #31 R6), which only matters when no `--repo` names it.
  */
 export type MergeAsk = { selector?: string; repo?: string; uncertain?: 'cd' | 'GH_REPO' };
+
+/**
+ * Whether a `cd` or `pushd` stays in the session's repository (#31 R6): to an absolute path equal to, or inside, `root`, or to a relative path with no `..` part (it starts where the session did, or
+ * where an earlier cd that stayed went). A `..`, `~`, `$VAR`, `-`, a glob, no argument, several arguments or an absolute path outside the root does not.
+ * ponytail: as path strings, no process and no filesystem: a symlink or a nested repository inside the root reads as the root's. Resolve the path if one is ever seen.
+ */
+function cdStays(args: string[], root: string | undefined): boolean {
+  const dir = args[0];
+  if (args.length !== 1 || dir === undefined || dir.startsWith('-') || /[$`~*?[{]/.test(dir) || dir.split('/').includes('..')) return false;
+  if (!dir.startsWith('/')) return true;
+  const strip = (p: string) => p.replace(/\/+$/, '');
+  return !!root && (strip(dir) === strip(root) || dir.startsWith(`${strip(root)}/`));
+}
 const MERGE_VALUE_FLAGS = new Set(['-R', '--repo', '-b', '--body', '-F', '--body-file', '-t', '--subject', '-A', '--author-email', '--match-head-commit']); // `gh pr merge` flags that take a value
 const SHORT_VALUE = new Set(['R', 'b', 'F', 't', 'A']); // and their short letters, which pflag reads in a cluster: -sR o/x, -sRo/x, -sR=o/x
 
@@ -438,17 +451,18 @@ const SHORT_VALUE = new Set(['R', 'b', 'F', 't', 'A']); // and their short lette
  * Every `gh pr merge` in a Bash command, found by its argv: in each part of a chain (`&&`, `||`, `;`, `|`), inside `bash -c '…'` (the -c reading commandClass has), after a prefix a shell allows,
  * with the flags before or after the selector. `--disable-auto` turns auto-merge off and is no merge (#31 R7); `--auto` is one. Only a command's own word counts, so `echo gh pr merge 12`
  * and a commit message that says it are not one, and neither is `gh pr view 12` or `gh api …/merge` (left out on purpose, #31).
- * `moved` says a `cd` came earlier in the command that holds this one (a `bash -c` script reads the outer command's).
+ * `root` is the session's repository root, which a `cd` to it or inside it keeps in the repository (#31 R6); `moved` says an earlier `cd` did not (a `bash -c` script reads the outer command's).
  * ponytail: a naive reading of the shell, as commandClass is: no variables, aliases, `eval`, backticks, `xargs`, `watch` or script run by name (README, Known limits).
  */
-export function mergesIn(command: string, moved = false): MergeAsk[] {
+export function mergesIn(command: string, root?: string, moved = false): MergeAsk[] {
   const out: MergeAsk[] = [];
   for (const words of commands(command)) {
     const i = headIndex(words);
     const head = words[i]?.split('/').at(-1);
     const script = shellScript(words, i);
-    if (script !== undefined) out.push(...mergesIn(script, moved));
-    if (head === 'cd' || head === 'pushd' || head === 'popd') moved = true;
+    if (script !== undefined) out.push(...mergesIn(script, root, moved));
+    if (head === 'cd' || head === 'pushd') moved ||= !cdStays(words.slice(i + 1), root);
+    else if (head === 'popd') moved = true; // back to a directory this reading did not follow
     if (head !== 'gh') continue;
     const args = words.slice(i + 1);
     const positional: string[] = [];
@@ -481,6 +495,21 @@ export function mergesIn(command: string, moved = false): MergeAsk[] {
   return out;
 }
 
+/**
+ * The name of the remote in a `.git/config` whose url is the session's remote (#31 R8), where git keeps that remote's tracking refs (`refs/remotes/<name>/…`): the first that matches, nothing when none does.
+ * ponytail: two remotes with one url read as the first; `include`d config files are not read.
+ */
+export function remoteNamed(config: string, remote: string | undefined): string | undefined {
+  if (!remote) return undefined;
+  let name: string | undefined;
+  for (const line of config.split('\n')) {
+    const section = /^\s*\[(.*)\]/.exec(line);
+    if (section) name = /^remote "([^"]+)"$/.exec(section[1]!.trim())?.[1];
+    else if (name && !name.includes('..') && normalizeRemote(/^\s*url\s*=\s*(.+?)\s*$/i.exec(line)?.[1])?.toLowerCase() === remote.toLowerCase()) return name; // as repoKey compares: host and path are not case-sensitive here
+  }
+  return undefined;
+}
+
 /** `o/r`, `github.com/o/r`, an https URL or an scp remote → `github.com/o/r`, lower-cased, to compare repositories. */
 const repoKey = (s: string) => (/^[a-z][a-z0-9+.-]*:\/\/|^[^@/]+@[^:/]+:/i.test(s) ? normalizeRemote(s) : s.split('/').length === 2 ? `github.com/${s}` : s)?.replace(/\.git$/, '').toLowerCase();
 const minutesOld = (ms: number) => (ms < 60_000 ? 'under a minute' : `${Math.floor(ms / 60_000)} min`);
@@ -500,9 +529,10 @@ function reasons(pr: PrMemory): string[] {
 /**
  * Whether one `gh pr merge` goes ahead, from the plugin's memory alone (no process, no fetch). `deny` on a definite no (a condition that is false) in data 10 minutes old or less; `say` when the
  * plugin cannot tell (a condition not known, data older than that or dated in the future, a PR or a repository it has not read, a branch that moved since GitHub was read), which lets the merge go
- * ahead and prints why; nothing for a PR that is ready. `where.branch` is the session's current branch, the PR when the command names none; `where.local` the heads of the local branches (#31 R8).
+ * ahead and prints why; nothing for a PR that is ready. `where.branch` is the session's current branch, the PR when the command names none; `where.tracking` the heads this checkout last saw on
+ * the remote, by branch (`refs/remotes/<remote>/<branch>`, #31 R8): `gh pr merge` merges the PR's remote head, so an unpushed local commit is not a move, and a push from here is.
  */
-export function judgeMerge(ask: MergeAsk, where: { remote?: string; branch?: string; local?: Record<string, string | undefined> }, memory: FactoryMemory | undefined, now: number): { deny: string } | { say: string } | undefined {
+export function judgeMerge(ask: MergeAsk, where: { remote?: string; branch?: string; tracking?: Record<string, string | undefined> }, memory: FactoryMemory | undefined, now: number): { deny: string } | { say: string } | undefined {
   const say = (label: string, why: string) => ({ say: `agent-orb can't say ${label} is ready: ${why}. The merge goes ahead.` });
   let number: number | undefined;
   let branch: string | undefined;
@@ -525,8 +555,8 @@ export function judgeMerge(ask: MergeAsk, where: { remote?: string; branch?: str
   const age = now - memory.readAt;
   if (age < 0) return say(`PR #${pr.number}`, 'its GitHub data is dated in the future'); // a clock that moved: its age is not known
   if (age > REFUSE_MS) return say(`PR #${pr.number}`, `its GitHub data is ${age < REFUSE_MS + 60_000 ? 'over 10 min' : minutesOld(age)} old`);
-  const local = pr.head ? where.local?.[pr.head] : undefined;
-  if (local !== undefined && local !== pr.headOid) return say(`PR #${pr.number}`, 'the branch moved since GitHub was read'); // what was read is the old head's, in either direction (#31 R8)
+  const tracked = pr.head ? where.tracking?.[pr.head] : undefined;
+  if (tracked !== undefined && tracked !== pr.headOid) return say(`PR #${pr.number}`, 'the branch moved since GitHub was read'); // what was read is the old head's, in either direction (#31 R8)
   const conditions = Object.values(pr.conditions);
   if (conditions.some((c) => c.ok === false)) {
     return { deny: [`agent-orb refused this merge: PR #${pr.number} isn't ready.`, ...reasons(pr).map((r) => `- ${r}`), `GitHub data ${minutesOld(age)} old, head ${pr.headOid.slice(0, 7)}.`, DENY_TAIL].join('\n') };

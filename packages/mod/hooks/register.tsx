@@ -5,7 +5,7 @@ import type { OrbAgentRow, OrbEventRow, OrbView } from '../types'
 import {
   BATCH, build, capText, changesArgv, checkStalls, commandClass, enqueue, errorClass, errorShape, filesTouched, fingerprintFiles, fingerprintsFrom, fmtTokens, goalNotice, hostName, isExcluded, mask, modelLabel, newOutbox, newTracker,
   normalizeRemote, openIssuesArgv, openPrsArgv, parseChanges, parseFactory, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, toolContent, type ContentMode, type FactoryMemory, type Goal, type GoalSent,
-  backgroundFromFrontmatter, familyOf, judgeMerge, mergesIn, modelCheck, modelFromFrontmatter, pricierNotice, rejectedIn, roleFromFrontmatter, settle, statusText, stopWaits, takeBatch, tokensOf, usageOf,
+  backgroundFromFrontmatter, familyOf, judgeMerge, mergesIn, modelCheck, modelFromFrontmatter, pricierNotice, remoteNamed, rejectedIn, roleFromFrontmatter, settle, statusText, stopWaits, takeBatch, tokensOf, usageOf,
   descriptionOf, FINDINGS_ASK, preloadOf, refsIn, type CatalogAgent, type CatalogSkill, type Ctx, type Ev, type Refs, type Role, type SkillLoad,
 } from './core.ts'
 
@@ -473,17 +473,21 @@ async function currentBranch($: $): Promise<string | undefined> {
 }
 
 /**
- * v0.4 slice 5 (#31 R8): the heads of the local branches the memory's PRs are on, from `refs/heads/<branch>` or `packed-refs` of the main working tree's `.git` (a worktree's branches live there too): file reads,
- * no process. A branch that is not here has no entry, so there is nothing to compare for it.
+ * v0.4 slice 5 (#31 R8): the heads this checkout last saw on the remote for the branches the memory's PRs are on, from `refs/remotes/<remote>/<branch>` (a loose file, or `packed-refs`) of the main working
+ * tree's `.git` (a worktree shares it): file reads, no process. `<remote>` is the one in `.git/config` whose url is the session's. A branch with no such ref has no entry, so there is nothing to compare for it.
+ * It is the remote-tracking ref, not the local branch, because `gh pr merge` merges the PR's remote head: an unpushed commit moves nothing, and a push from this checkout moves it.
+ * ponytail: the ref is as new as this checkout's last push or fetch; a push from elsewhere shows once it is fetched.
  */
-async function localHeads($: $): Promise<Record<string, string | undefined>> {
+async function trackedHeads($: $): Promise<Record<string, string | undefined>> {
   const read = async (path: string) => String(await $.fs.read(path).catch(() => ''))
   const git = `${root}/.git`
+  const remote = remoteNamed(await read(`${git}/config`), ctx?.project.git_remote)
+  if (!remote) return {}
   const packed = (await read(`${git}/packed-refs`)).split('\n').map((l) => l.split(' '))
   const heads = [...new Set((factory?.prs ?? []).flatMap((p) => (p.head && !p.head.includes('..') ? [p.head] : [])))]
   return Object.fromEntries(await Promise.all(heads.map(async (b) => {
-    const loose = (await read(`${git}/refs/heads/${b}`)).trim()
-    return [b, /^[0-9a-f]{40,64}$/.test(loose) ? loose : packed.find(([sha, ref]) => ref === `refs/heads/${b}` && /^[0-9a-f]{40,64}$/.test(sha!))?.[0]]
+    const loose = (await read(`${git}/refs/remotes/${remote}/${b}`)).trim()
+    return [b, /^[0-9a-f]{40,64}$/.test(loose) ? loose : packed.find(([sha, ref]) => ref === `refs/remotes/${remote}/${b}` && /^[0-9a-f]{40,64}$/.test(sha!))?.[0]]
   })))
 }
 
@@ -492,9 +496,9 @@ async function localHeads($: $): Promise<Record<string, string | undefined>> {
  * to print while it goes ahead. A command with no merge in it costs one parse. A chain with several merges is refused whole if any one is.
  */
 async function mergeVerdict($: $, command: string): Promise<{ deny?: string; say: string[] } | undefined> {
-  const asks = mergesIn(command)
+  const asks = mergesIn(command, root)
   if (!asks.length || !ctx) return undefined
-  const where = { remote: ctx.project.git_remote, branch: asks.some((a) => !a.selector) ? await currentBranch($) : undefined, local: await localHeads($) }
+  const where = { remote: ctx.project.git_remote, branch: asks.some((a) => !a.selector) ? await currentBranch($) : undefined, tracking: await trackedHeads($) }
   const verdicts = asks.flatMap((a) => judgeMerge(a, where, factory, stamp()) ?? [])
   const deny = verdicts.flatMap((v) => ('deny' in v ? [v.deny] : []))
   return { ...(deny.length ? { deny: deny.join('\n\n') } : {}), say: verdicts.flatMap((v) => ('say' in v ? [v.say] : [])) }

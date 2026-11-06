@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { backgroundFromFrontmatter, judgeMerge, mergesIn, parseFactory, REFUSE_MS, stopWaits, type Cond, type FactoryMemory, type PrMemory } from '../hooks/core.ts';
+import { backgroundFromFrontmatter, judgeMerge, mergesIn, parseFactory, REFUSE_MS, remoteNamed, stopWaits, type Cond, type FactoryMemory, type PrMemory } from '../hooks/core.ts';
 
 // v0.4 slice 5 (#31): the merge refusal. A `gh pr merge` is found by its argv, judged from the plugin's memory of GET /api/factory, and refused only on a definite no from data that is not
 // old. The mod answers from what it holds: nothing here runs a process or a fetch.
@@ -11,7 +11,7 @@ const pr = (over: Partial<PrMemory['conditions']> = {}, rest: Partial<PrMemory> 
   conditions: { findings: ok, gate: ok, bots: ok, clean: { ok: true, note: 'CLEAN' }, ...over }, ...rest,
 });
 const memory = (prs: PrMemory[], age = 3 * MIN): FactoryMemory => ({ readAt: NOW - age, prs });
-const at: { remote?: string; branch?: string; local?: Record<string, string | undefined> } = { remote: 'github.com/o/r', branch: 'fix/409-token-retry' };
+const at: { remote?: string; branch?: string; tracking?: Record<string, string | undefined> } = { remote: 'github.com/o/r', branch: 'fix/409-token-retry' };
 // R4: the agent reads this, and its "terminal" is the Bash tool, so it is told not to go round the refusal.
 const DENY_TAIL = "Don't merge it another way (`bash -c`, `gh api`, the web page). Tell the person why it was refused; to merge anyway, they run it in their own terminal.";
 const judge = (ask: Parameters<typeof judgeMerge>[0], m: FactoryMemory | undefined, where = at) => judgeMerge(ask, where, m, NOW);
@@ -79,7 +79,36 @@ describe('mergesIn: what #31 R4, R6, R7 and R20 added', () => {
     expect(mergesIn('gh pr merge 12 && cd ../other')).toEqual([{ selector: '12' }]); // after it, not before
     expect(mergesIn('GH_TOKEN=x gh pr merge 12')).toEqual([{ selector: '12' }]); // another variable says nothing about the repository
     expect(mergesIn('cd ../other && gh pr merge 12 --repo o/r')).toEqual([{ selector: '12', repo: 'o/r' }]); // the flag names it
-    expect(mergesIn('gh pr merge 12 && cd x && gh pr merge 13')).toEqual([{ selector: '12' }, { selector: '13', uncertain: 'cd' }]);
+    expect(mergesIn('gh pr merge 12 && cd ../x && gh pr merge 13')).toEqual([{ selector: '12' }, { selector: '13', uncertain: 'cd' }]);
+  });
+
+  // Round 2: the common agent pattern `cd /abs/path/to/repo && gh pr merge 416` is this repository's, so it is judged. The root is the session's, compared as path strings.
+  it('R6 round 2: a cd to the session\'s root, to a path inside it, or to a relative path with no `..` stays in the repository', () => {
+    const root = '/Users/me/agent-orb';
+    for (const c of [`cd ${root} && gh pr merge 12`, `cd ${root}/ && gh pr merge 12`, `cd ${root}/packages/mod && gh pr merge 12`, `cd "${root}/my dir" && gh pr merge 12`, `pushd ${root} && gh pr merge 12`,
+      'cd packages/mod && gh pr merge 12', 'cd ./packages && gh pr merge 12', 'cd . && gh pr merge 12', `cd ${root} && cd src && gh pr merge 12`, `(cd ${root}; gh pr merge 12)`,
+      `cd ${root} && bash -c "gh pr merge 12"`, `bash -c "cd ${root} && gh pr merge 12"`]) {
+      expect(mergesIn(c, root), c).toEqual([{ selector: '12' }]);
+    }
+  });
+
+  it('R6 round 2: anything else stays unknown: `..`, ~, a variable, -, no argument, an absolute path outside the root (a sibling that shares its prefix too), and every cd must stay inside', () => {
+    const root = '/Users/me/agent-orb';
+    for (const c of ['cd .. && gh pr merge 12', 'cd ../other && gh pr merge 12', 'cd packages/../.. && gh pr merge 12', `cd ${root}/../other && gh pr merge 12`, `cd ${root}/.. && gh pr merge 12`,
+      'cd ~ && gh pr merge 12', 'cd ~/other && gh pr merge 12', 'cd $OTHER && gh pr merge 12', 'cd "$OTHER/x" && gh pr merge 12', `cd ${root}/$X && gh pr merge 12`, 'cd - && gh pr merge 12', 'cd && gh pr merge 12',
+      'cd /Users/me/other && gh pr merge 12', `cd ${root}-old && gh pr merge 12`, `cd ${root}2/x && gh pr merge 12`, 'cd /Users/me && gh pr merge 12', 'cd / && gh pr merge 12', 'cd -P /tmp && gh pr merge 12',
+      `cd ${root} b && gh pr merge 12`, `cd ${root} && cd /Users/me/other && gh pr merge 12`, `cd /Users/me/other && cd ${root} && gh pr merge 12`, `cd ${root} && popd && gh pr merge 12`,
+      `cd ${root} && bash -c "cd .. && gh pr merge 12"`]) {
+      expect(mergesIn(c, root), c).toEqual([{ selector: '12', uncertain: 'cd' }]);
+    }
+  });
+
+  it('R6 round 2: with no root known only a relative cd stays inside; GH_REPO is not masked by a cd that stays, and --repo still names the repository', () => {
+    expect(mergesIn('cd packages/mod && gh pr merge 12')).toEqual([{ selector: '12' }]);
+    expect(mergesIn('cd /Users/me/agent-orb && gh pr merge 12')).toEqual([{ selector: '12', uncertain: 'cd' }]);
+    expect(mergesIn('cd /Users/me/agent-orb && gh pr merge 12', undefined)).toEqual([{ selector: '12', uncertain: 'cd' }]);
+    expect(mergesIn('cd /Users/me/agent-orb && GH_REPO=o/other gh pr merge 12', '/Users/me/agent-orb')).toEqual([{ selector: '12', uncertain: 'GH_REPO' }]);
+    expect(mergesIn('cd /elsewhere && gh pr merge 12 --repo o/r', '/Users/me/agent-orb')).toEqual([{ selector: '12', repo: 'o/r' }]);
   });
 
   it('R7: --disable-auto turns auto-merge off and is not a merge; --auto is a merge request like any other', () => {
@@ -249,12 +278,24 @@ describe('judgeMerge: what #31 R6, R8, R9, R21 and R22 added', () => {
   });
 
   it('R8: a branch that moved since GitHub was read is not judged by the head that was read, in either direction', () => {
-    const moved = { ...at, local: { 'fix/409-token-retry': 'a'.repeat(40) } };
+    const moved = { ...at, tracking: { 'fix/409-token-retry': 'a'.repeat(40) } };
     expect(judge({ selector: '416' }, memory([no]), moved)).toEqual({ say: "agent-orb can't say PR #416 is ready: the branch moved since GitHub was read. The merge goes ahead." });
     expect(judge({ selector: '416' }, memory([pr()]), moved)).toHaveProperty('say'); // ready on the old head: not a pass for the new one
-    expect(judge({ selector: '416' }, memory([no]), { ...at, local: { 'fix/409-token-retry': no.headOid } })).toHaveProperty('deny'); // the same head: judged
-    expect(judge({ selector: '416' }, memory([no]), { ...at, local: {} })).toHaveProperty('deny'); // a branch that is not here (a fork's, or deleted) has nothing to compare
-    expect(judge({ selector: '416' }, memory([no]), { ...at, local: { 'feat/other': 'b'.repeat(40) } })).toHaveProperty('deny'); // another branch's head says nothing
+    expect(judge({ selector: '416' }, memory([no]), { ...at, tracking: { 'fix/409-token-retry': no.headOid } })).toHaveProperty('deny'); // the same head: judged
+    expect(judge({ selector: '416' }, memory([no]), { ...at, tracking: {} })).toHaveProperty('deny'); // a branch that is not here (a fork's, or deleted) has nothing to compare
+    expect(judge({ selector: '416' }, memory([no]), { ...at, tracking: { 'feat/other': 'b'.repeat(40) } })).toHaveProperty('deny'); // another branch's head says nothing
+  });
+
+  it('R8 round 2: the remote that is the session\'s is found in .git/config by its url, whatever it is called; none matching is none', () => {
+    const cfg = '[core]\n\trepositoryformatversion = 0\n[remote "fork"]\n\turl = git@github.com:me/r.git\n\tfetch = +refs/heads/*:refs/remotes/fork/*\n[remote "gh"]\n\turl = https://github.com/o/r.git\n\tfetch = +refs/heads/*:refs/remotes/gh/*\n[branch "dev"]\n\tremote = fork\n';
+    expect(remoteNamed(cfg, 'github.com/o/r')).toBe('gh');
+    expect(remoteNamed(cfg, 'github.com/me/r')).toBe('fork');
+    expect(remoteNamed('[remote "origin"]\n\turl = ssh://git@github.com/O/R\n', 'github.com/o/r')).toBe('origin'); // normalizeRemote lower-cases
+    expect(remoteNamed(cfg, 'github.com/o/other')).toBeUndefined();
+    expect(remoteNamed(cfg, undefined)).toBeUndefined();
+    expect(remoteNamed('', 'github.com/o/r')).toBeUndefined();
+    expect(remoteNamed('[branch "gh"]\n\turl = https://github.com/o/r.git\n', 'github.com/o/r')).toBeUndefined(); // a url outside a remote section is no remote
+    expect(remoteNamed('[remote "../x"]\n\turl = https://github.com/o/r.git\n', 'github.com/o/r')).toBeUndefined(); // a name that walks out of refs/remotes is not used
   });
 
   it('R9: data dated in the future (a clock that moved) is not trusted, by even a millisecond; now is not the future', () => {
