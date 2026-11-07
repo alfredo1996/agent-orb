@@ -10,7 +10,12 @@ const usage = { input_tokens: 2, output_tokens: 218, cache_read_input_tokens: 12
 type Answer = { status: number; text?: string } | 'hang'
 function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }), withStep = true, stored: Record<string, unknown> = {}) {
   const clock = mock.clock(on, { now: T0 })
-  mock.store(on, stored)
+  // The engine's shared store ($.store), as one plain object a test can read: mock.store keeps its copy to itself, and what another session finds in the store is the thing under test (#29).
+  const store: Record<string, unknown> = { ...stored }
+  on('store.get', (_$: any, e: any) => ({ value: store[e.key] }))
+  on('store.set', (_$: any, e: any) => ((store[e.key] = e.value), { value: undefined }))
+  on('store.delete', (_$: any, e: any) => (delete store[e.key], { value: undefined }))
+  on('store.keys', () => ({ value: Object.keys(store) }))
   mock.env(on, { HOME: '/home/none' })
   const posts: any[][] = []
   const statuses: (string | undefined)[] = []
@@ -41,26 +46,65 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   const git = { log: '', exitCode: 0, hang: false, calls: [] as string[][] }
   // v0.2 slice 3: `git -C <cwd> rev-parse --show-toplevel` answers the session's own working tree (a test points it at a worktree), and
   // `git -C <dir> branch --show-current` answers per directory (the main checkout and a worktree are on different branches).
-  const tree = { toplevel: '/repo', exitCode: 0, branches: {} as Record<string, string>, calls: [] as string[][] }
+  const tree = { toplevel: '/repo', exitCode: 0, branches: {} as Record<string, string>, calls: [] as string[][],
+    // #34: `git -C <dir> rev-parse HEAD` answers `head`, and `git -C <dir> status --porcelain --untracked-files=no` answers `status` (empty: a clean tree)
+    head: 'a1b2c3d'.padEnd(40, '9'), status: '', reads: [] as string[][] }
   // v0.2 slice 3: `git hash-object --stdin-paths` answers one blob id per path on stdin (a stand-in for git's: a function of the file's text).
   const hash = { calls: [] as { argv: readonly string[]; cwd?: string; stdin?: string }[], exitCode: 0, hang: false }
   // v0.3 slice 2 (#42): `gh pr list --state merged ...` answers `gh.out` (a test sets it before the session starts), exits with `gh.exitCode`, never
   // answers (`hang`), or is not installed (`missing`: the call rejects).
-  const gh = { out: '', exitCode: 0, hang: false, missing: false, calls: [] as { argv: readonly string[]; cwd?: string }[] }
+  const gh = { out: '', exitCode: 0, hang: false, missing: false, mergedExit: undefined as number | undefined, calls: [] as { argv: readonly string[]; cwd?: string }[],
+    // v0.4 slice 1 (#27): `gh pr list --state open ...` answers `gh.open`, and is recorded in `openCalls` (not `calls`, which is the merged list's)
+    open: '', openCalls: [] as { argv: readonly string[]; cwd?: string }[],
+    // v0.4 slice 2 (#28): `gh issue list --state open ...` answers `gh.issues` (empty: gh printed nothing usable) and is recorded in `issueCalls`
+    issues: '', issueCalls: [] as { argv: readonly string[]; cwd?: string }[] }
   // #107: `uname -s` names the platform and `scutil --get LocalHostName` the Mac's own name; `hostname -s` ('mbp') is the network's. Linux by default,
   // so a test that wants a Mac sets `os` before the session starts. `scutilExit` non-zero makes scutil fail as it does when no LocalHostName is set.
   const machine = { os: 'Linux', localHostName: 'Alfredos-MacBook-Pro-4', scutilExit: 0, calls: [] as string[][] }
+  // v0.4 slice 3 (#29): `docker ps` and `docker stats` answer `dock.ps` and `dock.stats` while `mode` is 'ok'; 'absent' rejects as a binary that is not installed does (worded here so that nothing
+  // can lean on its text) and `sh -c 'command -v docker'` finds none, 'stopped' exits 1 as a daemon that is down does, 'hang' never answers. `vm_stat`, `sysctl -n hw.memsize` and
+  // `cat /proc/meminfo` answer the three memory fields. Every call is recorded.
+  const dock = { mode: 'absent' as 'ok' | 'absent' | 'stopped' | 'hang', ps: '', stats: '', vmStat: '', memsize: '', meminfo: '', calls: [] as string[][] }
+  // v0.4 slice 5 (#31): GET /api/factory answers `factory` (the open PRs as the server judged them) and GET /api/stop answers `stop.queued` once; every process and fetch is recorded, for the test that
+  // proves a refusal ran none, and so are the `ui.log` lines and the turns `turn.abort` was asked to end (`abort.reject`: the turn is not the running one).
+  const factory = { prs: [] as any[], readAt: T0 as number | null, mode: 'ok' as 'ok' | 'throw' | 'garbage', calls: [] as string[] }
+  // The stop the studio queued names the stall it was clicked for (#31 R1: `agent` and the stall's `since`); the poll's requests are recorded with the headers they carried (R10).
+  const stop = { queued: false, agent: 'main', since: 0, mode: 'ok' as 'ok' | 'throw', calls: [] as string[], headers: [] as Record<string, string>[] }
+  const abort = { calls: [] as string[], reject: false }
+  const logs: string[] = []
+  const spy = { procs: [] as string[][], fetches: [] as string[], reads: [] as string[] }
+  on('ui.log', (_$: any, e: any) => (logs.push(e.text), { value: undefined }))
+  on('turn.abort', (_$: any, e: any) => {
+    abort.calls.push(e.turnId)
+    if (abort.reject) throw new Error(`turn ${e.turnId} is not the running turn`)
+    return { value: undefined }
+  })
   on('process.run', (_$: any, e: any) => {
+    spy.procs.push(e.argv)
+    if (e.argv[0] === 'sh' && e.argv[2] === 'command -v docker') {
+      dock.calls.push(e.argv)
+      return { value: { exitCode: dock.mode === 'absent' ? 1 : 0, stdout: dock.mode === 'absent' ? '' : '/usr/local/bin/docker\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
+    if (e.argv[0] === 'docker' || e.argv[0] === 'vm_stat' || e.argv[0] === 'sysctl' || (e.argv[0] === 'cat' && e.argv[1] === '/proc/meminfo')) {
+      dock.calls.push(e.argv)
+      const out = { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+      if (e.argv[0] !== 'docker') return { value: { ...out, stdout: e.argv[0] === 'vm_stat' ? dock.vmStat : e.argv[0] === 'sysctl' ? dock.memsize : dock.meminfo } }
+      if (dock.mode === 'hang') return new Promise(() => {})
+      if (dock.mode === 'absent') return { deny: 'could not start docker' }
+      return { value: dock.mode === 'stopped' ? { ...out, exitCode: 1, stderr: 'Cannot connect to the Docker daemon' } : { ...out, stdout: e.argv[1] === 'ps' ? dock.ps : dock.stats } }
+    }
     if (e.argv[0] === 'uname' || e.argv[0] === 'scutil') {
       machine.calls.push(e.argv)
       const out = e.argv[0] === 'uname' ? `${machine.os}\n` : machine.scutilExit ? '' : `${machine.localHostName}\n`
       return { value: { exitCode: e.argv[0] === 'uname' ? 0 : machine.scutilExit, stdout: out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
     if (e.argv[0] === 'gh') {
-      gh.calls.push({ argv: e.argv, cwd: e.init?.cwd })
+      const issue = e.argv[1] === 'issue'
+      const open = !issue && e.argv.includes('open')
+      ;(issue ? gh.issueCalls : open ? gh.openCalls : gh.calls).push({ argv: e.argv, cwd: e.init?.cwd })
       if (gh.hang) return new Promise(() => {})
       if (gh.missing) return { deny: 'spawn gh ENOENT' }
-      return { value: { exitCode: gh.exitCode, stdout: gh.out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      return { value: { exitCode: !issue && !open && gh.mergedExit !== undefined ? gh.mergedExit : gh.exitCode, stdout: issue ? gh.issues : open ? gh.open : gh.out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
     const isLog = e.argv[0] === 'git' && e.argv[3] === 'log'
     if (isLog) git.calls.push(e.argv)
@@ -71,6 +115,10 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
       const paths = String(e.init?.stdin ?? '').split('\n').filter(Boolean)
       const stdout = hash.exitCode ? 'fatal: could not open\n' : paths.map((path) => blobOf(files[path] ?? '')).join('\n') + (paths.length ? '\n' : '')
       return { value: { exitCode: hash.exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    }
+    if (e.argv[0] === 'git' && (e.argv[4] === 'HEAD' || e.argv[3] === 'status')) {
+      tree.reads.push(e.argv)
+      return { value: { exitCode: 0, stdout: e.argv[3] === 'status' ? tree.status : `${tree.head}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
     if (e.argv[0] === 'git' && e.argv[3] === 'rev-parse') {
       tree.calls.push(e.argv)
@@ -88,12 +136,27 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
     if (!entries.size) return { deny: `ENOENT: ${e.path}` }
     return { value: [...entries].map(([name, kind]) => ({ name, kind, size: 0, mtimeMs: 0, isLink: false })) }
   })
-  on('fs.read', (_$: any, e: any) => ({ value: files[e.path] ?? '' }))
+  on('fs.read', (_$: any, e: any) => (spy.reads.push(e.path), { value: files[e.path] ?? '' }))
   on('ui.status', (_$: any, e: any) => (statuses.push(e.text), { value: undefined }))
   on('ui.notify', (_$: any, e: any) => (notes.push(e.text), titles.push(e.title), { value: { isSent: true, channel: 'test' } }))
   // v0.2 slice 3: GET /api/goal answers what `goal` says; a test sets it before or while the session runs.
   const goal = { goal: null as number | null, spent: 0, month: '2026-10', status: 200, mode: 'ok' as 'ok' | 'throw' | 'hang' | 'garbage', calls: [] as string[] }
   on('http.fetch', (_$: any, e: any) => {
+    spy.fetches.push(String(e.url))
+    if (String(e.url).includes('/api/factory')) {
+      factory.calls.push(e.url)
+      if (factory.mode === 'throw') throw new Error('connection refused')
+      const text = factory.mode === 'garbage' ? '<html>a proxy answered</html>' : JSON.stringify({ project: 'r', readAt: factory.readAt, prs: factory.prs })
+      return { value: { status: 200, ok: true, headers: {}, text } }
+    }
+    if (String(e.url).includes('/api/stop')) {
+      stop.calls.push(e.url)
+      stop.headers.push(e.init?.headers ?? {})
+      if (stop.mode === 'throw') throw new Error('connection refused')
+      const taken = stop.queued
+      stop.queued = false // handed out once
+      return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ session: 's-1', stop: taken, ...(taken ? { agent: stop.agent, since: stop.since } : {}) }) } }
+    }
     if (String(e.url).includes('/api/goal')) {
       goal.calls.push(e.url)
       if (goal.mode === 'hang') return new Promise(() => {})
@@ -111,10 +174,11 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
     return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use', usage }
   })
   // v0.2 slice 2: what the engine answers to a spawn, a test sets it (the model the agent resolved to, and its id) before spawning.
-  const engine = { model: 'claude-sonnet-5-5', agentId: 'a-child' }
-  on('agent.spawn', () => ({ model: engine.model, agentId: engine.agentId }))
+  // #34: the prompt each subagent was started with, as the engine received it beneath the mod.
+  const engine = { model: 'claude-sonnet-5-5', agentId: 'a-child', prompts: [] as string[] }
+  on('agent.spawn', (_$: any, e: any) => (engine.prompts.push(e.prompt), { model: engine.model, agentId: engine.agentId }))
   const sent = () => posts.flat()
-  return { clock, posts, sent, statuses, notes, titles, git, files, engine, hash, goal, tree, gh, repo, machine }
+  return { clock, posts, sent, statuses, notes, titles, git, files, engine, hash, goal, tree, gh, repo, machine, dock, store, factory, stop, abort, logs, spy }
 }
 
 // A stand-in for a git blob id: 40 hex characters that are a function of the text.
@@ -1399,4 +1463,1100 @@ test('v0.3 slice 2: a project with no remote links nothing', opts, async ($: any
   await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_1', command: 'gh pr create' })
   await w.clock.advance(2_000)
   expect(linksSent(w)).toEqual([])
+})
+
+// ── v0.4 slice 1 (#27, Factory): the findings and gate blocks, and the open PRs ──
+const REVIEWER = '---\nname: reviewer\norb-role: reviewer\n---\nReview it.'
+const TESTER = '---\nname: test-runner\norb-role: tester\n---\nRun the gate.'
+const FINDINGS = ['Two left.', '```orb-findings', 'F12 major src/auth/refresh.ts open | Two refreshes race, token ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789',
+  'F09 minor src/net/client.ts dismissed | Timeout is not a constant | Used once, so no config', 'F03 major src/auth/refresh.ts fixed | Written before the check', 'not a finding', '```'].join('\n')
+const reportsSent = (w: ReturnType<typeof world>, kind = 'findings.report') => w.sent().filter((e) => e.kind === kind)
+// A subagent of `type` that ends its run with `answer`; the branch the checkout is on by then is `branch`.
+async function reportBy($: any, w: ReturnType<typeof world>, type: string, answer: string, branch = 'fix/409-token-retry') {
+  w.engine.agentId = `a-${type}`
+  await $.agent.spawn(spawnArgs({ tool_use_id: `toolu_${type}`, subagentType: type }))
+  await $.turn.start({ text: 'go', turnId: `t-${type}`, agentId: `a-${type}` })
+  w.tree.branches['/repo'] = branch
+  await $.turn.complete({ turnId: `t-${type}`, agentId: `a-${type}`, answer, durationMs: 1_000, isAborted: false, reason: 'answer' })
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+}
+
+test('v0.4 slice 1: a reviewer\'s findings block sends one findings.report on the checkout\'s branch as the report ended; with Content off, no title or reason', opts, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  w.tree.branches['/repo'] = 'claude/the-worktree' // the branch at session start; the session moved to its issue branch since
+  await boot($)
+  await reportBy($, w, 'reviewer', FINDINGS)
+  const [r, ...more] = reportsSent(w)
+  expect(more).toEqual([])
+  expect(r.agent_id).toBe('a-reviewer')
+  expect(r.turn_id).toBe('t-reviewer')
+  expect(r.data).toEqual({ branch: 'fix/409-token-retry', dropped: 1, findings: [
+    { id: 'F12', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open' },
+    { id: 'F09', severity: 'minor', file: 'src/net/client.ts', fate: 'dismissed' },
+    { id: 'F03', severity: 'major', file: 'src/auth/refresh.ts', fate: 'fixed' },
+  ] })
+  expect(JSON.stringify(w.sent())).not.toMatch(/race|Timeout|Used once|Written before|ghp_/)
+})
+
+test('v0.4 slice 1: a developer\'s block is read too, and Content on full sends the title and a dismissal\'s reason, masked', { options: { token: 'tok', content: 'full' } }, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  await boot($)
+  await reportBy($, w, 'implementer', FINDINGS) // implementer.md says orb-role: developer
+  expect(reportsSent(w).map((e) => e.data.findings.map((f: any) => [f.id, f.title, f.why]))).toEqual([[
+    ['F12', 'Two refreshes race, token [REDACTED]', undefined],
+    ['F09', 'Timeout is not a constant', 'Used once, so no config'],
+    ['F03', 'Written before the check', undefined],
+  ]])
+})
+
+test('v0.4 slice 1: an excluded project sends no findings and no gate, whatever Content is set to', { options: { token: 'tok', content: 'full', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  on('tool.call', () => ({ result: 'ok', text: 'Tests 12 passed' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  await boot($)
+  await reportBy($, w, 'reviewer', FINDINGS)
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_t', command: 'pnpm test' }) // a passing run on a clean tree
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+  expect(w.sent().filter((e) => e.kind === 'agent.complete')).toHaveLength(1) // the agent ran and ended
+  expect(w.sent().filter((e) => e.kind === 'tool.call').map((e) => e.data.command_class)).toEqual(['test']) // and the run was seen
+  expect([...reportsSent(w), ...reportsSent(w, 'gate.report')]).toEqual([])
+})
+
+test('v0.4 slice 1: an excluded project with Content off sends neither block either', { options: { token: 'tok', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  await boot($)
+  await reportBy($, w, 'reviewer', FINDINGS)
+  expect(reportsSent(w)).toEqual([])
+})
+
+test('#34: findings parse from any subagent\'s report, with no orb-role: no file, a file with no role, any role; an orb-gate block is no longer read', opts, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/test-runner.md'] = TESTER
+  await boot($)
+  await reportBy($, w, 'general-purpose', FINDINGS) // no agent file
+  await reportBy($, w, 'scout', FINDINGS) // scout.md has no orb-role
+  await reportBy($, w, 'test-runner', `All green.\n\`\`\`orb-gate\npass ${'a1b2c3d'.padEnd(40, '9')}\n\`\`\`\n${FINDINGS}`) // a tester's
+  await reportBy($, w, 'Explore', 'Nothing to review here.') // no block: no report
+  expect(reportsSent(w).map((e) => [e.agent_id, e.data.branch, e.data.findings.map((f: any) => f.id)])).toEqual(['a-general-purpose', 'a-scout', 'a-test-runner'].map((a) => [a, 'fix/409-token-retry', ['F12', 'F09', 'F03']]))
+  expect(reportsSent(w, 'gate.report')).toEqual([])
+})
+
+// ── #34: the plugin asks every subagent for the findings block, and reads the gate from the test runs it sees ──
+test('#34: a subagent is started with its prompt and the findings paragraph, once; a brief that has it already, a resume and a workflow agent are left as they are', opts, async ($: any, on: any) => {
+  const w = world(on)
+  await boot($)
+  await $.agent.spawn(spawnArgs({ subagentType: 'general-purpose' }))
+  const [asked = ''] = w.engine.prompts
+  expect(asked.startsWith('build it\n\n')).toBe(true) // the caller's task first, untouched
+  expect(asked).toMatch(/only if your task was to review code or to fix review findings/)
+  expect(asked.match(/```orb-findings/g)).toHaveLength(1)
+  w.engine.agentId = 'a-2'
+  await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_2', prompt: asked })) // a re-dispatch of the brief the engine was given
+  await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_3', prompt: 'go on', resume: { agentId: 'a-child' } })) // its prompt is the resuming message
+  await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_4', prompt: 'review it', workflow: { runId: 'wf_1', agentIndex: 1 } })) // the engine ignores a rewrite of one
+  await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_5', prompt: 'fix it', subagentType: 'fork', fork: true }))
+  expect(w.engine.prompts.slice(1)).toEqual([asked, 'go on', 'review it', asked.replace('build it', 'fix it')])
+  await w.clock.advance(2_000)
+  expect(spawned(w)[0].data.prompt_length).toBe(8) // the event measures the caller's task, not the paragraph
+})
+
+test('#34: with the findings ask off, prompts go as they are, and a block an agent writes on its own is still read', { options: { token: 'tok', askFindings: 'off' } }, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  await boot($)
+  await $.agent.spawn(spawnArgs())
+  await reportBy($, w, 'general-purpose', FINDINGS)
+  expect(w.engine.prompts).toEqual(['build it', 'build it'])
+  expect(reportsSent(w)).toHaveLength(1)
+})
+
+test('#34: an excluded project\'s subagents are not asked', { options: { token: 'tok', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
+  const w = world(on)
+  await boot($)
+  await $.agent.spawn(spawnArgs())
+  expect(w.engine.prompts).toEqual(['build it'])
+})
+
+test('#34: a passing test run on a clean tree sends gate.report pass on HEAD, and a failing one fail', opts, async ($: any, on: any) => {
+  let answer: object = { result: 'r', text: 'Tests 12 passed' }
+  on('tool.call', () => answer)
+  const w = world(on)
+  await boot($)
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_t1', command: 'pnpm test' })
+  await w.clock.advance(2_000)
+  answer = { result: 'r', isError: true, text: 'Exit code 1\nFAIL src/auth/refresh.test.ts' }
+  w.tree.head = 'c0d1e2f'.padEnd(40, '0')
+  w.engine.agentId = 'a-tester'
+  await $.agent.spawn(spawnArgs({ subagentType: 'test-runner' }))
+  await $.turn.start({ text: 'go', turnId: 't-tester', agentId: 'a-tester' })
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_t2', command: 'cd /repo && npx vitest run', agentId: 'a-tester' })
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+  expect(reportsSent(w, 'gate.report').map((e) => [e.agent_id, e.turn_id, e.data])).toEqual([
+    [undefined, 't-1', { result: 'pass', commit: 'a1b2c3d'.padEnd(40, '9') }],
+    ['a-tester', 't-tester', { result: 'fail', commit: 'c0d1e2f'.padEnd(40, '0') }],
+  ])
+  expect(w.tree.reads).toContainEqual(['git', '-C', '/repo', 'rev-parse', 'HEAD'])
+  expect(w.tree.reads).toContainEqual(['git', '-C', '/repo', 'status', '--porcelain', '--untracked-files=no'])
+})
+
+test('#34: a dirty tree, a command that is no test run, a run sent to the background and a refused one send no gate', opts, async ($: any, on: any) => {
+  let answer: object = { result: 'r', text: 'Tests 12 passed' }
+  on('tool.call', () => answer)
+  const w = world(on)
+  await boot($)
+  w.tree.status = ' M src/auth/refresh.ts\n'
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_d', command: 'pnpm test' }) // it tested the commit plus an edit
+  await w.clock.advance(2_000)
+  const dirtyReads = w.tree.reads.length
+  w.tree.status = ''
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_l', command: 'ls test' })
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_g', command: 'git commit -m "pnpm test"' })
+  await $.tool.call({ tool: 'Read', tool_use_id: 'toolu_r', file_path: '/repo/package.json' })
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_b', command: 'pnpm test', run_in_background: true }) // its result is "started", not the run's
+  answer = { deny: 'Permission for this action was denied by the Claude Code auto mode classifier.' }
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_x', command: 'pnpm test' }) // it never ran
+  answer = { result: 'r', isError: true, text: 'PreToolUse:Bash hook error: BLOCKED' }
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_h', command: 'pnpm test' }) // nor did this one
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+  expect(reportsSent(w, 'gate.report')).toEqual([])
+  expect(dirtyReads).toBeGreaterThan(0) // the dirty run asked git
+  expect(w.tree.reads).toHaveLength(dirtyReads) // and nothing after it did
+})
+
+test('v0.4 slice 1: a branch past 200 characters is cut as the open-PR read cuts a head, so the two still join and the server takes the event', opts, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  await boot($)
+  await reportBy($, w, 'reviewer', FINDINGS, `feat/${'x'.repeat(250)}`)
+  expect(reportsSent(w).map((e) => e.data.branch)).toEqual([`feat/${'x'.repeat(195)}`])
+})
+
+test('v0.4 slice 1: a report on a detached head (no branch) sends no findings: there is no PR to join them to', opts, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  await boot($)
+  await reportBy($, w, 'reviewer', FINDINGS, '')
+  expect(reportsSent(w)).toEqual([])
+})
+
+test('v0.4 slice 1: a fence that names its PR (#416) sends the number, with the branch when there is one, and goes even from a detached head', opts, async ($: any, on: any) => {
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  await boot($)
+  const named = FINDINGS.replace('```orb-findings', '```orb-findings #416')
+  await reportBy($, w, 'reviewer', named, 'feat/412-queue') // the checkout is on another PR's branch
+  w.engine.agentId = 'a-reviewer-2'
+  await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_r2', subagentType: 'reviewer' }))
+  await $.turn.start({ text: 'go', turnId: 't-r2', agentId: 'a-reviewer-2' })
+  w.tree.branches['/repo'] = ''
+  await $.turn.complete({ turnId: 't-r2', agentId: 'a-reviewer-2', answer: named, durationMs: 1, isAborted: false, reason: 'answer' })
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+  expect(reportsSent(w).map((e) => [e.data.pr, e.data.branch, e.data.findings.length])).toEqual([[416, 'feat/412-queue', 3], [416, undefined, 3]])
+})
+
+const OPEN_LIST = JSON.stringify([{
+  number: 416, headRefName: 'fix/409-token-retry', headRefOid: 'e'.repeat(40), mergeStateStatus: 'UNSTABLE', mergeable: 'MERGEABLE', title: 'Retry after an expired token',
+  statusCheckRollup: [{ __typename: 'CheckRun', name: 'Unit tests', status: 'COMPLETED', conclusion: 'SUCCESS' }],
+  comments: [{ author: { login: 'coderabbitai' }, body: 'The refresh races with logout', createdAt: '2026-11-01T15:10:51Z' }, { author: { login: 'someone' }, body: 'Ship it', createdAt: '2026-11-01T15:20:00Z' }],
+  reviews: [], commits: [{ oid: 'e'.repeat(40), committedDate: '2026-11-01T15:04:42Z', messageHeadline: 'fix: retry the refresh' }],
+}])
+const openSent = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'project.open_prs')
+const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']
+const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title']
+
+test('v0.4 slice 1: the open PRs are read in the checkout at session start and every 5 minutes after, and no comment text, title or commit message leaves', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = OPEN_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.openCalls).toEqual([{ argv: OPEN_ARGV, cwd: '/repo' }])
+  await w.clock.advance(4 * MIN)
+  expect(w.gh.openCalls).toHaveLength(1)
+  await w.clock.advance(MIN + 2_000)
+  expect(w.gh.openCalls).toHaveLength(2)
+  await w.clock.advance(2_000)
+  expect(openSent(w).map((e) => e.data)).toEqual([0, 1].map(() => ({ prs: [{
+    number: 416, head: 'fix/409-token-retry', issue: 409, head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: Date.parse('2026-11-01T15:04:42Z'),
+    checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: Date.parse('2026-11-01T15:10:51Z') }],
+  }] })))
+  expect(JSON.stringify(w.sent())).not.toMatch(/races|Ship it|someone|Retry after|retry the refresh|MERGEABLE/)
+})
+
+test('v0.4 slice 1: an excluded project\'s open PRs go without branch names; a gh that is not logged in sends nothing', { options: { token: 'tok', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = OPEN_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(openSent(w).map((e) => e.data.prs.map((p: any) => [p.number, 'head' in p]))).toEqual([[[416, false]]])
+  w.gh.open = 'To get started with GitHub CLI, please run:  gh auth login'
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.openCalls).toHaveLength(2)
+  expect(openSent(w)).toHaveLength(1)
+})
+
+test('v0.4 slice 1: a gh that never answers holds up nothing, and is not asked again meanwhile', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  on('tool.call', () => ({ result: 'ok', text: 'ok' }))
+  const w = world(on)
+  w.gh.hang = true
+  await boot($)
+  const r = await $.tool.call({ tool: 'Read', tool_use_id: 'toolu_r', file_path: '/repo/a.ts' })
+  expect(r.text).toBe('ok')
+  await w.clock.advance(11 * MIN)
+  expect(w.gh.openCalls).toHaveLength(1)
+  expect(w.sent().map((e) => e.kind)).toContain('session.start')
+})
+
+// v0.4 slice 2 (#28): the open issues' milestones are read with the PRs, in the same event; a PR's opening time and the issue it closes come with it, its body goes no further.
+const ISSUE_LIST = JSON.stringify([{ number: 409, title: 'Retry after an expired token', body: 'private text', milestone: { number: 3, title: 'v0.4 Factory' } }, { number: 410, milestone: null }])
+const BODY_LIST = JSON.stringify([{ ...JSON.parse(OPEN_LIST)[0], headRefName: 'chore/router', createdAt: '2026-11-01T14:10:00Z', body: 'Vault key plan.\n\nCloses #409' }])
+
+test('v0.4 slice 2: the open issues\' milestones travel with the open PRs, and a PR\'s body leaves as the number it closes', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = ISSUE_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.issueCalls).toEqual([{ argv: ISSUES_ARGV, cwd: '/repo' }])
+  expect(w.gh.openCalls).toHaveLength(1) // the issue read is no second PR read
+  expect(openSent(w).map((e) => e.data)).toEqual([{ prs: [expect.objectContaining({ number: 416, created_at: Date.parse('2026-11-01T14:10:00Z'), issue: 409 })], issues: [{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }] }])
+  expect(JSON.stringify(w.sent())).not.toMatch(/Vault key|Closes|private text|Retry after an expired/)
+})
+
+test('v0.4 slice 2: a gh issue list that fails still sends the PRs, with no issues key; an excluded project sends issue numbers and no milestone', { options: { token: 'tok', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = 'To get started with GitHub CLI, please run:  gh auth login'
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(openSent(w).map((e) => 'issues' in e.data)).toEqual([false])
+  expect(openSent(w)[0]!.data.prs[0]).toMatchObject({ issue: 409 })
+  w.gh.issues = ISSUE_LIST
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(openSent(w).map((e) => e.data.issues)).toEqual([undefined, [{ number: 409 }, { number: 410 }]])
+})
+
+// v0.4 slice 6 (#32): an issue's title names a row of the board, so it leaves only with Content on full, masked; an excluded project sends numbers only.
+test('v0.4 slice 6: the open issues\' titles travel with Content on full, masked, and only then', { options: { token: 'tok', content: 'full' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = JSON.stringify([{ number: 409, title: 'Retry after an expired token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789', body: 'private text', milestone: { title: 'v0.4 Factory' } }, { number: 410, milestone: null }])
+  await boot($)
+  await w.clock.advance(2_000)
+  const issues = openSent(w)[0]!.data.issues
+  expect(issues[0]).toMatchObject({ number: 409, milestone: 'v0.4 Factory', title: expect.stringContaining('Retry after an expired token') })
+  expect(issues[0].title).not.toContain('sk-ant-api03')
+  expect(issues[1]).toEqual({ number: 410 })
+  expect(JSON.stringify(w.sent())).not.toMatch(/private text/)
+})
+
+test('v0.4 slice 6: with Content off, or in an excluded project, no issue title leaves', { options: { token: 'tok' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = ISSUE_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }])
+})
+
+test('v0.4 slice 6: an excluded project sends issue numbers alone, whatever Content is set to', { options: { token: 'tok', content: 'full', excludeProjects: 'o/r' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = ISSUE_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409 }, { number: 410 }])
+  expect(JSON.stringify(w.sent())).not.toMatch(/Retry after|v0.4 Factory/)
+})
+
+// v0.4 slice 6 (#32): a PR that leaves the open list has merged or been closed, and the merged list says which. The open read finds that out and reads the merged list right then, in the same
+// off-the-hook pass, and sends it first: the server gets the merge with the list that no longer holds the PR, so an issue does not go backwards between the two reads (the board's R1).
+const MERGED_416 = JSON.stringify([{ additions: 5, deletions: 1, headRefName: 'fix/409-token-retry', mergedAt: '2026-11-05T09:00:00Z', number: 416, title: 'Retry after an expired token', files: [{ path: 'a.ts', additions: 5, deletions: 1 }] }])
+const sentKinds = (w: ReturnType<typeof world>) => w.sent().map((e) => e.kind).filter((k) => k === 'project.prs' || k === 'project.open_prs')
+
+test('v0.4 slice 6: when a PR leaves the open list the merged PRs are read at once and sent before the open list that no longer holds it', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = OPEN_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(1); // the merged list at session start (it was empty: nothing sent)
+  await w.clock.advance(5 * MIN + 2_000)
+  expect(w.gh.calls).toHaveLength(1) // the same PR still open: no extra read of the merged list
+  w.gh.open = '[]' // PR 416 is gone from the list
+  w.gh.out = MERGED_416
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(2)
+  expect(sentKinds(w)).toEqual(['project.open_prs', 'project.open_prs', 'project.prs', 'project.open_prs'])
+  expect(prsSent(w)[0]!.data.prs.map((p: any) => p.number)).toEqual([416])
+  expect(openSent(w)[2]!.data.prs).toEqual([])
+})
+
+test('v0.4 slice 6: a PR that left the list without merging (closed) is read for, finds nothing, and the open list is sent all the same', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = OPEN_LIST
+  w.gh.out = '[]'
+  await boot($)
+  await w.clock.advance(2_000)
+  w.gh.open = '[]'
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(2)
+  expect(sentKinds(w)).toEqual(['project.open_prs', 'project.open_prs']) // no project.prs: nothing merged
+})
+
+test('v0.4 slice 6: a merged list that cannot be read sends nothing this time, so the server keeps what it last had; the next read tries both again', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = OPEN_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  w.gh.open = '[]'
+  w.gh.mergedExit = 1
+  w.gh.out = 'HTTP 502: Bad Gateway'
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(2)
+  expect(sentKinds(w)).toEqual(['project.open_prs']) // the list without PR 416 was held back
+  w.gh.mergedExit = undefined
+  w.gh.out = MERGED_416
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(3)
+  expect(sentKinds(w)).toEqual(['project.open_prs', 'project.prs', 'project.open_prs'])
+})
+
+// v0.4 slice 3 (#29, Factory): the Mac's free memory and its running containers, sampled once per machine however many sessions run. Only names, a few labels, state, health and memory leave.
+const MiB = 1_048_576
+const VM_STAT = 'Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 100.\nPages active: 999.\nPages inactive: 50.\nPages speculative: 10.\nPages wired down: 40.\nPages purgeable: 20.\nAnonymous pages: 300.\nPages occupied by compressor: 10.\n' // 330 pages in use
+const FREE = 100_000_000 - 330 * 16_384
+// A row of `docker ps` as the plugin's template renders it, plus what a fuller row holds (command, environment, mounts, labels, image), which must never leave.
+const psRow = (o: Record<string, unknown> = {}) => JSON.stringify({
+  id: 'a1b2c3d4e5f6', name: 'mobile-app-db-1', created: '2026-11-05 10:12:03 +0100 CET', state: 'running', status: 'Up 2 hours (healthy)', project: 'mobile-app', dir: '/repo/deploy', tc: '', session: '', sessionDash: '',
+  command: 'postgres -c password=hunter2', env: ['API_KEY=sk-live-1'], mounts: '/Users/a/.ssh', labels: 'owner=x,com.example.secret=s3cret', image: 'sha256:deadbeef', ...o,
+})
+const SECRETS = /postgres|hunter2|sk-live|\.ssh|owner=|s3cret|deadbeef/
+const samples = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'machine.sample')
+const macWorld = (on: any, stored: Record<string, unknown> = {}) => {
+  const w = world(on, undefined, true, stored)
+  w.machine.os = 'Darwin'
+  w.dock.mode = 'ok'
+  w.dock.vmStat = VM_STAT
+  w.dock.memsize = '100000000\n'
+  w.dock.ps = `${psRow()}\n${psRow({ id: 'f6e5d4c3b2a1', name: 'quirky_curie', project: '', dir: '', tc: 'true', session: '', sessionDash: '3f2a9b', status: 'Up 3 minutes' })}\n`
+  w.dock.stats = '{"id":"a1b2c3d4e5f6","mem":"100MiB / 8GiB"}\n{"id":"f6e5d4c3b2a1","mem":"20MiB / 8GiB"}\n'
+  return w
+}
+
+test('#29: a session samples the machine at its start: free memory, Docker ok, each container with its labels, state, health and memory, and nothing else of its row', opts, async ($: any, on: any) => {
+  const w = macWorld(on)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(samples(w).map((e) => e.data)).toEqual([{
+    mem_free: FREE, mem_total: 100_000_000, docker: 'ok',
+    containers: [
+      { name: 'mobile-app-db-1', created_at: Date.parse('2026-11-05T10:12:03+01:00'), state: 'running', health: 'healthy', memory: 100 * MiB, compose: 'mobile-app', working_dir: '/repo/deploy' },
+      { name: 'quirky_curie', created_at: Date.parse('2026-11-05T10:12:03+01:00'), state: 'running', memory: 20 * MiB, testcontainers: { session: '3f2a9b' } },
+    ],
+  }])
+  expect(samples(w)[0]).toMatchObject({ session_id: 's-1', host: 'Alfredos-MacBook-Pro-4' }) // about the host; the sampling session rides along as on any event
+  expect(JSON.stringify(w.sent())).not.toMatch(SECRETS)
+  const asked = w.dock.calls.filter((c) => c[0] === 'docker')
+  expect(asked.map((c) => c.slice(0, 3))).toEqual([['docker', 'ps', '--format'], ['docker', 'stats', '--no-stream']])
+  expect(asked[0]!.join(' ')).not.toMatch(/\.Command|\.Mounts|\.Labels|\.Image|\{\{json \.\}\}|inspect| -a/)
+})
+
+test('#29: on Linux the memory is /proc/meminfo\'s MemAvailable', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.dock.meminfo = 'MemTotal: 2000 kB\nMemAvailable: 1000 kB\n'
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(samples(w).map((e) => e.data)).toEqual([{ mem_free: 1_024_000, mem_total: 2_048_000, docker: 'absent', containers: [] }])
+  expect(w.dock.calls.map((c) => c[0])).not.toContain('vm_stat')
+})
+
+test('#29: two sessions within 10 minutes sample once; what keeps the second from sampling is the time in the shared store, which the first wrote', opts, async ($: any, on: any) => {
+  const w = macWorld(on)
+  expect(w.store['machine:sampled']).toBeUndefined()
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(samples(w)).toHaveLength(1)
+  // the time is in the store, not in a variable of this module: another session is another process, and sees only the store
+  expect(w.store['machine:sampled']).toBeGreaterThanOrEqual(T0)
+  expect(w.store['machine:sampled']).toBeLessThanOrEqual(samples(w)[0]!.ts)
+  await w.clock.advance(5 * MIN)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false }) // the second session: the store says 5 minutes ago
+  await w.clock.advance(2_000)
+  expect(samples(w)).toHaveLength(1)
+  expect(w.dock.calls.filter((c) => c[0] === 'docker' && c[1] === 'ps')).toHaveLength(1)
+})
+
+test('#29: a sample 10 minutes old is taken again by a session already running, from the tick; one another session took 4 minutes ago is not', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = macWorld(on, { 'machine:sampled': T0 - 4 * MIN }) // another session sampled 4 minutes ago
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(samples(w)).toHaveLength(0)
+  await w.clock.advance(5 * MIN) // 9 minutes after it
+  expect(samples(w)).toHaveLength(0)
+  await w.clock.advance(2 * MIN) // past 10 (the tick looks every minute)
+  expect(samples(w)).toHaveLength(1)
+  await w.clock.advance(8 * MIN) // and not again before another 10
+  expect(samples(w)).toHaveLength(1)
+  await w.clock.advance(4 * MIN)
+  expect(samples(w)).toHaveLength(2)
+})
+
+test('#29: a time in the store from the future (the clock moved back) is not a fresh sample', opts, async ($: any, on: any) => {
+  const w = macWorld(on, { 'machine:sampled': T0 + 60 * MIN })
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(samples(w)).toHaveLength(1)
+})
+
+const DOCKER_DOWN = (mode: 'absent' | 'stopped') => async ($: any, on: any) => {
+  const w = macWorld(on)
+  w.dock.mode = mode
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(samples(w).map((e) => e.data)).toEqual([{ mem_free: FREE, mem_total: 100_000_000, docker: mode, containers: [] }])
+  expect(w.dock.calls.some((c) => c[1] === 'stats')).toBe(false)
+}
+test('#29: Docker not installed is a sample that says "absent", with the memory and no containers', opts, DOCKER_DOWN('absent'))
+test('#29: a Docker daemon that is stopped is a sample that says "stopped", with the memory and no containers', opts, DOCKER_DOWN('stopped'))
+
+test('#29: a daemon that never answers holds up nothing; the time was written before the read, so the minute-by-minute look finds it fresh and does not ask again', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  on('tool.call', () => ({ result: 'ok', text: 'ok' }))
+  const w = macWorld(on)
+  w.dock.mode = 'hang'
+  await boot($)
+  const r = await $.tool.call({ tool: 'Read', tool_use_id: 'toolu_r', file_path: '/repo/a.ts' })
+  expect(r.text).toBe('ok')
+  expect(w.store['machine:sampled']).toBeGreaterThanOrEqual(T0) // written before the read that never ends
+  await w.clock.advance(9 * MIN)
+  expect(w.dock.calls.filter((c) => c[1] === 'ps')).toHaveLength(1) // a look every minute for nine minutes, one read
+  expect(w.sent().map((e) => e.kind)).toContain('session.start')
+})
+
+test('#29: a container of an excluded project goes as numbers alone, whatever Content is set to; the others keep their names', { options: { token: 'tok', content: 'full', excludeProjects: '/repo' } }, async ($: any, on: any) => {
+  const w = macWorld(on)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  const [s] = samples(w)
+  expect(s.data.containers).toEqual([
+    { state: 'running', health: 'healthy', memory: 100 * MiB, excluded: true }, // its directory is /repo/deploy, inside the excluded /repo
+    expect.objectContaining({ name: 'quirky_curie', testcontainers: { session: '3f2a9b' } }), // a Testcontainers one has no directory
+  ])
+  expect(JSON.stringify(s)).not.toMatch(/mobile-app-db|deploy/)
+  expect(JSON.stringify(w.sent())).not.toMatch(SECRETS)
+})
+
+test('#29: with no token nothing is sampled or queued for the network', { options: { stallMinutes: 15 } }, async ($: any, on: any) => {
+  const w = macWorld(on)
+  await $.session.start({ cwd: '/repo', surface: null, isInteractive: false })
+  await w.clock.advance(2_000)
+  expect(w.dock.calls).toEqual([])
+})
+
+// ── v0.4 slice 5 (#31): the merge refusal ──
+// `gh pr merge` is refused on a definite no and let through, with a line, on anything unknown. The answer comes from what the 60-second poll of GET /api/factory left in the plugin's memory: the hook
+// itself runs no process and makes no request. PROJECT.md §2: this is the one place the mod blocks Claude Code.
+const fine = { ok: true, note: 'fine' }
+const served = (conditions: object = {}, rest: object = {}) => ({
+  number: 416, head: 'fix/409-token-retry', issue: 409, headOid: 'e4f5a6b'.padEnd(40, '0'), ready: false, reason: null, findings: [], dropped: 0,
+  conditions: { findings: fine, gate: fine, bots: fine, clean: { ok: true, note: 'CLEAN' }, ...conditions }, ...rest,
+})
+const merge = ($: any, command: string, id = 'toolu_m', agentId?: string) => $.tool.call({ tool: 'Bash', tool_use_id: id, command, ...(agentId ? { agentId } : {}) })
+/** The engine beneath: counts the merges that reach it. */
+const beneath = (on: any) => {
+  const reached = { n: 0 }
+  on('tool.call', () => (reached.n++, { result: 'merged', text: 'Merged #416' }))
+  return reached
+}
+/** Boots a session whose first read of /api/factory has landed. */
+const withMemory = async ($: any, w: ReturnType<typeof world>, prs: object[], readAt: number | null = T0) => {
+  w.factory.prs = prs
+  w.factory.readAt = readAt
+  await boot($)
+  await w.clock.advance(2_000)
+}
+const DENY_HEAD = "agent-orb refused this merge: PR #416 isn't ready."
+// R4: the agent reads this, and its "terminal" is the Bash tool.
+const DENY_TAIL = "Don't merge it another way (`bash -c`, `gh api`, the web page). Tell the person why it was refused; to merge anyway, they run it in their own terminal."
+
+for (const [name, conditions, note] of [
+  ['an open finding', { findings: { ok: false, note: '2 findings open: 1 major, 1 minor' } }, '2 findings open: 1 major, 1 minor'],
+  ['a failed check', { gate: { ok: false, note: 'Unit tests failed' } }, 'Unit tests failed'],
+  ['a bot comment newer than the last commit', { bots: { ok: false, note: 'coderabbitai commented after the last commit, and no findings report since' } }, 'coderabbitai commented after the last commit, and no findings report since'],
+  ['a merge state that is not clean', { clean: { ok: false, note: 'UNSTABLE: a check is not passing' } }, 'UNSTABLE: a check is not passing'],
+] as const) {
+  test(`#31: gh pr merge is refused on ${name}, with the reason, and never reaches the tool`, opts, async ($: any, on: any) => {
+    const reached = beneath(on)
+    const w = world(on)
+    await withMemory($, w, [served(conditions)])
+    const r = await merge($, 'gh pr merge 416 --squash')
+    expect(r.deny).toBe([DENY_HEAD, `- ${note}`, 'GitHub data under a minute old, head e4f5a6b.', DENY_TAIL].join('\n'))
+    expect(reached.n).toBe(0)
+    await w.clock.advance(2_000)
+    // the history shows the attempt as a refused call, not as a merge that ran
+    const result = w.sent().find((e) => e.kind === 'tool.result' && e.data.tool_use_id === 'toolu_m')
+    expect(result.data).toMatchObject({ success: false, error_type: 'denied', error_class: 'refused' })
+    expect(w.sent().find((e) => e.kind === 'tool.call' && e.data.tool_use_id === 'toolu_m').data.command_class).toBe('gh')
+  })
+}
+
+for (const [name, conditions, line] of [
+  ['no test run seen on the head', { gate: { ok: null, note: 'No test run on e4f5a6b' } }, 'no test run on e4f5a6b'],
+  ['a repo with no findings block', { findings: { ok: null, note: 'No findings reported yet' } }, 'no findings reported yet'],
+  ['a merge state GitHub has not worked out', { clean: { ok: null, note: "GitHub hasn't worked out the merge state yet" } }, "GitHub hasn't worked out the merge state yet"],
+] as const) {
+  test(`#31: gh pr merge goes ahead on ${name}, and the session is told it was not judged`, opts, async ($: any, on: any) => {
+    const reached = beneath(on)
+    const w = world(on)
+    await withMemory($, w, [served(conditions)])
+    const r = await merge($, 'gh pr merge 416 --squash')
+    expect(r.deny).toBeUndefined()
+    expect(r.text).toBe('Merged #416')
+    expect(reached.n).toBe(1)
+    expect(w.logs).toEqual([`agent-orb can't say PR #416 is ready: ${line}. The merge goes ahead.`]) // the person's
+    expect(r.context).toEqual([`agent-orb can't say PR #416 is ready: ${line}. The merge goes ahead.`]) // R14: and what the agent reads after the result
+  })
+}
+
+test('#31: a PR that is ready merges without a word', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served()])
+  const r = await merge($, 'gh pr merge 416')
+  expect(r.text).toBe('Merged #416')
+  expect(r).not.toHaveProperty('context')
+  expect(reached.n).toBe(1)
+  expect(w.logs).toEqual([])
+})
+
+test('#31: data older than 10 minutes lets the merge through and says how old; at 9 minutes the same PR is refused', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ gate: { ok: false, note: 'Unit tests failed' } })], T0) // GitHub was read at T0 and, in this test, never again
+  await w.clock.advance(9 * MIN)
+  expect((await merge($, 'gh pr merge 416', 'toolu_a')).deny).toContain('GitHub data 9 min old')
+  await w.clock.advance(2 * MIN)
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).text).toBe('Merged #416')
+  expect(reached.n).toBe(1)
+  expect(w.logs).toEqual(["agent-orb can't say PR #416 is ready: its GitHub data is 11 min old. The merge goes ahead."])
+})
+
+test('#31: the refusal answers from memory: with the server unreachable and no process allowed, a merge is refused all the same', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: '1 finding open: 1 major' } })])
+  w.factory.mode = 'throw'
+  w.stop.mode = 'throw'
+  w.goal.mode = 'throw'
+  await w.clock.advance(60_000) // the poll fails: the memory it had stays
+  const procs = w.spy.procs.length
+  const fetches = w.spy.fetches.length
+  const r = await merge($, 'git status && gh pr merge 416 --squash --delete-branch')
+  expect(r.deny).toContain('- 1 finding open: 1 major')
+  expect(w.spy.procs.length).toBe(procs) // no git, no gh, no docker
+  expect(w.spy.fetches.length).toBe(fetches) // and no request
+  expect(reached.n).toBe(0)
+})
+
+test('#31: a poll that answers with something that is not the server\'s keeps the memory, and so does one that never came', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ clean: { ok: false, note: 'DIRTY: it conflicts with its base' } })])
+  w.factory.mode = 'garbage'
+  await w.clock.advance(60_000)
+  expect((await merge($, 'gh pr merge 416')).deny).toContain('DIRTY')
+})
+
+test('#31: the poll asks for this project\'s PRs at session start and then every minute', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  await withMemory($, w, [])
+  expect(w.factory.calls).toEqual(['http://127.0.0.1:4040/api/factory?project=r&remote=github.com%2Fo%2Fr']) // R3: this repository's, not every project that bears the name
+  await w.clock.advance(60_000)
+  expect(w.factory.calls.length).toBe(2)
+  await w.clock.advance(60_000)
+  expect(w.factory.calls.length).toBe(3)
+})
+
+test('#31: a PR the memory does not hold, and a memory that never came, let the merge through and say so', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.factory.mode = 'throw'
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  expect((await merge($, 'gh pr merge 416', 'toolu_a')).text).toBe('Merged #416') // the server never answered
+  w.factory.mode = 'ok'
+  await w.clock.advance(60_000)
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).deny).toBeDefined() // it has now
+  expect((await merge($, 'gh pr merge 99', 'toolu_c')).text).toBe('Merged #416') // but not 99
+  expect(reached.n).toBe(2)
+  expect(w.logs).toEqual(["agent-orb can't say PR #416 is ready: the plugin has not read it. The merge goes ahead.", "agent-orb can't say PR #99 is ready: the plugin has not read it. The merge goes ahead."])
+})
+
+test('#31: it matches `gh pr merge 12`, one with its flags first and --repo, and one chained after &&, and not `gh pr view 12` or gh api', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  for (const command of ['gh pr merge 12', 'gh pr merge --squash --repo o/r 12', 'git push && gh pr merge 12 --squash', 'pnpm test || true; gh pr merge -d 12']) {
+    expect((await merge($, command)).deny, command).toContain("PR #12 isn't ready")
+  }
+  expect(reached.n).toBe(0)
+  for (const command of ['gh pr view 12', 'gh api repos/o/r/pulls/12/merge -X PUT', 'echo gh pr merge 12', 'git commit -m "gh pr merge 12"']) {
+    expect((await merge($, command)).text, command).toBe('Merged #416')
+  }
+  expect(reached.n).toBe(4)
+  expect(w.logs).toEqual([])
+})
+
+test('#31: a merge in a chain is refused whole, and a subagent\'s is refused like the main agent\'s', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 }), served({}, { number: 13, head: 'feat/13' })])
+  expect((await merge($, 'gh pr merge 13 && gh pr merge 12')).deny).toContain("PR #12 isn't ready") // 13 is ready, 12 is not: nothing merges
+  expect((await merge($, 'gh pr merge 12', 'toolu_s', 'a-sub')).deny).toContain("PR #12 isn't ready")
+  expect(reached.n).toBe(0)
+})
+
+test('#31: --repo naming another repository lets the merge through and says so', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  expect((await merge($, 'gh pr merge 12 --repo someone/else')).text).toBe('Merged #416')
+  expect(reached.n).toBe(1)
+  expect(w.logs).toEqual(["agent-orb can't say PR #12 is ready: it is in someone/else, and the plugin reads github.com/o/r only. The merge goes ahead."])
+})
+
+test('#31: a branch name, and no selector at all (the branch the session is on now), find the PR', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/HEAD'] = 'ref: refs/heads/feat/13\n' // moved since the session started on `dev`
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12, head: 'fix/12-x' }), served({}, { number: 13, head: 'feat/13' })])
+  expect((await merge($, 'gh pr merge fix/12-x --squash')).deny).toContain("PR #12 isn't ready")
+  expect((await merge($, 'gh pr merge --squash')).text).toBe('Merged #416') // on feat/13, which is ready
+  w.files['/repo/.git/HEAD'] = 'ref: refs/heads/fix/12-x\n'
+  expect((await merge($, 'gh pr merge --squash')).deny).toContain("PR #12 isn't ready")
+  expect(reached.n).toBe(1)
+})
+
+test('#31: in a worktree the current branch is read from the worktree\'s own HEAD', opts, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  inWorktree(w)
+  w.files[`${WT}/.git`] = 'gitdir: /repo/.git/worktrees/w\n'
+  w.files['/repo/.git/worktrees/w/HEAD'] = 'ref: refs/heads/fix/12-x\n'
+  w.files['/repo/.git/HEAD'] = 'ref: refs/heads/release/0.15\n' // the main tree is on another branch
+  w.factory.prs = [served({ findings: { ok: false, note: 'open' } }, { number: 12, head: 'fix/12-x' })]
+  w.factory.readAt = T0
+  await startIn($, WT)
+  await $.turn.start({ text: 'go', turnId: 't-1' })
+  await w.clock.advance(2_000)
+  expect((await merge($, 'gh pr merge --squash')).deny).toContain("PR #12 isn't ready")
+})
+
+test('#31: a detached HEAD with no selector has no PR to name: the merge goes ahead, and says why', opts, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/HEAD'] = 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0\n'
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  expect((await merge($, 'gh pr merge --squash')).text).toBe('Merged #416')
+  expect(w.logs).toEqual(["agent-orb can't say which PR this is: no branch to name it. The merge goes ahead."])
+})
+
+test('#31: a merge nothing is asked to judge costs nothing: a Bash call that is not one reads no file and makes no request', opts, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served()])
+  const fetches = w.spy.fetches.length
+  const procs = w.spy.procs.length
+  const reads = w.spy.reads.length
+  expect((await merge($, 'ls -la')).text).toBe('Merged #416')
+  expect(w.spy.fetches.length).toBe(fetches)
+  expect(w.spy.procs.length).toBe(procs)
+  expect(w.spy.reads.length).toBe(reads) // #31 R18: no file either
+  expect(w.logs).toEqual([])
+})
+
+test('#31 R18: a merge reads files and nothing else: no process, no request, with a selector or without one', opts, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  const procs = w.spy.procs.length
+  const fetches = w.spy.fetches.length
+  const before = w.spy.reads.length
+  await merge($, 'gh pr merge 416', 'toolu_a')
+  const withSelector = w.spy.reads.slice(before)
+  expect(withSelector).not.toContain('/repo/.git/HEAD') // the number names the PR: the current branch is not asked
+  expect(withSelector.length).toBeGreaterThan(0) // the branch's head is (R8)
+  w.files['/repo/.git/HEAD'] = 'ref: refs/heads/fix/409-token-retry\n'
+  await merge($, 'gh pr merge --squash', 'toolu_b')
+  expect(w.spy.reads).toContain('/repo/.git/HEAD')
+  expect(w.spy.procs.length).toBe(procs)
+  expect(w.spy.fetches.length).toBe(fetches)
+})
+
+test('#31 R3: the memory is this repository\'s: a project with no remote asks for none and refuses nothing', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.repo.remote = null
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  expect(w.factory.calls).toEqual([])
+  expect((await merge($, 'gh pr merge 416')).text).toBe('Merged #416')
+  expect(reached.n).toBe(1)
+})
+
+test('#31 R4: `bash -c` and `sh -c` are read like the command inside them; backticks, xargs and watch are not (the README says so)', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  for (const command of ['bash -c "gh pr merge 12"', "sh -c 'git push && gh pr merge 12 --squash'", 'zsh -lc "gh pr merge 12"']) {
+    expect((await merge($, command)).deny, command).toContain("PR #12 isn't ready")
+  }
+  expect(reached.n).toBe(0)
+  for (const command of ['echo `gh pr merge 12`', 'echo 12 | xargs gh pr merge', 'watch gh pr merge 12']) expect((await merge($, command)).text, command).toBe('Merged #416')
+})
+
+test('#31 R6: a cd earlier in the command, or GH_REPO set for it, may mean another repository: it goes ahead, and says so', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  for (const command of ['cd ../other && gh pr merge 12', 'GH_REPO=other/repo gh pr merge 12', 'env GH_REPO=other/repo gh pr merge 12', '(cd ../other; gh pr merge 12)']) {
+    expect((await merge($, command)).text, command).toBe('Merged #416')
+  }
+  expect(reached.n).toBe(4)
+  expect(w.logs.map((l) => l.replace(/^.*is ready: /, ''))).toEqual([
+    'a `cd` earlier in the command may have changed the repository. The merge goes ahead.', 'GH_REPO is set for it, so the repository may not be this one. The merge goes ahead.',
+    'GH_REPO is set for it, so the repository may not be this one. The merge goes ahead.', 'a `cd` earlier in the command may have changed the repository. The merge goes ahead.'])
+  expect((await merge($, 'cd ../other && gh pr merge 12 --repo o/r')).deny).toContain("PR #12 isn't ready") // --repo names it: this one, judged
+})
+
+test('#31 R6 round 2: `cd /abs/path/to/repo && gh pr merge 12` is this repository: it is judged. A cd anywhere else still goes ahead', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on) // the session's root is /repo
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  for (const command of ['cd /repo && gh pr merge 12', 'cd /repo/packages/mod && gh pr merge 12 --squash', 'cd packages/mod && gh pr merge 12', 'cd /repo/ && git push && gh pr merge 12', 'bash -c "cd /repo && gh pr merge 12"']) {
+    expect((await merge($, command)).deny, command).toContain("PR #12 isn't ready")
+  }
+  expect(reached.n).toBe(0)
+  expect(w.logs).toEqual([])
+  for (const command of ['cd /repo-old && gh pr merge 12', 'cd /other/repo && gh pr merge 12', 'cd /repo/../other && gh pr merge 12', 'cd ~/repo && gh pr merge 12', 'cd $REPO && gh pr merge 12', 'cd /repo && cd .. && gh pr merge 12']) {
+    expect((await merge($, command)).text, command).toBe('Merged #416')
+  }
+  expect(reached.n).toBe(6)
+  expect(w.logs.every((l) => l.endsWith('a `cd` earlier in the command may have changed the repository. The merge goes ahead.'))).toBe(true)
+  expect(w.logs.length).toBe(6)
+})
+
+test('#31 R7: --disable-auto is not a merge (it turns auto-merge off), and --auto is judged like any other', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } }, { number: 12 })])
+  expect((await merge($, 'gh pr merge 12 --disable-auto', 'toolu_a')).text).toBe('Merged #416')
+  expect(w.logs).toEqual([]) // no verdict at all: not even a line
+  expect((await merge($, 'gh pr merge 12 --auto --squash', 'toolu_b')).deny).toContain("PR #12 isn't ready")
+  expect(reached.n).toBe(1)
+})
+
+// #31 R8, round 2: `gh pr merge` merges the PR's remote head, so it is the remote-tracking ref (`refs/remotes/<remote>/<branch>`, the remote that is the session's) the memory's head is compared with:
+// an unpushed local commit does not move it, and a push from this checkout does.
+const CONFIG = '[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:o/r.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n'
+const TRACKING = '/repo/.git/refs/remotes/origin/fix/409-token-retry'
+
+test('#31 R8: a push since GitHub was read moves the remote-tracking ref, and the merge is not judged by the head that was read; loose or packed, with no process', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/config'] = CONFIG
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  const procs = w.spy.procs.length
+  const head = 'e4f5a6b'.padEnd(40, '0')
+  w.files[TRACKING] = `${'b'.repeat(40)}\n` // pushed again from this checkout since: the memory's "open finding" is the old head's
+  expect((await merge($, 'gh pr merge 416', 'toolu_a')).text).toBe('Merged #416')
+  expect(w.logs).toEqual(["agent-orb can't say PR #416 is ready: the branch moved since GitHub was read. The merge goes ahead."])
+  w.files[TRACKING] = `${head}\n` // the same head GitHub was read at: judged
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).deny).toContain("PR #416 isn't ready")
+  delete w.files[TRACKING] // packed, as git leaves a ref after `git pack-refs` or a clone
+  w.files['/repo/.git/packed-refs'] = `# pack-refs with: peeled fully-peeled sorted\n${'c'.repeat(40)} refs/remotes/origin/fix/409-token-retry\n${head} refs/remotes/origin/other\n`
+  expect((await merge($, 'gh pr merge 416', 'toolu_c')).text).toBe('Merged #416')
+  w.files['/repo/.git/packed-refs'] = `${head} refs/remotes/origin/fix/409-token-retry\n`
+  expect((await merge($, 'gh pr merge 416', 'toolu_d')).deny).toContain("PR #416 isn't ready")
+  w.files['/repo/.git/packed-refs'] = ''
+  expect((await merge($, 'gh pr merge 416', 'toolu_e')).deny).toContain("PR #416 isn't ready") // no such ref here: nothing to compare
+  expect(reached.n).toBe(2)
+  expect(w.spy.procs.length).toBe(procs)
+})
+
+test('#31 R8 round 2: an unpushed local commit is not "moved": gh merges the remote head, which has not changed', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/config'] = CONFIG
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  w.files[TRACKING] = `${'e4f5a6b'.padEnd(40, '0')}\n` // what GitHub holds, as this checkout last knew it
+  w.files['/repo/.git/refs/heads/fix/409-token-retry'] = `${'d'.repeat(40)}\n` // a local commit that was never pushed
+  expect((await merge($, 'gh pr merge 416')).deny).toContain("PR #416 isn't ready")
+  w.files['/repo/.git/packed-refs'] = `${'d'.repeat(40)} refs/heads/fix/409-token-retry\n`
+  delete w.files['/repo/.git/refs/heads/fix/409-token-retry']
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).deny).toContain("PR #416 isn't ready") // packed, too
+  expect(reached.n).toBe(0)
+  expect(w.logs).toEqual([])
+})
+
+test('#31 R8 round 2: the remote is the one whose url is the session\'s, not a name guessed; with none, or its ref missing, nothing is compared and the merge is judged', opts, async ($: any, on: any) => {
+  const reached = beneath(on)
+  const w = world(on)
+  w.files['/repo/.git/config'] = '[remote "fork"]\n\turl = git@github.com:me/r.git\n[remote "gh"]\n\turl = https://github.com/o/r.git\n'
+  await withMemory($, w, [served({ findings: { ok: false, note: 'open' } })])
+  w.files['/repo/.git/refs/remotes/fork/fix/409-token-retry'] = `${'b'.repeat(40)}\n` // another remote's ref says nothing about this repository's PR
+  w.files['/repo/.git/refs/remotes/origin/fix/409-token-retry'] = `${'b'.repeat(40)}\n` // and nor does one named origin that is not the session's remote
+  expect((await merge($, 'gh pr merge 416', 'toolu_a')).deny).toContain("PR #416 isn't ready")
+  w.files['/repo/.git/refs/remotes/gh/fix/409-token-retry'] = `${'b'.repeat(40)}\n` // the session's remote is called gh
+  expect((await merge($, 'gh pr merge 416', 'toolu_b')).text).toBe('Merged #416')
+  w.files['/repo/.git/config'] = '' // no config to read: no remote to name
+  expect((await merge($, 'gh pr merge 416', 'toolu_c')).deny).toContain("PR #416 isn't ready")
+  expect(reached.n).toBe(1)
+})
+
+test('#31 R14: a merge let through tells the agent so, after the tool\'s own result, and the person in the transcript; the result itself is untouched', opts, async ($: any, on: any) => {
+  beneath(on)
+  const w = world(on)
+  await withMemory($, w, [served({ gate: { ok: null, note: 'No test run on e4f5a6b' } })])
+  const r = await merge($, 'gh pr merge 416 --squash')
+  expect(r).toMatchObject({ result: 'merged', text: 'Merged #416', context: ["agent-orb can't say PR #416 is ready: no test run on e4f5a6b. The merge goes ahead."] })
+  expect(w.logs).toEqual(["agent-orb can't say PR #416 is ready: no test run on e4f5a6b. The merge goes ahead."])
+  await w.clock.advance(2_000)
+  const result = w.sent().find((e) => e.kind === 'tool.result' && e.data.tool_use_id === 'toolu_m').data
+  expect(result.output_size).toBe('Merged #416'.length) // what the history counts is the tool's, not the note
+})
+
+// ── v0.4 slice 5 (#31): Live's Stop ──
+// The studio queues a stop for one stall (the agent and the stall's `since`); the plugin asks for it on its 60-second poll (GET /api/stop, with its token), and ends the main turn with $.turn.abort only
+// if that stall still holds. It sends one session.stopped event either way and says so in the session.
+const stopped = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'session.stopped')
+
+/** A tool beneath the mod that does not return until `finish()`. Registered before the test's first `$` call, as the engine's hooks are. */
+const hangs = (on: any) => {
+  let release: (() => void) | undefined
+  on('tool.call', () => new Promise((resolve) => { release = () => resolve({ result: 'ok', text: 'ok' }) }))
+  return { finish: () => release?.() }
+}
+/** A WebFetch of main's (or of `agentId`'s) runs 20 minutes on `hang` (the stall is at 15; the mock clock starts when the file loaded, which the real clock the mod stamps with has left behind by the time a late test runs). Gives the stall's `since` as stall.start carried it, and a way to let the tool return. */
+async function stalls($: any, w: ReturnType<typeof world>, hang: ReturnType<typeof hangs>, agentId?: string) {
+  const call = $.tool.call({ tool: 'WebFetch', tool_use_id: 'toolu_w', url: 'https://x', ...(agentId ? { agentId } : {}) })
+  call.catch(() => {}) // a call still pending at teardown is rejected by the kit, as the tests above say
+  await w.clock.advance(20 * MIN)
+  const since = w.sent().find((e) => e.kind === 'stall.start').data.since as number
+  return { since, finish: async () => (hang.finish(), await call, await w.clock.advance(2_000)) }
+}
+const STALE = 'agent-orb: a stop came from the studio, but the stall had ended; nothing was stopped'
+
+test('#31: a stop for the stall that still holds ends the main turn the plugin holds, sends session.stopped, and says so in the session', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($) // main's turn t-1 is running
+  const { since } = await stalls($, w, hang)
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual(['t-1'])
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: true }])
+  expect(stopped(w)[0]).not.toHaveProperty('agent_id') // the session's, not an agent's
+  expect(w.logs).toEqual(['agent-orb: this turn was stopped from the studio'])
+  expect(w.notes.at(-1)).toBe('this turn was stopped from the studio')
+  expect(w.titles.at(-1)).toBe('agent-orb: stopped')
+  expect(w.stop.calls.every((u) => u === 'http://127.0.0.1:4040/api/stop?session=s-1')).toBe(true)
+})
+
+test('#31 R10: the poll carries the plugin\'s token, so a page or another process cannot take a stop', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.stop.headers.length).toBeGreaterThan(0)
+  expect(w.stop.headers.every((h) => h.authorization === 'Bearer tok')).toBe(true)
+})
+
+test('#31 R1: a stop clicked for a stall that has since ended stops nothing: the work that carried on is not killed', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  const { since, finish } = await stalls($, w, hang)
+  await finish() // the e2e tests finished at T+20 s and the agent carries on
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000) // the poll takes the stop at T+50 s
+  expect(w.abort.calls).toEqual([])
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: false }])
+  expect(w.logs).toEqual([STALE])
+})
+
+test('#31 R1: nor does it stop the new turn of a person who pressed Esc and typed again within the minute', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  const { since, finish } = await stalls($, w, hang)
+  await finish()
+  await $.turn.start({ text: 'carry on instead', turnId: 't-2' })
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual([]) // t-2 is running, and is not the stalled turn
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: false }])
+})
+
+test('#31 R1: a stop names the agent and the stall: another agent\'s stall, or a later stall of the same agent, is not the one that was clicked', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  const { since } = await stalls($, w, hang)
+  w.stop.since = since + 1 // a stall that began a moment later is another stall
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  w.stop.since = since
+  w.stop.agent = 'a-child' // main is the one that stalls
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual([])
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: false }, { aborted: false }])
+})
+
+test('#31: it ends the main turn, not a subagent\'s that started after it', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  const { since } = await stalls($, w, hang)
+  await $.turn.start({ text: 'sub', turnId: 't-sub', agentId: 'a-child' })
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual(['t-1'])
+})
+
+test('#31: a stalled subagent is stopped by ending the main turn it runs under (the proof on #31), and the stall is the subagent\'s', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  await $.turn.start({ text: 'sub', turnId: 't-sub', agentId: 'a-child' })
+  const { since } = await stalls($, w, hang, 'a-child')
+  w.stop.agent = 'a-child'
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual(['t-1'])
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: true }])
+})
+
+test('#31: with no main turn running there is nothing to stop: the event is sent all the same (it clears the request), and the session is told so', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  on('turn.complete', () => ({ text: 'done' }))
+  const w = world(on)
+  await boot($)
+  await $.turn.start({ text: 'sub', turnId: 't-sub', agentId: 'a-child' })
+  const { since } = await stalls($, w, hang, 'a-child') // a-child stalls...
+  await $.turn.complete({ turnId: 't-1', answer: 'done', durationMs: 1_000, isAborted: false, reason: 'answer' }) // ...and main's turn has ended
+  w.stop.agent = 'a-child'
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual([])
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: false }])
+  expect(w.logs).toEqual(['agent-orb: a stop came from the studio, but no turn was running'])
+})
+
+test('#31: a turn the engine says is not the running one (it ended a moment ago) is "nothing to stop" too, not an error', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  w.abort.reject = true
+  await boot($)
+  const { since } = await stalls($, w, hang)
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(stopped(w).map((e) => e.data)).toEqual([{ aborted: false }])
+  expect(w.logs).toEqual(['agent-orb: a stop came from the studio, but no turn was running'])
+})
+
+test('#31: one stop is one event: the next polls find nothing, and the poll is once a minute', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  await boot($)
+  const { since } = await stalls($, w, hang)
+  w.stop.since = since
+  w.stop.queued = true
+  const polls = w.stop.calls.length
+  await w.clock.advance(3 * MIN)
+  expect(stopped(w)).toHaveLength(1)
+  expect(w.abort.calls).toEqual(['t-1'])
+  expect(w.stop.calls.length - polls).toBeGreaterThanOrEqual(2)
+  expect(w.stop.calls.length - polls).toBeLessThanOrEqual(4) // not at every 2-second tick
+})
+
+test('#31: a server that cannot be reached stops nothing, says nothing, and is asked again a minute later', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  const hang = hangs(on)
+  const w = world(on)
+  w.stop.mode = 'throw'
+  await boot($)
+  const { since } = await stalls($, w, hang)
+  expect(w.abort.calls).toEqual([])
+  expect(stopped(w)).toEqual([])
+  expect(w.logs).toEqual([])
+  w.stop.mode = 'ok'
+  w.stop.since = since
+  w.stop.queued = true
+  await w.clock.advance(60_000)
+  expect(w.abort.calls).toEqual(['t-1'])
+})
+
+test('#31 R2: main waiting on a long Agent call is not stalled; the subagent it started is, on its own', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  on('tool.call', () => new Promise(() => {})) // the foreground subagent runs, and its Agent call with it
+  await boot($)
+  void $.tool.call({ tool: 'Agent', tool_use_id: 'toolu_a', description: 'd', prompt: 'p', subagent_type: 'implementer' }).catch(() => {})
+  await $.turn.start({ text: 'sub', turnId: 't-sub', agentId: 'a-child' }) // and then it goes quiet
+  await w.clock.advance(20 * MIN) // (see `stalls` for the margin)
+  const starts = w.sent().filter((e) => e.kind === 'stall.start')
+  expect(starts.map((e) => e.agent_id)).toEqual(['a-child']) // no stall for main, which would read "stuck on Agent" and offer a Stop that kills working work
+  expect(w.notes).toHaveLength(1)
+})
+
+test('#31 R17: a background agent is also one whose own file says `background: true`', opts, async ($: any, on: any) => {
+  const w = world(on)
+  w.files['/repo/.claude/agents/watcher.md'] = '---\nname: watcher\nbackground: true\n---\nWatch.'
+  await boot($)
+  const spawn = (type: string, id: string) => $.agent.spawn({ tool_use_id: `toolu_${id}`, prompt: 'p', description: 'd', subagentType: type, provider: { plugin: 'engine', tier: 'core' }, parentModel: 'claude-opus-5-5', background: false, fork: false })
+  w.engine.agentId = 'a-file'
+  await spawn('watcher', 'file') // the request says foreground; its file says background
+  w.engine.agentId = 'a-plain'
+  await spawn('implementer', 'plain')
+  await w.clock.advance(2_000)
+  const spawned = w.sent().filter((e) => e.kind === 'agent.spawn')
+  expect(spawned.find((e) => e.agent_id === 'a-file').data.background).toBe(true)
+  expect(spawned.find((e) => e.agent_id === 'a-plain').data).not.toHaveProperty('background')
+})
+
+test('#31: a background agent is marked on its agent.spawn, and a foreground one is not', opts, async ($: any, on: any) => {
+  const w = world(on)
+  await boot($)
+  const spawn = (id: string, background: boolean) => $.agent.spawn({ tool_use_id: `toolu_${id}`, prompt: 'p', description: 'd', subagentType: 'Explore', provider: { plugin: 'engine', tier: 'core' }, parentModel: 'claude-opus-5-5', background, fork: false })
+  w.engine.agentId = 'a-bg'
+  await spawn('bg', true)
+  w.engine.agentId = 'a-fg'
+  await spawn('fg', false)
+  await w.clock.advance(2_000)
+  const spawned = w.sent().filter((e) => e.kind === 'agent.spawn')
+  expect(spawned.find((e) => e.agent_id === 'a-bg').data.background).toBe(true)
+  expect(spawned.find((e) => e.agent_id === 'a-fg').data).not.toHaveProperty('background')
 })

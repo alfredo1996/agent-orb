@@ -1,7 +1,7 @@
-import { timingSafeEqual } from 'node:crypto';
 import { Event } from '@agent-orb/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { bearer } from './auth.ts';
 import { checkAnswers, type ClaimLive } from './claims.ts';
 import { contentRows, type ContentStore } from './content-store.ts';
 import type { Store } from './store/store.ts';
@@ -18,15 +18,8 @@ const brief = ({ code, path, message }: { code: string; path: PropertyKey[]; mes
 type Options = { store: Store; token: string; content: ContentStore; onWritten?: (events: Event[], claims: ClaimLive[]) => void };
 
 export function ingest(app: FastifyInstance, { store, token, content, onWritten }: Options) {
-  const expected = Buffer.from(`Bearer ${token}`);
-
-  app.post('/ingest', {
-    // onRequest runs before the body is parsed: no token, no work.
-    onRequest: async (req, reply) => {
-      const got = Buffer.from(req.headers.authorization ?? '');
-      if (got.length !== expected.length || !timingSafeEqual(got, expected)) return reply.code(401).send({ error: 'unauthorized' });
-    },
-  }, async (req, reply) => {
+  // onRequest runs before the body is parsed: no token, no work.
+  app.post('/ingest', { onRequest: bearer(token) }, async (req, reply) => {
     const batch = Envelope.safeParse(req.body);
     if (!batch.success) {
       const issues = batch.error.issues.slice(0, 20);

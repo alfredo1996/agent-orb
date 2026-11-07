@@ -5,7 +5,7 @@ import { Analysis } from '../src/Analysis.tsx';
 import { PageHeader, ProjectContext, type Projects } from '../src/kit.tsx';
 import { Chart, Ledger } from '../src/Ledger.tsx';
 import { Pipeline } from '../src/Pipeline.tsx';
-import { choiceQuery, choose, FIRST, readChoice, shown, type Choice } from '../src/project-choice.ts';
+import { choiceQuery, choose, FIRST, readChoice, readSession, shown, type Choice } from '../src/project-choice.ts';
 
 // One header on every page with views (#101, design/v0.3-readable.html, the Header board). The views are rendered to markup, which runs no effects: the header is drawn
 // before anything loads, which is what has to hold still.
@@ -140,5 +140,17 @@ describe('the choice in the URL hash', () => {
     expect(readChoice('')).toEqual(FIRST);
     expect(choiceQuery({ all: false, single: 'docs-site' })).toBe('?project=docs-site');
     expect(choiceQuery({ all: true, single: 'docs-site' })).toBe('?project=docs-site&all=1');
+  });
+});
+
+describe('the session a Live link names (the Factory board, #32)', () => {
+  it('is read out of the hash, with the project beside it still read as the choice', () => {
+    const hash = '#/live?session=3f9a1c77-aaaa&project=my%20app%2Fv2';
+    expect(readSession(hash)).toBe('3f9a1c77-aaaa');
+    expect(readChoice(hash)).toEqual({ all: false, single: 'my app/v2' }); // following the link does not lose the project the Factory page was on
+  });
+
+  it('a hash that names none, or an empty one, names no session', () => {
+    for (const h of ['', '#/live', '#/live?project=docs-site', '#/factory?session=', '#/']) expect(readSession(h), h).toBeNull();
   });
 });

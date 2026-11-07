@@ -1,0 +1,1006 @@
+<title>agent-orb v0.4 Factory</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>/* Proposed studio library, scoped to .prop. Tokens are the approved Live v3 language (design/live-v3.html). */
+.prop {
+  --bg: #f5f5f9; --surface: #ffffff; --sunk: #f0f0f6; --line: #e2e3ec; --line-strong: #cfd1de;
+  --ink: #15162a; --muted: #585b73; --faint: #80839b;
+  --accent: #4f4bd0; --accent-soft: #ecebfb; --accent-ink: #3a36b0; --on-accent: #ffffff;
+  --data: #5c6488; --data-soft: #e3e5ee;
+  --ok: #15703f; --ok-bg: #e2f3e8; --ok-dot: #1f9d55;
+  --wait: #7f4f00; --wait-bg: #fff1d1; --wait-dot: #d99300;
+  --bad: #ae1f27; --bad-bg: #fde8e8; --bad-dot: #e0343c;
+  --done: #5f6378; --done-bg: #eceef4; --done-dot: #9a9db0;
+  --opus: #b03a8e; --sonnet: #2566d6; --haiku: #009a85;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --shadow: 0 1px 2px rgba(21, 22, 42, .04), 0 2px 8px rgba(21, 22, 42, .04);
+  --pop: 0 8px 28px rgba(21, 22, 42, .16);
+  background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .prop {
+  --bg: #0e0f17; --surface: #161826; --sunk: #12131f; --line: #262839; --line-strong: #34374d;
+  --ink: #e9eaf4; --muted: #a3a6c0; --faint: #74778f;
+  --accent: #9c9aff; --accent-soft: #24244a; --accent-ink: #c2c1ff; --on-accent: #0e0f17;
+  --data: #8c93b8; --data-soft: #23263a;
+  --ok: #56d48f; --ok-bg: #11301f; --ok-dot: #3fc47c;
+  --wait: #f2bd4d; --wait-bg: #36290b; --wait-dot: #e6a823;
+  --bad: #ff8a8f; --bad-bg: #3b1518; --bad-dot: #f0545b;
+  --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
+  --opus: #cf62bd; --sonnet: #5f92f2; --haiku: #18a690;
+  --shadow: none; --pop: 0 8px 28px rgba(0, 0, 0, .5); } }
+:root[data-theme="dark"] .prop {
+  --bg: #0e0f17; --surface: #161826; --sunk: #12131f; --line: #262839; --line-strong: #34374d;
+  --ink: #e9eaf4; --muted: #a3a6c0; --faint: #74778f;
+  --accent: #9c9aff; --accent-soft: #24244a; --accent-ink: #c2c1ff; --on-accent: #0e0f17;
+  --data: #8c93b8; --data-soft: #23263a;
+  --ok: #56d48f; --ok-bg: #11301f; --ok-dot: #3fc47c;
+  --wait: #f2bd4d; --wait-bg: #36290b; --wait-dot: #e6a823;
+  --bad: #ff8a8f; --bad-bg: #3b1518; --bad-dot: #f0545b;
+  --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
+  --opus: #cf62bd; --sonnet: #5f92f2; --haiku: #18a690;
+  --shadow: none; --pop: 0 8px 28px rgba(0, 0, 0, .5); }
+
+.prop *, .prop *::before, .prop *::after { box-sizing: border-box; }
+.prop .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.prop :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Shell */
+.prop .p-top { display: flex; align-items: center; gap: 24px; height: 56px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.prop .p-brand { display: flex; align-items: center; gap: 10px; font: 700 17px/1 var(--display); letter-spacing: -.01em; }
+.prop .p-orb { width: 20px; height: 20px; border-radius: 50%; background: radial-gradient(circle at 32% 30%, #c9cbff 0, #7b7cf0 38%, #3c3aa8 78%, #26246e 100%); box-shadow: 0 0 0 3px var(--accent-soft); }
+.prop .p-nav { display: flex; gap: 2px; align-self: stretch; }
+.prop .p-nav a { display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; min-height: 44px; color: var(--muted); text-decoration: none; font-weight: 500; border-bottom: 2px solid transparent; }
+.prop .p-nav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+.prop .p-count { font: 500 12px/1 var(--mono); padding: 3px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
+.prop .p-conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.prop .p-conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok-dot); box-shadow: 0 0 0 3px var(--ok-bg); }
+
+/* Page header and tally */
+.prop .p-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; }
+.prop .p-head h1 { margin: 0; font: 700 30px/1.1 var(--display); letter-spacing: -.02em; }
+.prop .p-head .p-sub { font-size: 14px; color: var(--muted); }
+.prop .p-tally { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; color: var(--muted); }
+.prop .p-tally span { display: inline-flex; align-items: center; gap: 7px; }
+.prop .p-tally span::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-dot); }
+
+/* Buttons and links */
+.prop .p-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font: 600 14px/1 var(--sans); cursor: pointer; text-decoration: none; }
+.prop .p-btn:hover { border-color: var(--accent); color: var(--accent-ink); }
+.prop .p-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.prop .p-btn.primary:hover { filter: brightness(1.08); color: var(--on-accent); }
+.prop .p-btn[disabled] { background: var(--sunk); border-color: var(--line); color: var(--faint); cursor: not-allowed; filter: none; }
+.prop .p-link { color: var(--accent-ink); font-weight: 600; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; }
+.prop .p-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Segmented toggle */
+.prop .p-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); }
+.prop .p-seg button { min-height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--muted); font: 500 14px/1 var(--sans); cursor: pointer; }
+.prop .p-seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); border-color: var(--line-strong); font-weight: 600; box-shadow: var(--shadow); }
+
+/* Fields */
+.prop .p-field { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.prop .p-select, .prop .p-input { min-height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line-strong); background-color: var(--surface); color: var(--ink); font: 400 14px/1 var(--sans); }
+.prop .p-select { appearance: none; padding-right: 32px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+.prop .p-input.money { font-family: var(--mono); width: 120px; }
+.prop .p-select:focus, .prop .p-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+
+/* Card */
+.prop .p-card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+.prop .p-card-h { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.prop .p-card-h h3 { margin: 0; font: 600 15px/1.3 var(--sans); }
+.prop .p-card-h .p-hint { font-size: 13px; color: var(--muted); }
+.prop .p-card-b { padding: 16px 20px; }
+
+/* State pill, model tag, chips */
+.prop .p-state { display: inline-flex; align-items: center; gap: 7px; font: 600 13px/1 var(--sans); white-space: nowrap; padding: 6px 10px; border-radius: 999px; }
+.prop .p-state::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c-dot); }
+.prop .s-working { --c-dot: var(--ok-dot); color: var(--ok); background: var(--ok-bg); }
+.prop .s-waiting { --c-dot: var(--wait-dot); color: var(--wait); background: var(--wait-bg); }
+.prop .s-stalled, .prop .s-error { --c-dot: var(--bad-dot); color: var(--bad); background: var(--bad-bg); }
+.prop .s-done { --c-dot: var(--done-dot); color: var(--done); background: var(--done-bg); }
+.prop .p-model { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; white-space: nowrap; }
+.prop .p-model::before { content: ""; width: 9px; height: 9px; border-radius: 2px; background: var(--m); }
+.prop .m-opus { --m: var(--opus); } .prop .m-sonnet { --m: var(--sonnet); } .prop .m-haiku { --m: var(--haiku); }
+.prop .p-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line); color: var(--ink); font-size: 13px; white-space: nowrap; }
+.prop .p-chip .mono { font-family: var(--mono); color: var(--accent-ink); }
+.prop .p-chip .how { color: var(--muted); }
+.prop .p-chip.branch { font-family: var(--mono); color: var(--muted); }
+.prop .p-chip.warn { background: var(--wait-bg); border-color: transparent; color: var(--wait); }
+
+/* Tabs */
+.prop .p-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.prop .p-tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 10px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: 500 15px/1 var(--sans); cursor: pointer; }
+.prop .p-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.prop .p-tabs .n { font: 500 12px/1 var(--mono); padding: 3px 6px; border-radius: 999px; background: var(--sunk); }
+
+/* Table */
+.prop .p-tablewrap { overflow-x: auto; }
+.prop table.p-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.prop .p-table th { text-align: left; font: 500 12px/1.2 var(--sans); color: var(--muted); padding: 10px 20px; background: var(--sunk); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.prop .p-table td { padding: 12px 20px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.prop .p-table tr:last-child td { border-bottom: 0; }
+.prop .p-table .r { text-align: right; }
+.prop .p-table .num { font-size: 14px; }
+.prop .p-table .sub { display: block; font-size: 13px; color: var(--muted); }
+.prop .p-table tbody tr:hover { background: var(--sunk); }
+
+/* Meter and bars */
+.prop .p-meter { display: grid; gap: 6px; min-width: 120px; }
+.prop .p-meter .k { font-size: 12px; font-weight: 500; color: var(--muted); }
+.prop .p-track { height: 6px; border-radius: 3px; background: var(--data-soft); overflow: hidden; }
+.prop .p-track i { display: block; height: 100%; border-radius: 3px; background: var(--data); }
+.prop .p-track.warn i { background: var(--wait-dot); }
+.prop .p-track.ok i { background: var(--ok-dot); }
+.prop .p-track.m-opus i { background: var(--opus); } .prop .p-track.m-sonnet i { background: var(--sonnet); } .prop .p-track.m-haiku i { background: var(--haiku); }
+
+/* Avatar */
+.prop .p-av { width: 28px; height: 28px; border-radius: 8px; display: inline-grid; place-items: center; font: 600 13px/1 var(--sans); color: #fff; background: var(--m, var(--data)); flex: none; }
+
+/* Stat */
+.prop .p-stat { display: grid; gap: 2px; }
+.prop .p-stat .k { font-size: 12px; font-weight: 500; color: var(--muted); }
+.prop .p-stat .v { font: 500 22px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.prop .p-stat .d { font-size: 13px; color: var(--muted); }
+
+/* Notice */
+.prop .p-notice { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: start; padding: 12px 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); font-size: 14px; }
+.prop .p-notice .i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 700 13px/1 var(--sans); background: var(--line); color: var(--ink); }
+.prop .p-notice p { margin: 0; }
+.prop .p-notice code { font-family: var(--mono); font-size: 13px; }
+.prop .p-notice.warn { background: var(--wait-bg); border-color: transparent; color: var(--wait); }
+.prop .p-notice.warn .i { background: var(--wait-dot); color: #fff; }
+.prop .p-notice.bad { background: var(--bad-bg); border-color: transparent; color: var(--bad); }
+.prop .p-notice.bad .i { background: var(--bad-dot); color: #fff; }
+
+/* Tooltip */
+.prop .p-tip { display: inline-grid; gap: 4px; max-width: 280px; padding: 9px 12px; border-radius: 9px; background: var(--ink); color: var(--bg); font-size: 13px; box-shadow: var(--pop); }
+.prop .p-tip b { font-weight: 600; }
+.prop .p-tip .row { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); }
+
+/* Empty and loading */
+.prop .p-empty { display: grid; gap: 6px; justify-items: start; padding: 20px; }
+.prop .p-empty b { font-weight: 600; }
+.prop .p-empty p { margin: 0; color: var(--muted); font-size: 14px; max-width: 52ch; }
+.prop .p-skel { display: grid; gap: 10px; padding: 16px 20px; }
+.prop .p-skel i { display: block; height: 12px; border-radius: 6px; background: var(--sunk); }
+@media (prefers-reduced-motion: no-preference) {
+  .prop .p-skel i { background: linear-gradient(90deg, var(--sunk) 0, var(--line) 50%, var(--sunk) 100%); background-size: 200% 100%; animation: p-shimmer 1.4s linear infinite; }
+}
+@keyframes p-shimmer { to { background-position: -200% 0; } }
+
+/* Drawer */
+.prop .p-drawer { background: var(--surface); border: 1px solid var(--line); border-radius: 14px 0 0 14px; box-shadow: var(--pop); display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+.prop .p-dh { display: grid; gap: 8px; padding: 16px 20px 12px; border-bottom: 1px solid var(--line); }
+.prop .p-dh .r1 { display: flex; align-items: center; gap: 10px; }
+.prop .p-dh h3 { margin: 0; font: 600 20px/1.2 var(--display); }
+.prop .p-x { margin-left: auto; width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 20px; cursor: pointer; }
+.prop .p-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+
+/* Timeline */
+.prop .p-ev { display: grid; grid-template-columns: 64px 72px 1fr auto; gap: 12px; align-items: baseline; padding: 10px 20px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.prop .p-ev .t { font: 13px var(--mono); color: var(--faint); }
+.prop .p-ev .tool { font: 500 13px var(--mono); }
+.prop .p-ev .target { font: 13px var(--mono); color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+.prop .p-ev .res { font: 13px var(--mono); white-space: nowrap; }
+.prop .ok { color: var(--ok); } .prop .bad { color: var(--bad); } .prop .run { color: var(--accent-ink); }
+
+/* Explain: replaces the grey paragraphs at the foot of pages */
+.prop details.p-explain { border-top: 1px solid var(--line); }
+.prop details.p-explain summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; font-size: 14px; font-weight: 500; color: var(--accent-ink); }
+.prop details.p-explain p { margin: 0; padding: 0 20px 16px; font-size: 14px; color: var(--muted); max-width: 72ch; }
+
+/* Legend */
+.prop .p-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.prop .p-legend span { display: inline-flex; align-items: center; gap: 7px; }
+.prop .p-legend span::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--m); }
+
+/* Checkbox: the platform control in the accent colour, on a 44px row */
+.prop .p-check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px; cursor: pointer; }
+.prop .p-check input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.prop .p-tasklist { list-style: none; margin: 0; padding: 0; display: grid; }
+.prop .p-tasklist li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.prop .p-tasklist li:last-child { border-bottom: 0; }
+.prop .p-tasklist .mk { font-family: var(--mono); color: var(--faint); }
+.prop .p-tasklist .done .mk { color: var(--ok); } .prop .p-tasklist .now .mk { color: var(--accent-ink); }
+.prop .p-tasklist .done span:last-child { color: var(--muted); }
+</style>
+<style>/* Page layouts for the studio mocks, on top of prop.css (the approved library). Phone = the app's own width <= 720px. */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--rv-bg); color: var(--rv-ink); font: 14px/1.5 "IBM Plex Sans", system-ui, sans-serif; }
+:root { --rv-bg: #e9e9f1; --rv-ink: #15162a; --rv-muted: #585b73; --rv-line: #cfd1de; --rv-surface: #ffffff; --rv-accent: #4f4bd0; --rv-on: #ffffff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --rv-bg: #08090f; --rv-ink: #e9eaf4; --rv-muted: #a3a6c0; --rv-line: #34374d; --rv-surface: #161826; --rv-accent: #9c9aff; --rv-on: #0e0f17; color-scheme: dark; } }
+:root[data-theme="dark"] { --rv-bg: #08090f; --rv-ink: #e9eaf4; --rv-muted: #a3a6c0; --rv-line: #34374d; --rv-surface: #161826; --rv-accent: #9c9aff; --rv-on: #0e0f17; color-scheme: dark; }
+
+/* Review bar: not part of the app */
+.rv { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px dashed var(--rv-line); font-size: 13px; color: var(--rv-muted); }
+.rv b { color: var(--rv-ink); font-weight: 600; }
+.rv-seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rv-line); border-radius: 8px; overflow: hidden; }
+.rv-seg button { border: 0; background: var(--rv-surface); color: var(--rv-ink); padding: 6px 11px; min-height: 32px; font: inherit; cursor: pointer; }
+.rv-seg button + button { border-left: 1px solid var(--rv-line); }
+.rv-seg button[aria-pressed="true"] { background: var(--rv-accent); color: var(--rv-on); }
+.stage.phone { padding-block: 24px; }
+.stage.phone .app { width: 390px; margin: 0 auto; border: 1px solid var(--rv-line); border-radius: 22px; overflow: hidden; min-height: 820px; }
+.decide { max-width: 1280px; margin: 0 auto; padding-block: 24px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.decide h2 { margin: 0 0 8px; font: 700 20px/1.2 "Bricolage Grotesque", system-ui, sans-serif; color: var(--rv-ink); }
+.decide ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 100ch; color: var(--rv-ink); font-size: 14px; }
+.decide code { font-family: "IBM Plex Mono", monospace; font-size: 13px; }
+
+/* App shell */
+.app { container: app / inline-size; position: relative; min-height: 100vh; }
+.app .p-top { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.app .p-nav a { cursor: pointer; }
+.app .menu { display: none; }
+.app .page { max-width: 1280px; margin: 0 auto; padding-block: 28px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 20px; }
+.app .page > * { min-width: 0; }
+.app .hrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.app .filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.app .foot { font-size: 13px; color: var(--faint); }
+.app .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.app .grid2 { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.app .stack { display: grid; gap: 16px; align-content: start; }
+
+/* Live (the approved v3 rows) */
+.app .needs .need { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px 16px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .needs .need:first-of-type { border-top: 0; }
+.app .need .since { color: var(--muted); font-size: 14px; }
+.app .shead { display: grid; grid-template-columns: 1fr auto; gap: 12px 32px; align-items: end; padding: 18px 20px 14px; }
+.app .who { display: grid; gap: 4px; min-width: 0; }
+.app .who .l1 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.app .who h2 { margin: 0; font: 600 21px/1.2 var(--display); letter-spacing: -.01em; }
+.app .meta { font-size: 13px; color: var(--muted); }
+.app .stats { display: flex; gap: 28px; align-items: end; }
+.app .stats .p-stat .v { font-size: 20px; }
+.app .skills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 0 20px 14px; font-size: 13px; color: var(--muted); }
+.app .cols, .app .agent { display: grid; grid-template-columns: minmax(200px, 1.1fr) minmax(220px, 2fr) 116px 76px 64px 150px; gap: 16px; align-items: center; }
+.app .cols { padding: 8px 20px; background: var(--sunk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .r { text-align: right; }
+.app .agent { padding: 12px 20px; min-height: 60px; border-top: 1px solid var(--line); cursor: pointer; position: relative; }
+.app .cols + .agent { border-top: 0; }
+.app .agent:hover { background: var(--sunk); }
+.app .agent[aria-expanded="true"] { background: var(--accent-soft); }
+.app .name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.app .name > span:last-child { display: grid; min-width: 0; line-height: 1.3; }
+.app .name b { font-weight: 600; }
+.app .name small { color: var(--muted); font-size: 13px; }
+.app .d1 .name { padding-left: 30px; }
+.app .d1 .name::before { content: ""; position: absolute; left: 34px; top: 0; height: 50%; width: 16px; border-left: 1.5px solid var(--line-strong); border-bottom: 1.5px solid var(--line-strong); border-bottom-left-radius: 8px; }
+.app .d1.more .name::after { content: ""; position: absolute; left: 34px; top: 50%; bottom: 0; border-left: 1.5px solid var(--line-strong); }
+.app .doing { display: grid; gap: 2px; min-width: 0; }
+.app .doing .what { font-weight: 500; overflow-wrap: anywhere; }
+.app .doing .sub { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.app .doing .sub .num { color: var(--ink); }
+.app .mini { display: inline-flex; align-items: center; gap: 6px; }
+.app .mini .p-track { width: 44px; }
+.app .agent.is-done .name b, .app .agent.is-done .doing .what { color: var(--muted); font-weight: 500; }
+.app .agent.is-stalled { box-shadow: inset 3px 0 0 var(--bad-dot); }
+.app .agent.is-waiting { box-shadow: inset 3px 0 0 var(--wait-dot); }
+.app .agent .p-state { justify-self: end; }
+.app .agent .facts { display: none; }
+
+/* Drawer */
+.app .scrim { position: fixed; inset: 0; background: rgba(10, 11, 20, .28); z-index: 20; }
+.app .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(500px, 100%); border-radius: 0; border-top: 0; border-bottom: 0; border-right: 0; z-index: 21; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.app .drawer .p-dh { padding-top: max(16px, env(safe-area-inset-top, 0px)); }
+.app .drawer .dbody { overflow-y: auto; padding-bottom: 24px; }
+.app .note2 { margin: 12px 20px 0; }
+
+/* Ledger chart */
+.app .chartbox { position: relative; padding: 16px 20px 8px; }
+.app .chartbox svg { display: block; width: 100%; height: auto; overflow: visible; }
+.app .chartbox .grid line { stroke: var(--line); stroke-width: 1; }
+.app .chartbox .axis text { font: 12px var(--mono); fill: var(--muted); }
+.app .chartbox .bar { cursor: pointer; }
+.app .chartbox .bar:focus { outline: none; }
+.app .chartbox .bar:focus-visible rect.hit, .app .chartbox .bar:hover rect.hit { fill: var(--accent); fill-opacity: .06; }
+.app .chartbox .p-tip { position: absolute; pointer-events: none; transform: translate(-50%, calc(-100% - 10px)); z-index: 2; min-width: 200px; }
+.app .tableview summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; color: var(--accent-ink); font-weight: 500; border-top: 1px solid var(--line); }
+.app .tableview[open] summary { border-bottom: 1px solid var(--line); }
+.app .warnnum { color: var(--wait); }
+.app .badnum { color: var(--bad); }
+
+/* Pipeline roles: HTML nodes over an SVG edge layer */
+.app .orgwrap { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.app .orgscroll { overflow-x: auto; }
+.app .org { position: relative; width: 1000px; height: 440px; margin: 8px auto 16px; }
+.app .org svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.app .org .edge { fill: none; stroke: var(--data); stroke-opacity: .35; stroke-linecap: round; }
+.app .org .elabel { font: 500 12px var(--mono); fill: var(--muted); }
+.app .node { position: absolute; width: 190px; height: 94px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); box-shadow: var(--shadow); display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; align-content: start; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.app .node:hover { border-color: var(--accent); }
+.app .node[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.app .node .p-av { grid-row: span 2; background: var(--data); }
+.app .node b { font-weight: 600; font-size: 15px; line-height: 1.2; }
+.app .node .ty { font-size: 13px; color: var(--muted); line-height: 1.2; }
+.app .node .nu { grid-column: 1 / -1; font: 13px var(--mono); color: var(--ink); margin-top: 6px; }
+.app .node .nu span { color: var(--muted); }
+.app .rolelist { display: none; }
+.app .panel .p-card-b { display: grid; gap: 14px; }
+.app .panel .rinfo { color: var(--muted); font-size: 14px; }
+.app .alist { list-style: none; margin: 0; padding: 0; display: grid; }
+.app .alist li { display: grid; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.app .alist li:last-child { border-bottom: 0; }
+.app .alist .d { font-size: 13px; color: var(--muted); }
+.app .fix { display: grid; gap: 8px; padding: 12px 14px; border-radius: 12px; background: var(--sunk); border: 1px solid var(--line); }
+.app .fix .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.app .ok-msg { color: var(--ok); font-size: 14px; }
+
+/* Lanes */
+.app .lanes { display: grid; grid-template-columns: 170px minmax(0, 1fr); padding: 12px 20px 16px; gap: 0 16px; }
+.app .lanes .lh { font-size: 14px; display: flex; align-items: center; gap: 8px; min-height: 44px; border-bottom: 1px solid var(--line); }
+.app .lanes .lh small { color: var(--muted); font-size: 13px; }
+.app .lanes .lt { position: relative; min-height: 44px; border-bottom: 1px solid var(--line); }
+.app .lanes .seg-bar { position: absolute; top: 14px; height: 16px; border-radius: 4px; background: var(--m); }
+.app .lanes .seg-bar.stall { background: repeating-linear-gradient(45deg, var(--bad-dot) 0 6px, var(--bad-bg) 6px 12px); }
+.app .lanes .seg-bar.tool { top: 18px; height: 8px; opacity: .55; }
+.app .lanes .ax { grid-column: 2; position: relative; height: 24px; }
+.app .lanes .ax span { position: absolute; top: 6px; transform: translateX(-50%); font: 12px var(--mono); color: var(--muted); }
+.app .lanes .slabel { position: absolute; top: 12px; font: 600 12px var(--sans); color: var(--bad); white-space: nowrap; }
+
+/* Skills graph */
+.app .skg { position: relative; width: 760px; height: 300px; margin: 8px 0 12px; }
+.app .skg svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.app .skg .e { fill: none; stroke: var(--accent); stroke-opacity: .45; stroke-linecap: round; }
+.app .skg .e.named { stroke: var(--muted); stroke-opacity: .7; stroke-dasharray: 5 5; stroke-width: 1.5; }
+.app .skg .el { font: 500 12px var(--mono); fill: var(--muted); }
+.app .skg .colt { position: absolute; top: 0; font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .sknode { position: absolute; width: 176px; height: 58px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); display: grid; align-content: center; gap: 2px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.app .sknode.skill b { font-family: var(--mono); color: var(--accent-ink); font-weight: 500; }
+.app .sknode.agent { border-radius: 29px; padding-left: 16px; }
+.app .sknode.ghost { border-style: dashed; background: transparent; color: var(--muted); }
+.app .sknode small { font-size: 12px; color: var(--muted); }
+.app .sknode:hover { border-color: var(--accent); }
+.app .runs { display: flex; align-items: center; gap: 10px; }
+.app .runs .p-track { flex: 1; min-width: 60px; }
+.app .spark { display: block; }
+.app .spark rect { fill: var(--data); }
+.app .idle { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px 20px; }
+
+/* Office */
+.app .rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.app .room .scene { display: block; width: 100%; height: auto; background: var(--sunk); border-bottom: 1px solid var(--line); image-rendering: pixelated; }
+.app .roster { list-style: none; margin: 0; padding: 0; }
+.app .roster li { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; min-height: 52px; padding: 8px 20px; border-top: 1px solid var(--line); cursor: pointer; }
+.app .roster li:first-child { border-top: 0; }
+.app .roster li:hover { background: var(--sunk); }
+.app .roster .w { display: grid; line-height: 1.3; min-width: 0; }
+.app .roster .w small { font-size: 13px; color: var(--muted); }
+.app .roomh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.app .roomh h3 { margin: 0; font: 600 18px/1.2 var(--display); }
+.app .roomh .nums { display: flex; gap: 14px; align-items: center; font-size: 13px; color: var(--muted); }
+.app .roomh .nums b { font: 500 14px var(--mono); color: var(--ink); }
+.app .roomh .p-track { width: 64px; display: inline-block; vertical-align: middle; }
+
+/* Analysis */
+.app .fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
+.app .fields .p-select { width: 100%; }
+.app .reads { display: flex; flex-wrap: wrap; gap: 8px; }
+.app .est { display: grid; gap: 14px; padding: 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--sunk); }
+.app .est .big { display: flex; flex-wrap: wrap; gap: 16px 36px; }
+.app .est .alt { font-size: 14px; color: var(--muted); }
+.app .est .alt b { color: var(--ink); font-weight: 600; }
+.app .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.app .reports { list-style: none; margin: 0; padding: 0; }
+.app .reports li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 12px 20px; border-top: 1px solid var(--line); cursor: pointer; }
+.app .reports li:first-child { border-top: 0; }
+.app .reports li[aria-current="true"] { background: var(--accent-soft); }
+.app .reports .d { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.app .report { display: grid; gap: 18px; padding: 18px 20px 22px; }
+.app .report h4 { margin: 0 0 6px; font: 600 16px/1.3 var(--display); }
+.app .report p, .app .report li { font-size: 14px; line-height: 1.55; }
+.app .report p { margin: 0; color: var(--ink); max-width: 72ch; }
+.app .report ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; max-width: 72ch; }
+.app .excerpt { font-size: 12px; font-weight: 600; color: var(--muted); }
+
+@container app (max-width: 720px) {
+  .app .p-nav { display: none; }
+  .app .menu { display: inline-flex; margin-left: auto; min-height: 44px; }
+  .app .p-conn .url { display: none; }
+  .app .p-conn { margin-left: 0; }
+  .app .p-head h1 { font-size: 26px; }
+  .app .p-seg button { min-height: 40px; }
+  .app .p-select, .app .p-input { min-height: 44px; font-size: 16px; }
+  .app .p-btn { min-height: 44px; }
+  .app .grid3, .app .grid2, .app .orgwrap { grid-template-columns: 1fr; }
+  .app .needs .need { grid-template-columns: 1fr auto; padding: 12px 16px; }
+  .app .needs .need .p-state { grid-column: 1 / -1; justify-self: start; }
+  .app .needs .need .since { grid-column: 1; }
+  .app .needs .need .p-btn { grid-column: 2; grid-row: 2 / span 2; }
+  .app .shead { grid-template-columns: 1fr; padding: 16px; }
+  .app .stats { gap: 20px; flex-wrap: wrap; }
+  .app .skills { padding: 0 16px 12px; }
+  .app .cols { display: none; }
+  .app .agent { grid-template-columns: 1fr auto; grid-template-areas: "name state" "doing doing" "facts facts"; gap: 6px 10px; padding: 14px 16px; }
+  .app .agent .name { grid-area: name; } .app .agent .p-state { grid-area: state; } .app .agent .doing { grid-area: doing; }
+  .app .agent .m, .app .agent .tok, .app .agent .cost { display: none; }
+  .app .agent .facts { grid-area: facts; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); }
+  .app .d1 { padding-left: 34px; }
+  .app .d1 .name { padding-left: 0; }
+  .app .d1 .name::before, .app .d1.more .name::after { left: 20px; }
+  .app .drawer { top: auto; height: 88%; width: 100%; border-radius: 18px 18px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+  .app .p-ev { grid-template-columns: 56px 1fr auto; padding: 10px 16px; }
+  .app .p-ev .target { grid-column: 2 / -1; grid-row: 2; }
+  .app .p-card-h, .app .p-card-b { padding-left: 16px; padding-right: 16px; }
+  .app .p-table td, .app .p-table th { padding-left: 16px; padding-right: 16px; }
+  .app .hide-phone { display: none; }
+  .app .chartbox { padding: 12px 12px 4px; }
+  .app .orgscroll { display: none; }
+  .app .rolelist { display: block; }
+  .app .lanes { grid-template-columns: 96px minmax(0, 1fr); padding: 8px 16px 12px; gap: 0 10px; }
+  .app .skgscroll { overflow-x: auto; }
+  .app .rooms { grid-template-columns: 1fr; }
+  .app .fields { grid-template-columns: 1fr; }
+  .app .roster li { padding: 8px 16px; }
+}
+.stage.phone .drawer { left: 50%; right: auto; transform: translateX(-50%); width: 390px; top: auto; height: 720px; border-radius: 18px 18px 0 0; }
+.stage.phone .scrim { left: 50%; transform: translateX(-50%); width: 390px; }
+
+/* Fixes from the first look */
+.app .orgwrap { grid-template-columns: 1fr; }
+.app .panel .p-card-b { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 24px; align-items: start; }
+.app .panel .pcol { display: grid; gap: 12px; }
+.app td.rk { width: 100%; }
+.app td.rk .p-track { margin-top: 8px; }
+.app .sknode { overflow: hidden; }
+.app .sknode small, .app .sknode b, .app .sknode span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app .sklist { display: none; list-style: none; margin: 0; padding: 0 16px; }
+.app .sklist li { display: grid; gap: 2px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.app .sklist .sub { font-size: 13px; color: var(--muted); }
+.app .daybars { display: none; padding: 12px 16px 4px; gap: 8px; }
+.app .dayrow { display: grid; grid-template-columns: 56px 1fr 48px; gap: 10px; align-items: center; font-size: 13px; }
+.app .dayrow .dl { color: var(--muted); }
+.app .dayrow .stk { display: flex; gap: 2px; height: 12px; }
+.app .dayrow .stk i { display: block; height: 100%; border-radius: 2px; }
+.app .dayrow .num { text-align: right; }
+@container app (max-width: 720px) {
+  .app .panel .p-card-b { grid-template-columns: 1fr; }
+  .app .skgscroll { display: none; }
+  .app .sklist { display: block; }
+  .app .chartbox { display: none; }
+  .app .daybars { display: grid; }
+  .app .lanes .ax span.odd { display: none; }
+}
+</style>
+<style>/* v0.3 "readable" additions, on top of the approved library and page layouts. Carried over from the earlier mocks: .formula, .tag, .real, .settings, .sizes, .pr, .stats6, .repeat, .kinds, .bar, the Trends marker, list and before/after pieces. */
+.app .formula { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); overflow-x: auto; white-space: pre; font: 13px/1.7 var(--mono); }
+.app .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 5px; background: var(--wait-bg); color: var(--wait); font: 500 12px/1.7 var(--mono); vertical-align: 1px; }
+.app .real { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 5px; background: var(--ok-bg); color: var(--ok); font: 500 12px/1.7 var(--mono); vertical-align: 1px; }
+.app .settings { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: end; }
+.app .settings label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.app .settings .p-input { width: 120px; }
+.app .sizes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); }
+.app .sizes b { color: var(--ink); font-weight: 600; font-family: var(--mono); }
+.app .prs { display: grid; }
+.app .pr { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .pr .n { font: 500 14px var(--mono); color: var(--accent-ink); }
+.app .pr .t { min-width: 0; display: grid; gap: 2px; }
+.app .pr .t b { font-weight: 500; font-size: 14px; overflow-wrap: anywhere; }
+.app .pr .t small { color: var(--muted); font-size: 13px; }
+.app .pr .p-seg button { min-width: 44px; }
+.app .stats6 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 18px 28px; }
+.app .repeat { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .repeat b { font-weight: 600; font-size: 14px; }
+.app .repeat p { margin: 0; color: var(--muted); font-size: 14px; }
+.app .repeat code, .app .repeat-more code { font-family: var(--mono); font-size: 13px; }
+.app .repeat .num { font: 500 14px var(--mono); text-align: right; }
+.app .repeat .try { grid-column: 1 / -1; font-size: 13px; color: var(--ok); }
+.app .repeat-more { margin: 0; padding: 12px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+.app .kinds { width: 100%; border-collapse: collapse; font-size: 14px; }
+.app .kinds td, .app .kinds th { padding: 9px 20px; border-top: 1px solid var(--line); text-align: left; }
+.app .kinds thead th { border-top: 0; font-size: 12px; font-weight: 500; color: var(--muted); background: var(--sunk); }
+.app .kinds td.r, .app .kinds th.r { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+.app .kinds .sub td { color: var(--muted); padding-left: 40px; }
+.app .bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--data); vertical-align: middle; }
+.app .mk line { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.app .mk rect { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
+.app .mk text { font: 600 12px var(--sans); fill: var(--ink); }
+.app .mk[aria-pressed="true"] rect { fill: var(--ink); }
+.app .mk[aria-pressed="true"] text { fill: var(--surface); }
+.app .mk { cursor: pointer; }
+.app .chartbox .bar text.tot { font: 500 12px var(--mono); fill: var(--muted); }
+.app .mkrow { display: grid; grid-template-columns: minmax(28px, auto) minmax(0, 1fr); gap: 10px; align-items: center; font-size: 13px; color: var(--ink); padding: 2px 0; }
+.app .mkrow > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .mkdot { display: grid; place-items: center; flex: none; justify-self: start; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; white-space: nowrap; border: 1.5px solid var(--ink); font: 600 12px/1 var(--sans); }
+.app .mklist { list-style: none; margin: 0; padding: 0 20px 16px; display: grid; gap: 8px; }
+.app .mkbtn { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; text-align: left; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: 14px/1.4 var(--sans); cursor: pointer; }
+.app .mkbtn:hover { border-color: var(--line-strong); }
+.app .mkbtn[aria-pressed="true"], .app .mkbtn[aria-expanded="true"] { border-color: var(--line-strong); background: var(--sunk); box-shadow: var(--shadow); }
+.app .mkbtn small { color: var(--muted); font-size: 13px; }
+.app .mkbtn .mkt { display: grid; min-width: 0; }
+.app .mkbtn .mkt small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .mkbtn .act { color: var(--accent-ink); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.app .mkmore { padding: 0 20px 16px; }
+.app .mkmore .p-btn { width: 100%; min-height: 44px; }
+.app .ba { width: 100%; border-collapse: collapse; font-size: 14px; }
+.app .ba th, .app .ba td { padding: 10px 0; border-top: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; }
+.app .ba th:first-child, .app .ba td:first-child { text-align: left; font-weight: 400; color: var(--ink); }
+.app .ba thead th { border-top: 0; font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .ba td.num, .app .ba th.num { font-family: var(--mono); }
+.app .ba .down { color: var(--ok); }
+.app .ba td:last-child, .app .ba th:last-child { padding-left: 12px; }
+.app .files { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; }
+.app .files code, .app .commits code { font-family: var(--mono); font-size: 13px; }
+.app .commits { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; }
+.app .commits li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.app .commits code { color: var(--muted); }
+.app .cbody { display: grid; gap: 16px; padding: 16px 20px; }
+.app .goal { display: grid; gap: 10px; }
+.app .goal .big { font: 500 22px/1.1 var(--mono); }
+.app .chead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; padding: 8px 20px; border-bottom: 1px solid var(--line); }
+.app .chead h3 { margin: 0; font: 600 15px/1.3 var(--sans); }
+.app .tint td { background: var(--accent-soft); }
+
+/* The proposed header: the title and one line, then the views and the pickers, always in the same places */
+.app .ph { display: grid; gap: 12px; }
+.app .ph-1 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; min-width: 0; }
+.app .ph-1 h1 { margin: 0; font: 700 30px/1.1 var(--display); letter-spacing: -.02em; flex: none; }
+.app .ph-sub { flex: 1 1 0; min-width: 0; font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app .ph-2 { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 12px; }
+.app .ph-pick { display: flex; gap: 10px; margin-left: auto; }
+.app .ph-pick .p-select { width: 200px; }
+.app .ph-pick .p-select.period { width: 176px; }
+.app .p-select[disabled] { background-color: var(--sunk); color: var(--faint); cursor: not-allowed; }
+.app .live-sub { font-size: 14px; color: var(--muted); }
+
+/* The reading: what the page says in a sentence */
+.app .reading { padding: 16px 20px; border-left: 4px solid var(--accent); display: grid; gap: 6px; }
+.app .reading p { margin: 0; font-size: 17px; line-height: 1.55; max-width: 80ch; }
+.app .reading b { font-weight: 600; }
+.app .reading .by { font-size: 13px; color: var(--muted); }
+
+/* A figure that says what it means: a plain label, a readable value, one line, and the explanation in place */
+.app .figgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px 32px; align-items: start; }
+.app .figgrid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.app .fig { display: grid; gap: 3px; align-content: start; min-width: 0; }
+.app .fig .k { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.app .fig .v { font: 500 26px/1.15 var(--mono); font-variant-numeric: tabular-nums; }
+.app .fig .v.neg { color: var(--bad); }
+.app .fig .d { font-size: 14px; color: var(--ink); }
+.app .fig .why { margin: 6px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+.app .fig .why b { color: var(--ink); font-weight: 600; }
+.app .info { position: relative; width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface); color: var(--muted); font: 600 13px/1 var(--sans); cursor: pointer; flex: none; }
+.app .info::after { content: ""; position: absolute; inset: -11px; }
+.app .info:hover, .app .info[aria-expanded="true"] { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+
+/* Live, proposed: the figures as words with units */
+.app .figs { display: grid; gap: 6px; justify-items: start; font-size: 14px; color: var(--muted); }
+.app .figs b { font: 500 16px var(--mono); color: var(--ink); }
+.app .ctxline { display: flex; align-items: center; gap: 10px; }
+.app .ctxline .p-track { width: 110px; }
+.app .p-conn.q i { background: var(--done-dot); box-shadow: 0 0 0 3px var(--done-bg); }
+.app .p-conn.r i { background: var(--wait-dot); box-shadow: 0 0 0 3px var(--wait-bg); }
+.app .p-conn.r { color: var(--wait); }
+
+/* Worth, proposed */
+.app .pr2 { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 6px 16px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--line); }
+.app .pr2 .n { font: 500 14px var(--mono); color: var(--accent-ink); }
+.app .pr2 .t { min-width: 0; display: grid; gap: 2px; }
+.app .pr2 .t b { font-weight: 500; font-size: 14px; overflow-wrap: anywhere; }
+.app .pr2 .t small { color: var(--muted); font-size: 13px; }
+.app .pr2 .pz { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 10px; }
+.app .pr2 .p-seg button { min-width: 44px; }
+.app .szchip { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--sunk); color: var(--muted); font: 500 13px/1 var(--mono); white-space: nowrap; }
+.app .szchip.mine { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); }
+.app .back { border: 0; background: none; padding: 0 4px; min-height: 28px; color: var(--accent-ink); font: 600 13px/1 var(--sans); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.app .cuts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; }
+.app .cuts label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.app .cuts .p-input { width: 100%; font-family: var(--mono); }
+.app .cuts .p-input[aria-invalid="true"] { border-color: var(--bad-dot); }
+.app .werr { margin: 0; color: var(--bad); font-size: 14px; }
+.app .dist { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; }
+.app .dist > div { display: grid; gap: 4px; padding: 10px 12px; border-radius: 10px; background: var(--sunk); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.app .dist b { font: 500 16px var(--mono); color: var(--ink); }
+.app .dist .p-track { height: 6px; }
+.app .neg { color: var(--bad); }
+.app .rowsnote { margin: 0; padding: 12px 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+
+/* Mock only: not part of the app */
+.mockbox { border: 1px dashed var(--line-strong); border-radius: 12px; padding: 12px 14px; background: transparent; display: grid; gap: 8px; font-size: 13px; color: var(--muted); }
+.mockbox b { color: var(--ink); font-weight: 600; }
+.mockbox table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.mockbox th, .mockbox td { text-align: left; padding: 6px 10px 6px 0; border-top: 1px solid var(--line); font-weight: 400; }
+.mockbox thead th { border-top: 0; font-weight: 500; }
+.mockbox .num { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+.mockbox .ok { color: var(--ok); font-weight: 600; } .mockbox .off { color: var(--bad); font-weight: 600; }
+.mocknote { display: inline-block; font-size: 13px; color: var(--muted); border: 1px dashed var(--line-strong); border-radius: 8px; padding: 4px 10px; }
+.mockhold { position: absolute; top: 0; left: 0; right: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; }
+.mockhold .page { padding-block: 0; }
+
+@container app (max-width: 720px) {
+  .app .ph-1 { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .app .ph-1 h1 { font-size: 26px; }
+  .app .ph-sub { flex: none; width: 100%; }
+  .app .ph-2 > .p-seg { display: flex; width: 100%; }
+  .app .ph-2 > .p-seg button { flex: 1; }
+  .app .ph-pick { width: 100%; margin-left: 0; display: grid; grid-template-columns: 1fr 1fr; }
+  .app .ph-pick .p-select, .app .ph-pick .p-select.period { width: 100%; }
+  .app .pr { grid-template-columns: 1fr; }
+  .app .pr2 { grid-template-columns: 1fr; }
+  .app .pr2 .pz { justify-content: flex-start; }
+  .app .figgrid, .app .figgrid.four { grid-template-columns: 1fr; }
+  .app .cuts, .app .dist { grid-template-columns: 1fr 1fr; }
+  .app .reading { padding: 14px 16px; }
+  .app .reading p { font-size: 16px; }
+  .app .repeat { padding-left: 16px; padding-right: 16px; }
+  .app .kinds td, .app .kinds th { padding: 9px 14px; }
+  .app .kinds .sub td { padding-left: 26px; }
+  .app .mklist, .app .mkmore { padding-left: 16px; padding-right: 16px; }
+  .app .mkbtn { grid-template-columns: 28px minmax(0, 1fr); }
+  .app .mkbtn .act { grid-column: 2; }
+  .app .cbody, .app .chead { padding-left: 16px; padding-right: 16px; }
+  .app .ba { font-size: 13px; }
+  .app .rowsnote { padding-left: 16px; padding-right: 16px; }
+  .app .live-sub { display: block; }
+}
+@container app (min-width: 721px) and (max-width: 1000px) {
+  .app .figgrid, .app .figgrid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.app .p-table td.r { white-space: nowrap; }
+.app .ph-1 .live-sub { flex: 1 1 0; min-width: 0; }
+.app .ctxline b { font: 600 14px var(--sans); }
+.app .dist b { white-space: nowrap; }
+</style>
+<style>/* v0.4 Factory additions, on top of the approved library, the page layouts and the readable additions above. */
+.app .needs .need .sub { display: block; font-size: 13px; color: var(--muted); }
+.app .needs .need b { font-weight: 600; }
+.app .p-state.s-ready { --c-dot: var(--ok-dot); color: var(--ok); background: var(--ok-bg); }
+.app .p-state.s-info { --c-dot: var(--data); color: var(--muted); background: var(--sunk); }
+.app .adds { padding: 10px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); }
+.app .asof { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.app .asof.stale { color: var(--wait); font-weight: 500; }
+
+/* The board: rows are issues */
+.app .bcols, .app .brow { display: grid; grid-template-columns: minmax(200px, 2fr) 160px minmax(170px, 1.3fr) 140px 112px; gap: 16px; align-items: center; padding: 12px 20px; }
+.app .bcols { padding-block: 8px; background: var(--sunk); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .brow { border-top: 1px solid var(--line); }
+.app .bcols + .brow { border-top: 0; }
+.app .brow.merged { color: var(--muted); }
+.app .brow .open { all: unset; cursor: pointer; display: grid; gap: 2px; min-width: 0; }
+.app .brow .open:hover b, .app .brow .open:focus-visible b { color: var(--accent-ink); }
+.app .brow .open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.app .brow .open b { font-weight: 600; overflow-wrap: anywhere; }
+.app .brow small { font-size: 13px; color: var(--muted); }
+.app .lab { display: none; font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .stagecell { display: grid; gap: 5px; }
+.app .stagecell span { font-size: 13px; font-weight: 500; }
+.app .trk { display: flex; gap: 3px; }
+.app .trk i { flex: 1; height: 6px; border-radius: 2px; background: var(--line-strong); }
+.app .trk i.on { background: var(--data); }
+.app .trk i.now { background: var(--accent); }
+.app .trk.bad i.now { background: var(--bad-dot); }
+.app .trk.good i.now, .app .trk.good i.on { background: var(--ok-dot); }
+.app .why { font-size: 13px; }
+.app .why.no { color: var(--wait); }
+.app .why.yes { color: var(--ok); font-weight: 600; }
+.app .why.none { color: var(--faint); }
+.app .costcell { display: grid; gap: 5px; font-size: 13px; }
+.app .costcell .num { font-size: 13px; }
+.app .meter { height: 6px; border-radius: 3px; background: var(--data-soft); overflow: hidden; }
+.app .meter i { display: block; height: 100%; background: var(--data); }
+.app .meter.warn i { background: var(--wait-dot); }
+.app .meter.over i { background: var(--bad-dot); }
+.app .links { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; }
+.app .links a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.app .links .none { color: var(--faint); }
+.app .notissue { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.app .notissue .sub { font-size: 13px; color: var(--muted); }
+
+/* The drawer: can it merge, findings, cost */
+.app .dsec { display: grid; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line); }
+.app .dsec h4 { margin: 0; font: 600 14px/1.3 var(--sans); }
+.app .dsec p { margin: 0; font-size: 14px; }
+.app .dsec .sub { font-size: 13px; color: var(--muted); }
+.app .cond { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+.app .cond li { display: grid; grid-template-columns: 20px 1fr; gap: 6px; color: var(--ink); }
+.rv { position: relative; z-index: 30; } /* Mock only: the controls stay usable beside an open drawer, which starts below them. */
+.stage:not(.phone) .drawer { top: 128px; }
+.stage.phone .drawer { height: calc(100vh - 130px); }
+.app .fgroup summary { cursor: pointer; font: 600 13px/1.3 var(--sans); color: var(--muted); padding: 4px 0; }
+.app .cond .mk { font-family: var(--mono); font-weight: 600; }
+.app .cond .ok .mk { color: var(--ok); } .app .cond .no .mk { color: var(--bad); } .app .cond .unk .mk { color: var(--faint); }
+.app .cond small { display: block; font-size: 13px; color: var(--muted); }
+.app .fgroup { display: grid; gap: 6px; }
+.app .fgroup h5 { margin: 0; font: 600 13px/1.3 var(--sans); color: var(--muted); }
+.app .fnd { display: grid; grid-template-columns: 34px 58px 1fr; gap: 2px 8px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.app .fnd .id { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.app .fnd .sev { font-size: 13px; }
+.app .fnd .sev.major { color: var(--bad); font-weight: 600; }
+.app .fnd .file { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.app .fnd .ttl { grid-column: 3; }
+.app .fnd .ttl.off { color: var(--faint); font-size: 13px; }
+.app .fnd .why2 { grid-column: 3; font-size: 13px; color: var(--muted); }
+.app .ledger2 { display: grid; gap: 4px; font-size: 14px; }
+.app .ledger2 div { display: flex; justify-content: space-between; gap: 12px; }
+.app .ledger2 .sub { min-width: 0; }
+
+/* Machine */
+.app .mstats { display: flex; flex-wrap: wrap; gap: 16px 44px; padding: 16px 20px; }
+.app .mrow { display: grid; grid-template-columns: minmax(0, 1fr) 100px 90px; gap: 4px 16px; align-items: center; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.app .mrow .nm { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; font-weight: 500; }
+.app .mrow .sub { font-size: 13px; color: var(--muted); font-weight: 400; }
+.app .mrow.head { padding-block: 8px; background: var(--sunk); font-size: 12px; font-weight: 500; color: var(--muted); }
+.app .flag { font-size: 12px; font-weight: 500; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+.app .flag.left { color: var(--wait); background: var(--wait-bg); }
+.app .flag.sick { color: var(--bad); background: var(--bad-bg); }
+
+/* Agent view frame, the refusal, and alerts */
+.app .tf { margin: 0; padding: 14px 16px; background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; font: 13px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); }
+.app .tf .dim { color: var(--muted); } .app .tf .bad { color: var(--bad); } .app .tf .wait { color: var(--wait); } .app .tf .ok { color: var(--ok); } .app .tf b { font-weight: 600; }
+.app div.tf { white-space: normal; display: grid; gap: 4px; }
+.app .tf .tfh { margin: 6px 0; }
+.app .avr { display: grid; grid-template-columns: 12px minmax(0, 1fr) minmax(0, 1.2fr) 32px; gap: 8px; }
+.app .avr .cut { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .avr > :last-child { text-align: right; }
+.app .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.app .cmp { width: 100%; border-collapse: collapse; font-size: 14px; }
+.app .cmp th { text-align: left; font: 500 12px/1.2 var(--sans); color: var(--muted); padding: 10px 20px; background: var(--sunk); border-bottom: 1px solid var(--line); }
+.app .cmp td { padding: 10px 20px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.app .cmp tr:last-child td { border-bottom: 0; }
+.app .cmp .y { color: var(--ok); } .app .cmp .n { color: var(--faint); }
+.app .push { display: grid; gap: 2px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); font-size: 14px; }
+.app .push .h { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted); }
+.app .push b { font-weight: 600; }
+.app .pushes { display: grid; gap: 10px; }
+.app .caseh { margin: 0; font: 600 14px/1.3 var(--sans); }
+.app .caseh + .p-hint, .app .p-hint.block { display: block; font-size: 13px; color: var(--muted); }
+.app .casegrid { display: grid; gap: 16px; }
+.app .confirm { grid-column: 1 / -1; display: grid; gap: 10px; padding: 12px 14px; background: var(--bad-bg); border-radius: 10px; font-size: 14px; }
+.app .confirm .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.app .p-btn.danger { background: var(--bad-dot); border-color: var(--bad-dot); color: #fff; }
+.app .p-btn.danger:hover { filter: brightness(1.05); color: #fff; }
+.app .srow { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr) auto; gap: 8px 16px; align-items: center; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.app .srow b { font-weight: 600; }
+.app .srow .sub { display: block; font-size: 13px; color: var(--muted); }
+.app .srow.d1 { padding-left: 44px; }
+.app .fieldrow { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 14px; }
+.app .fieldrow label { display: grid; gap: 4px; font-size: 13px; font-weight: 500; color: var(--muted); }
+.app .fieldrow .p-input { width: 130px; }
+
+@container app (min-width: 721px) {
+  .app .needs .need { grid-template-columns: 124px minmax(0, 1fr) 92px 124px; }
+  .app .needs .need .p-state { justify-self: start; }
+  .app .needs .need .since { text-align: right; }
+  .app .needs .need .p-btn { justify-self: stretch; }
+}
+@container app (max-width: 720px) {
+  .app .bcols { display: none; }
+  .app .brow { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 16px; }
+  .app .lab { display: block; }
+  .app .adds, .app .notissue, .app .mrow, .app .mstats, .app .dsec, .app .srow { padding-left: 16px; padding-right: 16px; }
+  .app .srow { grid-template-columns: minmax(0, 1fr); }
+  .app .srow.d1 { padding-left: 28px; }
+  .app .mrow { grid-template-columns: minmax(0, 1fr) 40px 76px; gap: 4px 10px; }
+  .app .pair { grid-template-columns: minmax(0, 1fr); }
+  .app .cmp th, .app .cmp td { padding-left: 16px; padding-right: 16px; }
+  .app .asof { white-space: normal; }
+}
+</style>
+<div class="rv" role="region" aria-label="Mock controls">
+  <span><b>Mock controls</b>, not part of the app</span>
+  <span>Board <span class="rv-seg" id="rv-page"></span></span>
+  <span id="rv-casewrap" hidden><span id="rv-caselabel">Case</span> <span class="rv-seg" id="rv-case"></span></span>
+  <span>Theme <span class="rv-seg" id="rv-theme"><button type="button" data-v="system" aria-pressed="true">System</button><button type="button" data-v="light" aria-pressed="false">Light</button><button type="button" data-v="dark" aria-pressed="false">Dark</button></span></span>
+  <span>Width <span class="rv-seg" id="rv-width"><button type="button" data-v="desktop" aria-pressed="true">Desktop</button><button type="button" data-v="phone" aria-pressed="false">Phone</button></span></span>
+  <span>Every project, issue, PR and figure here is invented. Only agent view's layout is real, redrawn from <code>claude agents</code> 2.1.316 on 2 Nov 2026.</span>
+</div>
+<div class="stage" id="stage"><div class="app prop" id="app">
+  <header class="p-top"><span class="p-brand"><span class="p-orb" aria-hidden="true"></span>agent-orb</span>
+    <nav class="p-nav" aria-label="Studio"><a href="#stop" data-go="stop">Live <span class="p-count" aria-label="3 sessions running">3</span></a><a href="#factory" data-go="factory">Factory <span class="p-count" aria-label="5 things need you">5</span></a><a>Ledger</a><a>Pipeline</a><a>Office</a><a>Analysis</a></nav>
+    <span class="p-conn"><i aria-hidden="true"></i>Live · studio-mac</span>
+    <button type="button" class="p-btn menu" aria-label="Open the menu">Menu</button></header>
+  <main class="page" id="page"></main>
+  <div id="over"></div>
+</div></div>
+<section class="decide" id="decide" aria-live="polite"></section>
+<script>(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const STAGES = ['Queued', 'Building', 'Reviewing', 'Fixing', 'Gate', 'Ready', 'Merged'];
+  const ISSUES = [
+    { n: 412, t: 'Queue uploads while offline', stage: 5, pr: 418, head: 'a1b2c3d', cost: 118, budget: 150, live: 1, av: 0, tone: 'good', conds: { findings: [1, '11 fixed, 2 dismissed, none open'], gate: [1, 'orb-gate passed on a1b2c3d'], bots: [1, 'No bot comment since the last commit'], clean: [1, 'CLEAN'] } },
+    { n: 409, t: 'Retry after an expired token', stage: 3, pr: 416, head: 'e4f5a6b', cost: 132, budget: 150, live: 1, av: 1, not: '2 findings open', conds: { findings: [0, '2 open: 1 major, 1 minor'], gate: [0, 'Last pass was on 9c8d7e6, not this head'], bots: [1, 'No bot comment since the last commit'], clean: [1, 'CLEAN'] } },
+    { n: 415, t: 'Sync conflict dialog', stage: 1, cost: 64, budget: 150, live: 1, av: 0, tone: 'bad', not: 'No PR yet, stalled 22 min' },
+    { n: 407, t: 'Compress photos before upload', stage: 4, pr: 414, head: 'c0d1e2f', cost: 96, budget: 80, live: 1, av: 0, not: 'Gate running', conds: { findings: [1, '6 fixed, none open'], gate: [null, 'Running on c0d1e2f'], bots: [1, 'No bot comment since the last commit'], clean: [0, 'UNSTABLE: a check is pending'] } },
+    { n: 398, t: 'Crash on an empty feed', stage: 2, pr: 411, head: '5b6c7d8', cost: 27, outside: 'v2.2.1', live: 1, av: 0, not: 'In review' , conds: { findings: [null, 'No findings reported yet'], gate: [null, 'No gate report yet'], bots: [1, 'No bot comment since the last commit'], clean: [1, 'CLEAN'] } },
+    { n: 403, t: 'Offline banner', stage: 6, pr: 405, cost: 41, budget: 150, live: 0, av: 0, tone: 'good' },
+    { n: 417, t: 'Clear the cache on sign-out', stage: 0, live: 0, av: 0, budget: 150 },
+    { n: 419, t: 'Retry queue metrics', stage: 0, live: 0, av: 0, budget: 150 },
+  ];
+  const FINDINGS = [
+    { id: 'F12', sev: 'major', file: 'src/auth/refresh.ts', fate: 'open', title: 'Two refreshes can run at once and the second logs the user out' },
+    { id: 'F14', sev: 'minor', file: 'src/auth/refresh.spec.ts', fate: 'open', title: 'The retry test passes with the backoff removed' },
+    { id: 'F09', sev: 'minor', file: 'src/net/client.ts', fate: 'dismissed', title: 'Timeout value is not a constant', why: 'Used once, and the rule says no config for a value that never changes' },
+    { id: 'F11', sev: 'major', file: 'src/net/client.ts', fate: 'dismissed', title: 'A 401 during logout could loop', why: 'Logout clears the token before the call, shown by the logout test' },
+    { id: 'F03', sev: 'major', file: 'src/auth/refresh.ts', fate: 'fixed', title: 'The token was written before the response was checked' },
+    { id: 'F05', sev: 'minor', file: 'src/auth/store.ts', fate: 'fixed', title: 'An expired token read as valid for one second' },
+  ];
+  const usd = (n) => `$${n.toLocaleString('en-US')}`;
+  const state = { board: 'factory', cases: { findings: 'full', stop: 'ask', refusal: 'no', budget: 'set', factory: 'all' }, drawer: null };
+
+  const track = (i, tone) => `<span class="trk${tone ? ` ${tone}` : ''}" role="img" aria-label="Stage ${i + 1} of ${STAGES.length}: ${STAGES[i]}">${STAGES.map((_, k) => `<i class="${k < i ? 'on' : k === i ? 'now' : ''}"></i>`).join('')}</span>`;
+  const meter = (c, b) => { const r = c / b; return `<div class="meter ${r >= 1 ? 'over' : r >= 0.8 ? 'warn' : ''}"><i style="width:${Math.min(r, 1) * 100}%"></i></div>`; };
+  const costCell = (x) => {
+    if (x.cost == null) return `<div class="costcell"><span class="lab">Cost, estimate</span><span class="why none">Nothing spent</span></div>`;
+    return `<div class="costcell"><span class="lab">Cost, estimate</span><span class="num">${usd(x.cost)}${x.budget ? ` of ${usd(x.budget)}` : ''}</span>${x.budget ? meter(x.cost, x.budget) : '<small>No budget set</small>'}</div>`;
+  };
+  const readyCell = (x) => {
+    const inner = x.stage === 6 ? '<span class="why none">Merged</span>' : x.stage === 5 ? '<span class="why yes">Ready for your ok</span>' : x.stage === 0 ? '<span class="why none">No PR yet</span>' : `<span class="why ${x.not?.startsWith('No PR') || x.not === 'In review' ? '' : 'no'}">${x.not}</span>`;
+    return `<div><span class="lab">Ready</span>${inner}</div>`;
+  };
+  const links = (x) => `<div><span class="lab">Sessions</span><div class="links">${x.live ? `<a data-go="stop">Live</a>` : ''}${x.av ? `<a title="Background session">agent view</a>` : ''}${!x.live && !x.av ? '<span class="none">None</span>' : ''}</div></div>`;
+  const row = (x) => `<div class="brow${x.stage === 6 ? ' merged' : ''}">
+    <button type="button" class="open" data-open="${x.n}"><b>#${x.n} ${x.t}</b><small>${x.pr ? `PR #${x.pr}` : 'No PR'}${x.outside ? ` · outside this milestone, ${x.outside}` : ''}</small></button>
+    <div class="stagecell"><span>${STAGES[x.stage]}</span>${track(x.stage, x.tone)}</div>${readyCell(x)}${costCell(x)}${links(x)}</div>`;
+
+  const needs = () => `<section class="p-card needs" aria-label="Needs you"><div class="p-card-h"><h3>Needs you</h3><span class="p-hint">5 things, worst first</span></div>
+    ${[
+      ['stalled', 'Stalled', '<b>#415 Sync conflict dialog</b><span class="sub">implementer on <code>pnpm test:e2e</code></span>', '22 min', '<a class="p-btn" data-go="stop">Open in Live</a>'],
+      ['waiting', 'Open findings', '<b>#409 Retry after an expired token</b><span class="sub">PR #416 · 1 major, 1 minor</span>', '2 open', '<button type="button" class="p-btn" data-open="409">See findings</button>'],
+      ['stalled', 'Over budget', '<b>#407 Compress photos before upload</b><span class="sub">Warned at 80% and 100%; nothing was stopped</span>', '$96 of $80', '<button type="button" class="p-btn" data-open="407">See issue</button>'],
+      ['ready', 'Ready', '<b>#412 Queue uploads while offline</b><span class="sub">PR #418 · all four checks pass on a1b2c3d</span>', '6 min', '<button type="button" class="p-btn primary" data-open="412">See checks</button>'],
+      ['waiting', 'Left running', '<b>field-notes: 3 containers</b><span class="sub">No session in that project for 2 h</span>', '1.2 GB', '<a class="p-btn" href="#machine" data-jump="machine">See machine</a>'],
+    ].map(([s, l, what, since, btn]) => `<div class="need"><span class="p-state s-${s}">${l}</span><div>${what}</div><span class="since num">${since}</span>${btn}</div>`).join('')}
+    <div class="adds">Agent view shows a background session waiting for you. This adds PRs, findings, budgets and containers, for interactive sessions too.</div></section>`;
+
+  const board = () => `<section class="p-card" aria-label="Board"><div class="p-card-h"><h3>Board · v2.3 Offline</h3><span class="p-hint">7 issues, plus 1 in flight outside it</span></div>
+    <div class="bcols"><span>Issue</span><span>Stage</span><span>Ready</span><span>Cost, estimate</span><span>Sessions</span></div>
+    ${ISSUES.map(row).join('')}
+    <div class="notissue"><span>Not on an issue: <b class="num">${usd(1240)}</b> this month</span><span class="sub">Sessions with no PR, and turns after a session's last PR. Cost is an estimate by time windows.</span></div>
+    <div class="adds">Agent view lists sessions. This lists issues, with what each has spent and how far it is from your ok.</div></section>`;
+
+  const machine = () => `<section class="p-card" id="machine" aria-label="Machine"><div class="p-card-h"><h3>Machine</h3><span class="p-hint">studio-mac · read 4 min ago</span></div>
+    <div class="mstats"><div class="p-stat"><span class="k">Free memory</span><span class="v">6.2 GB</span><span class="d">of 36 GB</span></div><div class="p-stat"><span class="k">Containers</span><span class="v">12</span><span class="d">running</span></div><div class="p-stat"><span class="k">They use</span><span class="v">7.4 GB</span><span class="d">by <code>docker stats</code></span></div></div>
+    <div class="mrow head"><span>Project</span><span class="r">Containers</span><span class="r">Memory</span></div>
+    ${[
+      ['mobile-app', 'compose', 3, '3.1 GB', ''],
+      ['field-notes', 'Testcontainers, no session for 2 h', 3, '1.2 GB', '<span class="flag left">Left running</span>'],
+      ['billing-db', 'compose', 1, '1.9 GB', '<span class="flag sick">Unhealthy</span>'],
+      ['agent-orb', 'compose', 1, '92 MB', ''],
+      ['No project', 'started by hand', 4, '1.1 GB', ''],
+    ].map(([n, how, c, m, f]) => `<div class="mrow"><span class="nm">${n} ${f}<span class="sub" style="flex-basis:100%">${how}</span></span><span class="r num">${c}</span><span class="r num">${m}</span></div>`).join('')}
+    <div class="adds">Agent view shows no containers. agent-orb lists them and never removes one.</div></section>`;
+
+  const factory = () => {
+    const c = state.cases.factory;
+    const head = `<div class="hrow"><div class="p-head"><h1>Factory</h1><span class="p-sub">What's blocked, what's ready, and what's left running</span></div>
+      <div class="filters"><select class="p-select" aria-label="Project"><option>mobile-app</option></select><select class="p-select" aria-label="Milestone"><option>v2.3 Offline</option></select><span class="asof">GitHub data 2 min old</span></div></div>`;
+    const reading = `<section class="p-card"><div class="reading"><p>One PR is ready for your ok. One issue has open findings, one session is stalled, and one issue is over its budget.</p></div></section>`;
+    return head + reading + (c === 'all' ? needs() + board() + machine() : c === 'needs' ? needs() : c === 'board' ? board() : machine());
+  };
+
+  const fRow = (f, off) => `<div class="fnd"><span class="id">${f.id}</span><span class="sev ${f.sev}">${f.sev}</span><span class="file">${f.file}</span>${off ? '<span class="ttl off">Title needs Content on full</span>' : `<span class="ttl">${f.title}</span>${f.why ? `<span class="why2">Why dismissed: ${f.why}</span>` : ''}`}</div>`;
+  const drawer = (n) => {
+    const x = ISSUES.find((i) => i.n === n), off = state.cases.findings === 'off';
+    const names = { findings: 'No finding is open', gate: 'The gate passed on this head', bots: 'No bot comment is newer than the last commit', clean: 'Merge state is CLEAN' };
+    const conds = x.conds ? `<section class="dsec"><h4>Can it merge?</h4><ul class="cond">${Object.entries(names).map(([k, name]) => { const [v, note] = x.conds[k]; return `<li class="${v === 1 ? 'ok' : v === 0 ? 'no' : 'unk'}"><span class="mk" aria-hidden="true">${v === 1 ? '✓' : v === 0 ? '✗' : '?'}</span><span>${name}<small>${note}</small></span></li>`; }).join('')}</ul><span class="sub">GitHub data 2 min old · head ${x.head}</span></section>` : '';
+    const group = (fate, label) => { const l = FINDINGS.filter((f) => f.fate === fate), rows = l.map((f) => fRow(f, off)).join(''); return fate === 'fixed' ? `<details class="fgroup"><summary>${label} (9)</summary>${rows}<span class="sub">And 7 more</span></details>` : `<div class="fgroup"><h5>${label} (${l.length})</h5>${rows}</div>`; };
+    const findings = n === 409 ? `<section class="dsec"><h4>Findings</h4>${group('open', 'Open')}${group('dismissed', 'Dismissed: read these before merging')}${group('fixed', 'Fixed')}</section>` : '';
+    const lines = n === 409 ? [['Session on fix/409-token-retry, whole', 96], ['Turns before PR #416 in a longer session', 36]] : [['Sessions and turns on this issue', x.cost ?? 0]];
+    const cost = `<section class="dsec"><h4>Cost, estimate</h4><div class="ledger2">${lines.map(([l, v]) => `<div><span class="sub">${l}</span><span class="num">${usd(v)}</span></div>`).join('')}</div><div class="fieldrow"><label>Budget for this issue<input class="p-input" value="${x.budget ? usd(x.budget) : ''}" placeholder="None" aria-label="Budget for this issue"></label><span class="sub">Milestone default: $150</span></div></section>`;
+    return `<div class="scrim" data-close></div><aside class="p-card drawer" aria-label="#${n}"><div class="p-dh" style="display:flex;justify-content:space-between;gap:12px;padding:16px 20px"><div><b style="font:600 17px/1.3 var(--display)">#${x.n} ${x.t}</b><div class="meta">${x.pr ? `PR #${x.pr} · ` : ''}${STAGES[x.stage]}</div></div><button type="button" class="p-btn" data-close>Close</button></div><div class="dbody">${conds}${findings}${cost}</div></aside>`;
+  };
+
+  const avRow = (tone, name, said, age) => `<div class="avr"><span class="${tone}">∙</span><span class="cut">${name}</span><span class="cut dim">${said}</span><span class="dim">${age}</span></div>`;
+  const agentview = () => `<div class="p-head"><h1>What agent view already shows</h1></div>
+    <div class="pair"><div class="casegrid"><div class="tf">
+<span class="dim">Claude Code v2.1.316<br>New sessions: Opus 5.5 · medium effort</span>
+<div class="tfh">1 awaiting input · 2 working · 1 completed</div>
+<b>Awaiting input</b>${avRow('wait', 'Add the export button', 'Which format do you want?', '3m')}
+<b>Working</b>${avRow('ok', 'Sync conflict dialog', 'Running pnpm test:e2e', '22m')}${avRow('ok', 'Fix the token refresh', 'Editing src/auth/refresh.ts', '1m')}
+<b>Completed</b>${avRow('dim', 'Offline banner', 'Done, opened PR #405', '4h')}
+<div class="tfh dim">❯ describe a task for a new session</div></div>
+      <span class="p-hint block">It lists background sessions only. On 2 Nov it showed 1 completed row here while 16 interactive sessions were running, so the board's sessions link to Live, and to agent view only for background ones.</span></div>
+      <section class="p-card" aria-label="What v0.4 adds"><table class="cmp"><thead><tr><th></th><th>Agent view</th><th>Factory</th></tr></thead><tbody>
+      ${[['Background sessions and their state', 1, 0], ['Answer a waiting session', 1, 0], ['Interactive sessions', 0, 1], ['Issues and their stage', 0, 1], ['Findings and their fates', 0, 1], ['Ready: the four checks', 0, 1], ['Cost against budget', 0, 1], ['Containers and memory', 0, 1]].map(([k, a, b]) => `<tr><td>${k}</td><td class="${a ? 'y' : 'n'}">${a ? 'Yes' : 'No'}</td><td class="${b ? 'y' : 'n'}">${b ? (k === 'Interactive sessions' ? 'Links to Live' : 'Yes') : 'No, links out'}</td></tr>`).join('')}
+      </tbody></table></section></div>`;
+
+  const stop = () => {
+    const c = state.cases.stop;
+    const stalled = c === 'bg' ? '<b>background-agent</b><span class="sub">Explore · running in the background</span>' : '<b>implementer</b><span class="sub">Sonnet · foreground</span>';
+    const need = {
+      ask: `<div class="need"><span class="p-state s-stalled">Stalled</span><div><b>mobile-app · fix/415-sync-dialog</b><span class="sub">implementer on <code>pnpm test:e2e</code></span></div><span class="since num">22 min</span><button type="button" class="p-btn" data-case="confirm">Stop turn</button></div>`,
+      confirm: `<div class="need"><span class="p-state s-stalled">Stalled</span><div><b>mobile-app · fix/415-sync-dialog</b><span class="sub">implementer on <code>pnpm test:e2e</code></span></div><span class="since num">22 min</span><span></span><div class="confirm"><b>Stop this session's turn?</b><span>Its running tools stop and the session stays open. It reaches the session within a minute.</span><div class="acts"><button type="button" class="p-btn danger" data-case="sent">Stop turn</button><button type="button" class="p-btn" data-case="ask">Keep waiting</button></div></div></div>`,
+      sent: `<div class="need"><span class="p-state s-stalled">Stalled</span><div><b>mobile-app · fix/415-sync-dialog</b><span class="sub">Stop sent, waiting for the session to pick it up</span></div><span class="since num">12 s</span><button type="button" class="p-btn" disabled>Stopping</button></div>`,
+      done: `<div class="need"><span class="p-state s-done">Stopped</span><div><b>mobile-app · fix/415-sync-dialog</b><span class="sub">Stopped from the studio. The session is open and idle.</span></div><span class="since num">now</span><span></span></div>`,
+      bg: `<div class="need"><span class="p-state s-stalled">Stalled</span><div><b>mobile-app · fix/415-sync-dialog</b><span class="sub">A background agent can't be stopped from here. Use agent view.</span></div><span class="since num">22 min</span><span></span></div>`,
+    }[c];
+    return `<div class="p-head"><h1>Live</h1><span class="p-sub">The Stop button, on a stalled session</span></div>
+      <section class="p-card needs" aria-label="Needs you"><div class="p-card-h"><h3>Needs you</h3></div>${need}</section>
+      <section class="p-card" aria-label="mobile-app"><div class="p-card-h"><h3>mobile-app</h3><span class="p-hint">fix/415-sync-dialog · $64</span></div>
+      <div class="srow"><span><b>main</b><span class="sub">Opus · orchestrator</span></span><span>Waiting on implementer</span><span class="p-state s-${c === 'done' ? 'done' : 'working'}">${c === 'done' ? 'idle' : 'working'}</span></div>
+      <div class="srow d1"><span>${stalled}</span><span><code>pnpm test:e2e</code><span class="sub">No event for 22 min</span></span><span class="p-state s-${c === 'done' ? 'done' : 'stalled'}">${c === 'done' ? 'stopped' : 'stalled'}</span></div></section>`;
+  };
+
+  const REFUSE = {
+    no: ['Refused: a definite no', `<span class="dim">● Bash(gh pr merge 416 --squash)</span>
+  <span class="bad">⎿ agent-orb refused this merge: PR #416 isn't ready.</span>
+    2 findings are open: F12 major, F14 minor.
+    GitHub data 3 min old, head e4f5a6b.
+    To merge anyway, you run it yourself in a terminal.`],
+    unknown: ['Let through: no gate report', `<span class="dim">● Bash(gh pr merge 398 --squash)</span>
+  <span class="wait">⎿ agent-orb can't say PR #398 is ready: no gate report for 5b6c7d8.</span>
+    The merge goes ahead.
+  <span class="ok">⎿ Merged #398</span>`],
+    old: ['Let through: data too old', `<span class="dim">● Bash(gh pr merge 407 --squash)</span>
+  <span class="wait">⎿ agent-orb can't say PR #407 is ready: its GitHub data is 14 min old.</span>
+    The merge goes ahead.
+  <span class="ok">⎿ Merged #407</span>`],
+  };
+  const refusal = () => { const [t, b] = REFUSE[state.cases.refusal]; return `<div class="p-head"><h1>The merge refusal</h1><span class="p-sub">What the agent sees in the session, not a studio page</span></div>
+    <section class="p-card"><div class="p-card-h"><h3>${t}</h3><span class="p-hint">answers from the plugin's memory, no network call</span></div><div class="p-card-b"><pre class="tf">${b}</pre></div></section>
+    <section class="p-card"><table class="cmp"><thead><tr><th>Refuses on</th><th>Lets through and says so</th></tr></thead><tbody><tr><td>An open finding</td><td>A missing gate report</td></tr><tr><td>A failed check</td><td>A repo with no findings block</td></tr><tr><td>A bot comment newer than the last commit</td><td>Data older than 10 minutes</td></tr><tr><td>A merge state that isn't clean</td><td>A PR the plugin has never read</td></tr></tbody></table></section>`; };
+
+  const budget = () => { const set = state.cases.budget === 'set'; return `<div class="p-head"><h1>Budget</h1><span class="p-sub">On the Factory page, under the board</span></div>
+    <section class="p-card"><div class="p-card-h"><h3>Budget per issue · v2.3 Offline</h3><span class="p-hint">warns at 80% and 100%, never stops anything</span></div><div class="p-card-b casegrid"><div class="fieldrow"><label>Default for this milestone<input class="p-input" value="${set ? '$150' : ''}" placeholder="None" aria-label="Default for this milestone"></label><button type="button" class="p-btn primary">Save</button></div>${set ? '<span class="p-hint block">One issue has its own budget: #407, $80. Set it on the issue.</span>' : '<span class="p-hint block">No budget is set, so the board shows cost only and nothing warns.</span>'}</div></section>
+    <section class="p-card" aria-label="Sample rows"><div class="bcols"><span>Issue</span><span>Stage</span><span>Ready</span><span>Cost, estimate</span><span>Sessions</span></div>${[ISSUES[1], ISSUES[3]].map((x) => row(set ? x : { ...x, budget: undefined })).join('')}</section>`; };
+
+  const states = () => `<div class="p-head"><h1>When something's missing</h1><span class="p-sub">What each case says on the Factory page</span></div><div class="casegrid">
+    <section class="p-card"><div class="p-card-h"><h3>No session runs in this repo</h3><span class="p-hint">the plugin is what reads GitHub</span></div><div class="p-card-b casegrid"><span class="asof stale">GitHub data 47 min old: it updates while a session runs in this repo</span><div class="brow" style="padding:0">${readyCell({ stage: 3, not: 'Was 2 findings open, 47 min ago' })}</div></div></section>
+    <section class="p-card"><div class="p-card-h"><h3>This repo's agents report no findings yet</h3></div><div class="p-card-b"><ul class="cond"><li class="unk"><span class="mk">?</span><span>Findings unknown<small>No <code>orb-findings</code> block has reached this repo's PRs, so ready can't be proved here.</small></span></li><li class="ok"><span class="mk">✓</span><span>Checks and merge state still show</span></li></ul></div></section>
+    <section class="p-card"><div class="p-card-h"><h3>A PR with no issue</h3></div><div class="needs"><div class="need"><span class="p-state s-info">No issue</span><div><b>PR #420 Bump the router</b><span class="sub">Its cost goes to "not on an issue"</span></div><span class="since num">1 h</span><span></span></div></div></section>
+    <section class="p-card"><div class="p-card-h"><h3>An excluded project</h3></div><div class="p-card-b"><span class="p-hint block">Numbers only: #409, PR #416, its stage, cost and checks. No title leaves the machine.</span></div></section>
+    <section class="p-card"><div class="p-card-h"><h3>Docker isn't running</h3></div><div class="p-card-b"><span class="p-hint block">Machine shows free memory and says "Docker isn't running, so no containers to list."</span></div></section>
+    <section class="p-card"><div class="p-card-h"><h3>Nothing needs you</h3></div><div class="p-card-b"><span class="p-hint block">Needs you says "Nothing needs you." and stays on the page, so its place doesn't jump.</span></div></section></div>`;
+
+  const alerts = () => `<div class="p-head"><h1>Alerts</h1><span class="p-sub">Sent by Claude Code's push, one each</span></div><div class="pair"><div class="pushes">
+    ${[['agent-orb: stalled', 'mobile-app · implementer on pnpm test:e2e for 15 min'], ['agent-orb: budget', '#407 Compress photos: $64 of $80, 80% (estimate)'], ['agent-orb: budget', '#407 Compress photos: $80 of $80, 100% (estimate)'], ['agent-orb: ready', 'PR #418 is ready for your ok']].map(([h, b]) => `<div class="push"><div class="h"><span>Claude</span><span>now</span></div><b>${h}</b><span>${b}</span></div>`).join('')}</div>
+    <section class="p-card"><div class="p-card-h"><h3>Who sends what</h3></div><div class="p-card-b casegrid"><span class="p-hint block"><b>Waiting for a permission:</b> no alert from agent-orb. Remote Control's Push when actions required sends it.</span><span class="p-hint block"><b>At the Mac:</b> a push isn't sent while you're at the session. Needs you still shows it.</span><span class="p-hint block"><b>Still to prove:</b> delivery to a real phone. If it fails, alerts are desktop-only and the release says so.</span></div></section></div>`;
+
+  const BOARDS = {
+    agentview: { label: 'Agent view', render: agentview, decide: ['This board opens the mockup, as you confirmed on 31 Oct. Agent view stays the place to answer a background session.', 'Rows are invented; the layout is the real one.'] },
+    factory: { label: 'Factory', render: factory, cases: [['all', 'All bands'], ['needs', 'Needs you'], ['board', 'Board'], ['machine', 'Machine']], caseLabel: 'Band', decide: ['Order: Needs you, Board, Machine, because the page answers what needs you first.', 'Ready opens the checks, and the merge stays yours: there is no Merge button in the studio.', 'Machine has no Remove button, so a left-running container is flagged and removal stays with you.', '"Not on an issue" counts this month for the project, not the milestone: a milestone has no dates to cut it by.'] },
+    findings: { label: 'Findings', render: factory, cases: [['full', 'Content full'], ['off', 'Content off']], caseLabel: 'Content', open: 409, decide: ['Dismissed findings are open by default and sit above Fixed, because you read them before merging.', 'A dismissed finding says why, in one line. The reason travels like a title, only with Content on full.', 'With Content off, only the id, severity, file and fate show.'] },
+    stop: { label: 'Stop', render: stop, cases: [['ask', 'Stalled'], ['confirm', 'Confirm'], ['sent', 'Sent'], ['done', 'Stopped'], ['bg', 'Background']], caseLabel: 'Case', decide: ['Stop always asks first, in place, and says it can take a minute.', 'The button shows only on a stalled session. A session that is working has no Stop.', 'Whether this ends a foreground subagent is unproved. If it doesn\'t, the button is dropped or narrowed before it is built.'] },
+    refusal: { label: 'Refusal', render: refusal, cases: [['no', 'Refused'], ['unknown', 'No gate report'], ['old', 'Old data']], caseLabel: 'Case', decide: ['The wording names what is wrong and how old the data is.', 'A let-through still prints a line, so a merge the plugin couldn\'t judge doesn\'t look approved.'] },
+    budget: { label: 'Budget', render: budget, cases: [['set', 'Set'], ['unset', 'Not set']], caseLabel: 'Case', decide: ['The milestone default lives under the board; an issue\'s own budget lives on the issue.', 'With no budget, rows show cost and no bar.'] },
+    states: { label: 'Missing data', render: states, decide: ['Every missing case says why in words, rather than showing an empty cell.'] },
+    alerts: { label: 'Alerts', render: alerts, decide: ['Four kinds of text, one push each. The figures are labelled estimates, as on the page.', 'The phone test comes before this is built.'] },
+  };
+
+  const pageSeg = $('#rv-page');
+  pageSeg.innerHTML = Object.entries(BOARDS).map(([k, b]) => `<button type="button" data-v="${k}" aria-pressed="${k === state.board}">${b.label}</button>`).join('');
+  const render = () => {
+    const b = BOARDS[state.board];
+    $('#page').innerHTML = b.render();
+    const open = state.drawer ?? b.open;
+    $('#over').innerHTML = open && (state.board === 'factory' || state.board === 'findings') ? drawer(open) : '';
+    const wrap = $('#rv-casewrap'); wrap.hidden = !b.cases;
+    if (b.cases) {
+      $('#rv-caselabel').textContent = b.caseLabel;
+      const cur = state.cases[state.board] === 'confirm' ? 'confirm' : state.cases[state.board];
+      $('#rv-case').innerHTML = b.cases.map(([v, l]) => `<button type="button" data-v="${v}" aria-pressed="${v === cur}">${l}</button>`).join('');
+    }
+    [...pageSeg.children].forEach((x) => x.setAttribute('aria-pressed', x.dataset.v === state.board));
+    $('#decide').innerHTML = `<h2>On this board</h2><ol>${b.decide.map((d) => `<li>${d}</li>`).join('')}</ol>`;
+    $('.p-nav a[data-go="factory"]').toggleAttribute('aria-current', false);
+    document.querySelectorAll('.p-nav a').forEach((a) => a.removeAttribute('aria-current'));
+    const nav = state.board === 'stop' ? 'stop' : ['factory', 'findings', 'budget', 'states'].includes(state.board) ? 'factory' : null;
+    if (nav) $(`.p-nav a[data-go="${nav}"]`).setAttribute('aria-current', 'page');
+  };
+  const go = (k) => { state.board = k; state.drawer = null; try { history.replaceState(null, '', `#${k}`); } catch {} render(); scrollTo(0, 0); };
+  document.addEventListener('click', (e) => {
+    const close = e.target.closest('[data-close]');
+    if (close) { state.drawer = null; if (BOARDS[state.board].open) { state.board = 'factory'; } render(); return; }
+    const open = e.target.closest('[data-open]');
+    if (open) { state.drawer = +open.dataset.open; render(); return; }
+    const c = e.target.closest('[data-case]');
+    if (c) { state.cases.stop = c.dataset.case; render(); return; }
+    const jump = e.target.closest('[data-jump]');
+    if (jump) { e.preventDefault(); $(`#${jump.dataset.jump}`)?.scrollIntoView(); return; }
+    const g = e.target.closest('[data-go]');
+    if (g) { e.preventDefault(); go(g.dataset.go); }
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('#over').innerHTML) { state.drawer = null; if (BOARDS[state.board].open) state.board = 'factory'; render(); } });
+  const seg = (id, f) => $(id).addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; [...b.parentElement.children].forEach((x) => x.setAttribute('aria-pressed', x === b)); f(b.dataset.v); });
+  seg('#rv-page', go);
+  seg('#rv-case', (v) => { state.cases[state.board] = v; render(); });
+  seg('#rv-theme', (v) => (v === 'system' ? document.documentElement.removeAttribute('data-theme') : document.documentElement.setAttribute('data-theme', v)));
+  seg('#rv-width', (v) => $('#stage').classList.toggle('phone', v === 'phone'));
+  const start = location.hash.slice(1);
+  if (BOARDS[start]) state.board = start;
+  render();
+})();</script>

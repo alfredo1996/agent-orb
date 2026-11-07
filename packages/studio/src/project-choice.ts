@@ -27,6 +27,11 @@ export function readChoice(hash: string): Choice {
   return { all: !single || q.get('all') === '1', single };
 }
 
+/** The session a Live link names (`#/live?session=<id>&project=<name>`, from the Factory board, #32): the card to bring into view. None when the hash names no session. */
+export function readSession(hash: string): string | null {
+  return new URLSearchParams(hash.split('?')[1] ?? '').get('session') || null;
+}
+
 /** The hash's query for a choice; nothing for the first one, so the plain routes stay plain. */
 export function choiceQuery(c: Choice): string {
   const q = new URLSearchParams();

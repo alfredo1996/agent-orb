@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Analysis } from './Analysis.tsx';
+import { Factory } from './Factory.tsx';
 import { Connection, ProjectContext } from './kit.tsx';
 import { Ledger } from './Ledger.tsx';
 import { Live, type Session } from './Live.tsx';
 import { lastEventOf, shown } from './live-cards.ts';
 import { Office } from './Office.tsx';
 import { Pipeline } from './Pipeline.tsx';
-import { choiceQuery, choose, readChoice } from './project-choice.ts';
+import { choiceQuery, choose, readChoice, readSession } from './project-choice.ts';
 
 // The studio's frame and routes, and the one /stream every view shares.
 
@@ -32,7 +33,7 @@ function useStream() {
   return { sessions, isOpen };
 }
 
-const ROUTES = { '#/ledger': 'ledger', '#/pipeline': 'pipeline', '#/office': 'office', '#/analysis': 'analysis' } as const;
+const ROUTES = { '#/ledger': 'ledger', '#/pipeline': 'pipeline', '#/factory': 'factory', '#/office': 'office', '#/analysis': 'analysis' } as const;
 type View = 'live' | (typeof ROUTES)[keyof typeof ROUTES];
 
 /**
@@ -59,7 +60,7 @@ function useRoute() {
     const next = path in ROUTES ? path + choiceQuery(choice) : path;
     if (next !== location.hash) history.replaceState(null, '', next);
   }, [hash, choice]);
-  return { view, choice, pick: (name: string) => setChoice((c) => choose(c, name)) };
+  return { view, hash, choice, pick: (name: string) => setChoice((c) => choose(c, name)) };
 }
 
 /** The projects to choose from, the most recent first; asked for again when the page changes. */
@@ -88,7 +89,7 @@ function useNow(ms = 1000) {
 export function App() {
   const { sessions, isOpen } = useStream();
   const now = useNow();
-  const { view, choice, pick } = useRoute();
+  const { view, hash, choice, pick } = useRoute();
   const projects = useProjectList(view);
   const lastEvent = lastEventOf(Object.values(sessions)); // the connection says Quiet from the newest event, not from the last time the stream spoke
   const list = Object.values(sessions)
@@ -114,6 +115,7 @@ export function App() {
           <a href="#/" aria-current={view === 'live' ? 'page' : undefined}>Live{running.length > 0 && <span className="count" aria-label={`${running.length} running`}>{running.length}</span>}</a>
           <a href="#/ledger" aria-current={view === 'ledger' ? 'page' : undefined}>Ledger</a>
           <a href="#/pipeline" aria-current={view === 'pipeline' ? 'page' : undefined}>Pipeline</a>
+          <a href="#/factory" aria-current={view === 'factory' ? 'page' : undefined}>Factory</a>
           <a href="#/office" aria-current={view === 'office' ? 'page' : undefined}>Office</a>
           <a href="#/analysis" aria-current={view === 'analysis' ? 'page' : undefined}>Analysis</a>
         </nav>
@@ -122,7 +124,7 @@ export function App() {
       </header>
 
       <ProjectContext.Provider value={{ projects, choice, pick }}>
-        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'office' ? <Office sessions={running} all={sessions} now={now} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} />}
+        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} live={new Set(list.map((s) => s.id))} /> : view === 'office' ? <Office sessions={running} all={sessions} now={now} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} />}
       </ProjectContext.Provider>
     </div>
   );

@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { parseArgs } from 'node:util';
 import { buildApp } from '../src/app.ts';
-import { all, openStore } from '../src/store/store.ts';
+import { all, get, openStore, run, type Store } from '../src/store/store.ts';
 import { getRoutes } from './routes.ts';
 import { BIGGEST, seedSyntheticSession } from './synthetic-session.ts';
 
@@ -53,6 +53,22 @@ if (values.db) {
   console.log(`soak on a synthetic session: ${BIGGEST.agents + 1} agents, ${BIGGEST.calls.toLocaleString('en')} calls, ${BIGGEST.turns.toLocaleString('en')} turns, ${BIGGEST.requests.toLocaleString('en')} requests`);
 }
 
+/**
+ * #29: one machine sample at the cap of 200 containers on the target session's host, so /api/machine groups and looks things up against the whole history: compose stacks under the target
+ * project's folders (whose last event it reads), Testcontainers runs made over the past day (each looks for a test run in flight among the calls), and loose ones. Only for the synthetic
+ * store: `--db` names a file that may be a real one, and this would replace its host's latest sample. (To soak the grouping against a real history, put a sample into a copy by hand.)
+ */
+function seedMachine(db: Store, { project, session }: { project: string; session: string }, at: number) {
+  const host = (get(db, 'SELECT host FROM sessions WHERE id = :session', { session })?.host as string | undefined) ?? 'mbp';
+  const cwd = (all(db, 'SELECT c.cwd AS cwd FROM project_cwds c JOIN projects p ON p.id = c.project_id WHERE p.name = :project LIMIT 1', { project })[0]?.cwd as string | undefined) ?? '/soak';
+  const containers = Array.from({ length: 200 }, (_, i) => ({
+    name: `container-${i}`, state: 'running', memory: (10 + (i % 40)) * 1_048_576, ...(i % 9 === 0 ? { health: 'unhealthy' } : {}),
+    ...(i % 4 === 0 ? { compose: `stack-${i % 6}`, working_dir: `${cwd}/deploy` } : i % 4 === 1 ? { created_at: at - (i % 24) * 3_600_000, testcontainers: { session: `run-${i % 12}` } } : {}),
+  }));
+  run(db, 'INSERT OR REPLACE INTO machine_samples (host, ts, mem_free, mem_total, docker, containers) VALUES (:host, :ts, 6000000000, 36000000000, \'ok\', :containers)', { host, ts: at - 4 * 60_000, containers: JSON.stringify(containers) });
+}
+if (!values.db) seedMachine(store, target, now);
+
 const app = buildApp({ store, token: 'soak' });
 const address = await app.listen({ port: 0, host: '127.0.0.1' });
 const routes = getRoutes({ ...target, now });
@@ -65,7 +81,7 @@ console.log(`${urls.length} route${urls.length === 1 ? '' : 's'} x ${rounds} rou
 
 for (let round = 1; round <= rounds; round++) {
   for (const url of urls) {
-    const res = await fetch(address + url);
+    const res = await fetch(address + url, { headers: { authorization: 'Bearer soak' } }); // GET /api/stop takes the plugin's token
     await res.text();
     if (res.status !== 200) bad.add(`${res.status} ${url.split('?')[0]}`);
   }

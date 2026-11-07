@@ -1,6 +1,6 @@
 {
   "name": "agent-orb",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Records what your Claude Code agents do (tools, tokens, models, delegations) and sends it to your own agent-orb server",
   "author": {
     "name": "Alfredo Rubin"
@@ -38,6 +38,16 @@
         "off"
       ],
       "default": "sonnet"
+    },
+    "askFindings": {
+      "type": "string",
+      "title": "Ask agents for findings",
+      "description": "on: every subagent is asked to end a review or a fix with an orb-findings block, for the Factory page; off leaves their prompts as they are",
+      "options": [
+        "on",
+        "off"
+      ],
+      "default": "on"
     },
     "content": {
       "type": "string",

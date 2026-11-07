@@ -12,6 +12,7 @@ import { commandClass, errorClass, errorShape, filesTouched, type CommandClass, 
 // v0.3 slice 3 (#45): a failed result's text also becomes its error shape (a named pattern, or a hash of its first line), dropped the same way.
 // v0.3 slice 2 (#42): Claude Code's `pr-link` lines (a session opened a PR) become session.pr, the number alone; the URL and the repository are
 // compared with the project's remote on the spot and dropped.
+// #39: the session.start also carries the branch the session was on (the first its main file's lines name, `HEAD` aside), so the history counts by issue (#28) as the plugin's sessions do.
 // #86: a session is read as a stream, each event leaving as soon as the lines that make it are read, so the memory the import holds does not grow with the session.
 
 // ── Ids ─────────────────────────────────────────────────────────────────────
@@ -61,6 +62,7 @@ type File = {
   lastTs?: number;
   cwd?: string;
   version?: string;
+  branch?: string; // the first `gitBranch` the file's counted lines name, main file only
   model?: string;
   agentId?: string;
   firstUserLength?: number; // a subagent's first user string is the task it was given
@@ -78,6 +80,8 @@ type File = {
 
 const count = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x > 0 ? Math.trunc(x) : 0);
 const str = (x: unknown): x is string => typeof x === 'string' && x !== '';
+// A line's `gitBranch` is the branch checked out at that line; `HEAD` is git's name for none (detached), and the plugin sends no branch then either.
+const branchOf = (x: unknown) => (str(x) && x !== 'HEAD' ? x : undefined);
 // The length of a tool result's text: a string, or the text blocks of a list (an image block has none).
 const textLength = (c: unknown): number =>
   typeof c === 'string' ? c.length : Array.isArray(c) ? c.reduce((n: number, b) => n + (b?.type === 'text' && typeof b.text === 'string' ? b.text.length : 0), 0) : 0;
@@ -111,7 +115,7 @@ function digestPrLink(d: File, o: any) {
 
 // ── A session's lines → its events ──────────────────────────────────────────
 
-export type Where = { host: string; project: { cwd: string; name: string; git_remote?: string } };
+export type Where = { host: string; project: { cwd: string; name: string; git_remote?: string; git_branch?: string } };
 
 /** The ids a run has counted: a Set will do, and the import keeps them in a table. */
 export type Seen = { has(id: string): boolean; add(id: string): unknown };
@@ -137,7 +141,7 @@ export function openSession(sessionId: string, host: string, project: (cwd: stri
   let emitted = 0;
   let duplicates = 0;
   let main: File | undefined;
-  const start: { ts: number; model?: string; version?: string } = { ts: Infinity };
+  const start: { ts: number; model?: string; version?: string; branch?: string } = { ts: Infinity };
 
   const emit = (kind: string, key: string, ts: number, data: object, extra: object = {}) => {
     const e = { v: 1, id: uuid5(NAMESPACE, `${sessionId}|${kind}|${key}`), ts, host, user_id: 'local', session_id: sessionId, ...extra, kind, data };
@@ -239,6 +243,7 @@ export function openSession(sessionId: string, host: string, project: (cwd: stri
         if (!at) named(o.cwd);
       }
       d.version ??= str(o.version) ? o.version : undefined;
+      if (d.kind === 'main') d.branch ??= branchOf(o.gitBranch); // a subagent in a worktree of its own is on its own branch
       d.agentId ??= str(o.agentId) ? o.agentId : undefined;
     };
 
@@ -347,6 +352,7 @@ export function openSession(sessionId: string, host: string, project: (cwd: stri
     start.ts = Math.min(start.ts, d.firstTs);
     start.model ??= d.model;
     start.version ??= d.version;
+    start.branch ??= d.branch;
   };
 
   return {
@@ -364,7 +370,10 @@ export function openSession(sessionId: string, host: string, project: (cwd: stri
       const remote = at?.git_remote?.toLowerCase();
       for (const p of main?.prs.values() ?? []) if (remote && p.session === sessionId && p.remote === remote) emit('session.pr', String(p.number), p.ts, { number: p.number });
       if (start.ts !== Infinity) {
-        emit('session.start', 'start', start.ts, { model: start.model ?? 'unknown', source: 'import', claude_version: start.version ?? 'unknown', plugin_version: 'import', content: 'off' });
+        // A session.start that gained a branch is a new event (`|b` in its key), so a history imported before takes it on its next run: the writer fills a session's branch where it has none, so
+        // nothing doubles. One with no branch keeps its key, and a second run accepts nothing.
+        if (at && start.branch) at = { ...at, git_branch: start.branch };
+        emit('session.start', start.branch ? 'start|b' : 'start', start.ts, { model: start.model ?? 'unknown', source: 'import', claude_version: start.version ?? 'unknown', plugin_version: 'import', content: 'off' });
       }
       held = [];
       return { events: at ? emitted : 0, project: at, duplicates };

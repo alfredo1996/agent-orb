@@ -22,6 +22,8 @@ export type LiveAgent = {
   model?: string;
   /** v0.2 slice 2: the plugin flagged it, on a pricier model than its file says (`file`) or than the owner's ceiling (`ceiling`): what it is held to. Stays after it is done. */
   pricier?: { allowed: ModelFamily; source: 'file' | 'ceiling' };
+  /** v0.4 slice 5 (#31): it runs apart from the turn, so the studio's Stop, which ends the main turn, does not reach it. */
+  background?: true;
   tokens: number;
   cost: number;
   tool?: { name: string; id: string; since: number; waiting: boolean };
@@ -39,6 +41,8 @@ export type LiveAgent = {
   lastTs: number;
   inTurn: boolean;
   stalled: boolean;
+  /** v0.4 slice 5 (#31): when the stall the plugin raised began (its stall.start's `since`): what the studio's Stop is tied to, and how long the stall has lasted when no tool is running. */
+  stalledSince?: number;
   errored: boolean;
   done: boolean;
 };
@@ -46,6 +50,8 @@ export type LiveAgent = {
 type Session = {
   id: string; project: string; branch?: string; host: string; startedAt: number; lastTs: number; endedAt?: number;
   tokens: number; cost: number; costPartial: boolean; contextPercent?: number; content?: 'off' | 'full' | 'excluded';
+  /** v0.4 slice 5 (#31): the studio's Stop reached the session at this time, and whether a turn was running to end; until the person's next turn. */
+  stoppedAt?: number; stoppedAborted?: boolean;
   agents: Map<string, LiveAgent>; seen: Set<string>;
   skills: Map<string, { count: number; by: Map<string, number> }>; // which skills ran, how often, and who ran them
 };
@@ -90,7 +96,7 @@ function apply(s: Session, e: Event) {
   const a = agentOf(s, e.agent_id ?? 'main', e.ts);
   a.lastTs = Math.max(a.lastTs, e.ts);
   s.lastTs = Math.max(s.lastTs, e.ts);
-  if (ALIVE.has(e.kind)) a.stalled = false;
+  if (ALIVE.has(e.kind)) (a.stalled = false), (a.stalledSince = undefined);
   switch (e.kind) {
     case 'session.start':
       a.model ??= e.data.model;
@@ -108,6 +114,11 @@ function apply(s: Session, e: Event) {
       break;
     case 'turn.start':
       Object.assign(a, { inTurn: true, done: false, errored: false, skills: [], unbacked: undefined }); // a skill counts for its own turn (Slice 5); a claim for its own answer
+      if (!e.agent_id) s.stoppedAt = s.stoppedAborted = undefined; // the person's next turn ends "Stopped"
+      break;
+    case 'session.stopped':
+      s.stoppedAt = e.ts;
+      s.stoppedAborted = e.data.aborted;
       break;
     case 'skill.load': {
       if (!a.skills.includes(e.data.skill)) a.skills = [...a.skills, e.data.skill]; // alpha › beta: the chain this turn
@@ -145,7 +156,7 @@ function apply(s: Session, e: Event) {
       break;
     case 'agent.spawn':
       Object.assign(a, {
-        parent: e.parent_agent_id ?? 'main', type: e.data.agent_type, description: e.data.description, model: e.data.model, pricier: e.data.model_check,
+        parent: e.parent_agent_id ?? 'main', type: e.data.agent_type, description: e.data.description, model: e.data.model, pricier: e.data.model_check, background: e.data.background,
         role: e.data.declared_role ?? roleOf(e.data.agent_type), startedAt: Math.min(a.startedAt, e.ts),
       });
       if (e.data.prompt) a.now ??= { label: 'task', text: line(e.data.prompt) };
@@ -168,6 +179,7 @@ function apply(s: Session, e: Event) {
     case 'stall.start':
     case 'stall.end':
       a.stalled = e.kind === 'stall.start';
+      a.stalledSince = a.stalled ? e.data.since : undefined;
       break;
   }
 }

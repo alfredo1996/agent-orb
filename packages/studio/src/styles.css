@@ -73,15 +73,15 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var
 .seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
 .seg button { min-height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--muted); font: 500 14px/1 var(--sans); cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); border-color: var(--border-strong); font-weight: 600; box-shadow: var(--shadow); }
-.ph-pick select, .sessionpick select, .fields select, .fix select, .capline input, .gform input, .wform input { min-height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--border-strong); background-color: var(--surface); color: var(--text); font: 400 14px/1 var(--sans); min-width: 0; max-width: 100%; }
+.ph-pick select, .sessionpick select, .fields select, .fix select, .capline input, .gform input, .wform input, .bfield input { min-height: 36px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--border-strong); background-color: var(--surface); color: var(--text); font: 400 14px/1 var(--sans); min-width: 0; max-width: 100%; }
 .ph-pick select, .sessionpick select, .fields select, .fix select { appearance: none; padding-right: 32px; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
-.ph-pick select:focus-visible, .sessionpick select:focus-visible, .fields select:focus-visible, .fix select:focus-visible, .capline input:focus-visible, .gform input:focus-visible, .wform input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.ph-pick select:focus-visible, .sessionpick select:focus-visible, .fields select:focus-visible, .fix select:focus-visible, .capline input:focus-visible, .gform input:focus-visible, .wform input:focus-visible, .bfield input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
 .chk { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
 .chk input { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--accent); }
 @container (max-width: 700px) {
   .btn, .link { min-height: 44px; }
   .seg button { min-height: 44px; }
-  .ph-pick select, .sessionpick select, .fields select, .fix select, .capline input, .gform input, .wform input { min-height: 44px; font-size: 16px; }
+  .ph-pick select, .sessionpick select, .fields select, .fix select, .capline input, .gform input, .wform input, .bfield input { min-height: 44px; font-size: 16px; }
 }
 
 /* App */
@@ -176,7 +176,7 @@ tr:last-child td { border-bottom: 0; }
 .state.working { color: var(--ok); background: var(--ok-bg); --c-dot: var(--ok-dot); }
 .state.waiting, .state.model { color: var(--wait); background: var(--wait-bg); --c-dot: var(--wait-dot); }
 .state.stalled, .state.error, .state.claim { color: var(--bad); background: var(--bad-bg); --c-dot: var(--bad-dot); }
-.state.done { color: var(--done); background: var(--done-bg); --c-dot: var(--done-dot); }
+.state.done, .state.stopped { color: var(--done); background: var(--done-bg); --c-dot: var(--done-dot); }
 .av { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 600 13px/1 var(--sans); color: #fff; flex: none; }
 .av.opus { background: var(--opus); } .av.sonnet { background: var(--sonnet); } .av.haiku { background: var(--haiku); } .av.other { background: var(--faint); }
 .tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--border); }
@@ -581,9 +581,16 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .needs .need { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px 16px; padding: 12px 20px; }
 .needs .need + .need { border-top: 1px solid var(--line); }
 .needs .since { color: var(--muted); font-size: 14px; }
+.needs .what .sub { display: block; margin-top: 2px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.needs .acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.needs .confirm { grid-column: 1 / -1; display: grid; gap: 10px; padding: 12px 14px; background: var(--bad-bg); border-radius: 10px; font-size: 14px; }
+.needs .confirm .acts { justify-content: flex-start; }
+.btn.danger { background: var(--bad-dot); border-color: var(--bad-dot); color: #fff; }
+.btn.danger:hover:not(:disabled) { filter: brightness(1.05); color: #fff; border-color: var(--bad-dot); }
 .needs code, .sess .agent code { font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
 
 .sess { overflow: hidden; }
+.sess:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } /* the card a Factory board link named (#32) */
 .shead { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 32px; align-items: end; padding: 18px 20px 14px; }
 .who { display: grid; gap: 4px; min-width: 0; }
 .who .l1 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
@@ -668,7 +675,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
   .needs .need { grid-template-columns: minmax(0, 1fr) auto; padding: 12px 16px; }
   .needs .need .state { grid-column: 1 / -1; justify-self: start; }
   .needs .need .since { grid-column: 1; }
-  .needs .need .btn { grid-column: 2; grid-row: 2 / span 2; }
+  .needs .need > .acts { grid-column: 2; grid-row: 2 / span 2; }
   .shead { grid-template-columns: minmax(0, 1fr); padding: 16px; }
   .skills { padding: 0 16px 12px; }
   .sess .cols { display: none; }
@@ -680,6 +687,126 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
   .sess .d1 .name { padding-left: 0; }
   .sess .d1 .name::before, .sess .d1.more .name::after { left: 20px; }
 }
+
+/* Factory (v0.4 slice 1, #27; design/v0.4-factory.html): Needs you reuses Live's rows; the PR sheet reuses the history drawer */
+.factory .asof { font-size: 13px; color: var(--muted); }
+.factory .asof.stale { color: var(--wait); font-weight: 600; }
+.factory .needs .what { display: grid; gap: 2px; min-width: 0; }
+.factory .needs .what code { justify-self: start; }
+.factory .needs .sub { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.factory .needs .nothing { margin: 0; padding: 14px 20px; color: var(--muted); font-size: 14px; }
+/* Issue cost and budget (v0.4 slice 2, #28; design/v0.4-factory.html, the cost cell and the Budget board). The sheet is a portal, so its rules do not hang on .factory. */
+.factory .needs.withcost .need { grid-template-columns: auto minmax(0, 1fr) minmax(0, 190px) auto auto; }
+.costcell { display: grid; gap: 5px; min-width: 0; font-size: 13px; }
+.costcell .lab { font-size: 12px; color: var(--muted); }
+.costcell small { font-size: 12px; color: var(--muted); }
+.costcell .why.none { color: var(--faint); }
+.costcell .bar { margin-top: 0; }
+.costcell .bar.over > i { background: var(--bad-dot); }
+.budget .bbody { display: grid; gap: 14px; padding: 14px 20px; }
+.budget .bbody > .sub, .budget .dnote { margin: 0; font-size: 13px; color: var(--muted); }
+.bfield { display: grid; gap: 6px; }
+.bfield .blab { font-size: 14px; font-weight: 500; }
+.bfield .bin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.bfield input { width: 120px; font-family: var(--mono); }
+.bfield input[aria-invalid="true"] { border-color: var(--bad-line); }
+.bfield .gerr { margin: 0; font-size: 13px; color: var(--bad); }
+.factory-sheet .ledger2 { display: grid; gap: 6px; }
+.factory-sheet .ledger2 > div { display: flex; justify-content: space-between; gap: 12px; }
+@container (max-width: 700px) { /* after the rules above: the same specificity, so the later one wins */
+  .factory .needs.withcost .need { grid-template-columns: minmax(0, 1fr) auto; }
+  .factory .needs .costcell { grid-column: 1; }
+  .factory .needs.withcost .need .btn { grid-row: 2 / span 3; }
+  .budget .bbody { padding-left: 16px; padding-right: 16px; }
+}
+/* The Board band (v0.4 slice 6, #32; design/v0.4-factory.html, the Board). Like the other bands, it narrows with its container: on a phone each row is a stack with its labels shown. */
+.board .nothing { margin: 0; padding: 14px 20px; color: var(--muted); font-size: 14px; }
+.board .bcols, .board .brow { display: grid; grid-template-columns: minmax(200px, 2fr) 160px minmax(170px, 1.3fr) 150px 112px; /* the mockup's 140px holds "$118 of $150"; the real cell prints cents, and "$118.00 of $150.00" wraps in 140 */ gap: 16px; align-items: center; padding: 12px 20px; }
+.board .bcols { padding-block: 8px; background: var(--sunk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
+.board .brow + .brow { border-top: 1px solid var(--line); }
+.board .brow.merged { color: var(--muted); }
+.board .bissue { display: grid; gap: 2px; min-width: 0; }
+.board .bissue b { font-weight: 600; overflow-wrap: anywhere; }
+.board .bissue small { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.board .open { all: unset; cursor: pointer; display: block; min-width: 0; }
+.board .open:hover b, .board .open:focus-visible b { color: var(--accent-ink); }
+.board .open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.board .lab { display: none; font-size: 12px; font-weight: 500; color: var(--muted); }
+.board .stagecell { display: grid; gap: 5px; }
+.board .stagecell > span:first-child { font-size: 13px; font-weight: 500; }
+.trk { display: flex; gap: 3px; }
+.trk i { flex: 1; height: 6px; border-radius: 2px; background: var(--border-strong); }
+.trk i.on { background: var(--data); }
+.trk i.now { background: var(--accent); }
+.trk.bad i.now { background: var(--bad-dot); }
+.trk.good i.now, .trk.good i.on { background: var(--ok-dot); }
+.board .why { font-size: 13px; overflow-wrap: anywhere; }
+.board .why.no { color: var(--wait); }
+.board .why.yes { color: var(--ok); font-weight: 600; }
+.board .why.none { color: var(--faint); }
+.board .costcell .lab { display: none; }
+.board .links { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; }
+.board .links a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+.board .links .none { color: var(--faint); }
+.board .notissue { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.board .notissue .sub { font-size: 13px; color: var(--muted); }
+.board .bnote { padding: 10px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); }
+.board .bnote:last-child { border-radius: 0 0 14px 14px; }
+.board .bnote code { font: 12px var(--mono); }
+@container (max-width: 700px) {
+  .board .bcols { display: none; }
+  .board .brow { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 16px; }
+  .board .lab, .board .costcell .lab { display: block; }
+  .board .nothing, .board .notissue, .board .bnote { padding-left: 16px; padding-right: 16px; }
+}
+/* Machine (v0.4 slice 3, #29; design/v0.4-factory.html, the Machine band). Like the other bands, it narrows with its container, not the window. */
+.machine { scroll-margin-top: 16px; }
+.machine:focus-visible { outline: 2px solid var(--accent-ink, var(--ink)); outline-offset: 2px; }
+.machine .hint.stale { color: var(--wait); font-weight: 600; }
+.machine .mstats { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 44px; padding: 16px 20px; }
+.machine .mstat { display: grid; gap: 2px; }
+.machine .mstat .k { font-size: 12px; font-weight: 500; color: var(--muted); }
+.machine .mstat .v { font: 500 22px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.machine .mstat .d { font-size: 13px; color: var(--muted); }
+.machine .mstat code { font: 13px var(--mono); }
+.machine .mdown, .machine .nothing { margin: 0; font-size: 14px; color: var(--muted); }
+.machine .nothing { padding: 0 20px 16px; }
+.machine h2 + .nothing { padding-top: 16px; }
+.machine .mrow { display: grid; grid-template-columns: minmax(0, 1fr) 100px 90px; gap: 4px 16px; align-items: center; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.machine .mrow .nm { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+.machine .mrow .sub { flex-basis: 100%; font-size: 13px; color: var(--muted); font-weight: 400; }
+.machine .mrow .r { text-align: right; }
+.machine .mrow.head { padding-block: 8px; background: var(--sunk); font-size: 12px; font-weight: 500; color: var(--muted); }
+.machine .flag { font-size: 12px; font-weight: 500; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+.machine .flag.left { color: var(--wait); background: var(--wait-bg); }
+.machine .flag.sick { color: var(--bad); background: var(--bad-bg); }
+.machine .mfoot { padding: 12px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+@container (max-width: 700px) {
+  .machine .mstats, .machine .mfoot, .machine .mrow { padding-left: 16px; padding-right: 16px; }
+  .machine .mrow { grid-template-columns: minmax(0, 1fr) 40px 76px; gap: 4px 10px; }
+  .machine .nothing { padding-left: 16px; padding-right: 16px; }
+}
+.factory-sheet .dfacts code { font: 13px var(--mono); }
+.factory-sheet .dsec { display: grid; gap: 10px; padding: 16px var(--gx); border-bottom: 1px solid var(--line); }
+.factory-sheet .dsec h4 { margin: 0; font: 600 15px/1.3 var(--sans); }
+.factory-sheet .dsec > .sub { font-size: 13px; color: var(--muted); }
+.factory-sheet .dnote { margin: 0; }
+.factory-sheet .cond { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.factory-sheet .cond li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; font-size: 14px; }
+.factory-sheet .cond small { display: block; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.factory-sheet .cond .mk { font: 600 14px var(--mono); }
+.factory-sheet .cond .ok .mk { color: var(--ok); } .factory-sheet .cond .no .mk { color: var(--bad); } .factory-sheet .cond .unk .mk { color: var(--wait); }
+.factory-sheet .fgroup { display: grid; gap: 0; }
+.factory-sheet .fgroup h5, .factory-sheet .fgroup summary { margin: 0; padding: 6px 0; font: 600 13px/1.3 var(--sans); color: var(--muted); }
+.factory-sheet details.fgroup summary { cursor: pointer; }
+.factory-sheet .fnd { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 2px 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.factory-sheet .fnd .id { font: 600 13px var(--mono); }
+.factory-sheet .fnd .sev { font: 600 12px/1.4 var(--sans); padding: 0 6px; border-radius: 6px; background: var(--surface-2); color: var(--muted); }
+.factory-sheet .fnd .sev.major, .factory-sheet .fnd .sev.critical, .factory-sheet .fnd .sev.blocker { background: var(--bad-bg); color: var(--bad); }
+.factory-sheet .fnd .file { font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.factory-sheet .fnd .ttl, .factory-sheet .fnd .why2 { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.factory-sheet .fnd .ttl.off { color: var(--faint); font-style: italic; }
+.factory-sheet .fnd .why2 { font-size: 13px; color: var(--ink); background: var(--sunk); border-radius: 6px; padding: 4px 8px; }
 
 /* Analysis (design/pages.html): run by hand only. Two columns, a stored report opens under the list; one column below 1000px. */
 .analysis .an { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }

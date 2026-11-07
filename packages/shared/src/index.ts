@@ -1,5 +1,6 @@
 export * from './event.ts';
 export * from './classes.ts';
+export * from './issue.ts';
 import roles from './roles.json' with { type: 'json' };
 import pricing from './pricing.json' with { type: 'json' };
 // Issue #8: what each built-in agent type is for; an agent file's own description overrides it.
