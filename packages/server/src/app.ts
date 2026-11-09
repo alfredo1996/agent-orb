@@ -35,7 +35,7 @@ const hostName = (host: string) => host.trim().toLowerCase().replace(/:\d*$/, ''
  * comes from another site's page, and is refused (#21: here, once, so a route added later can't forget it). The rule reads the route the
  * router matched, never the raw URL: the router decodes the path (/%61pi/goal is /api/goal) and takes a full URL in the request line down
  * to its path. Every write is covered but POST /ingest, which the plugin's token decides.
- * A request with no Origin, any other process on this machine, passes: #13 decides that one.
+ * A request with no Origin, any other process on this machine, passes: a known limit (README, #13), since such a process can read the API key from deploy/.env itself.
  */
 const foreign = (req: FastifyRequest) => {
   const origin = req.headers.origin;
