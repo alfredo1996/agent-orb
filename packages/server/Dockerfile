@@ -1,5 +1,5 @@
 # Build from the repo root: docker build -f packages/server/Dockerfile .
-# The base image is pinned by digest: a digest bump (Dependabot opens it) is how it updates.
+# The base image is pinned by digest: it updates by bumping this digest (`docker buildx imagetools inspect node:22-alpine`); #14 adds Dependabot to propose the bumps.
 FROM node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS studio
 RUN corepack enable
 WORKDIR /app

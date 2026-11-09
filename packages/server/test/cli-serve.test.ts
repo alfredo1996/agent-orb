@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -23,8 +23,8 @@ describe('cli.ts', () => {
     let err = '';
     child.stderr.on('data', (d) => (err += d));
     expect(await new Promise((resolve) => child.once('exit', resolve))).toBe(1);
-    if (token) expect(err).toContain('openssl rand -hex 24');
-    expect(existsSync(join(dir, 'refused.db'))).toBe(false);
+    expect(err).toContain(token ? 'openssl rand -hex 24' : 'ORB_TOKEN is required');
+    expect(readdirSync(dir)).toEqual([]); // no history.db, no content.db: nothing was opened
   }, 30_000);
 
   it('serve is the default: no argument starts the server on the two SQLite files and nothing else, and SIGTERM stops it cleanly', async () => {
