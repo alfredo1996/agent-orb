@@ -14,7 +14,7 @@ type Node = {
 type Edge = { from: string; to: string; did: number; named: boolean; preload: boolean; tokens: number };
 type Usage = { id: string; name: string; source: string; runs: number; how: How; tokens: number; cost: number; costPartial: boolean; last: number; loads: number[] };
 type Idle = { name: string; source: string; plugin?: string; tokens: number; clash: boolean };
-type Data = { nodes: Node[]; edges: Edge[]; usage: Usage[]; idle: Idle[] };
+export type Data = { nodes: Node[]; edges: Edge[]; usage: Usage[]; idle: Idle[] };
 
 const ORIGIN: Record<string, [string, string]> = {
   projectSettings: ['project', 'project'], userSettings: ['user', 'user'], plugin: ['plugin', 'plugin'], 'built-in': ['built-in', 'builtin'],
@@ -27,8 +27,6 @@ const Chip = ({ source, agent }: { source?: string; agent?: boolean }) => <span 
 export function Skills({ query, now }: { query?: string; now: number }) {
   const [data, setData] = useState<Data>();
   const [error, setError] = useState<string>();
-  const [picked, setPicked] = useState<string>();
-  const [sort, setSort] = useState<'runs' | 'tokens'>('runs');
 
   useEffect(() => {
     if (!query) return;
@@ -42,6 +40,13 @@ export function Skills({ query, now }: { query?: string; now: number }) {
 
   if (error) return <div className="empty"><b>The skills could not load.</b><span>{error}</span></div>;
   if (!data) return null;
+  return <SkillsView data={data} now={now} />;
+}
+
+/** What the Skills scope draws from the data: apart from the fetch so that a test renders it. */
+export function SkillsView({ data, now }: { data: Data; now: number }) {
+  const [picked, setPicked] = useState<string>();
+  const [sort, setSort] = useState<'runs' | 'tokens'>('runs');
   if (!data.usage.length && !data.idle.length) {
     return <div className="empty"><b>No skills recorded in this period.</b><span>Sessions started with this version of the plugin list their skills and record each one they load.</span></div>;
   }
@@ -148,7 +153,7 @@ function PhoneList({ data, picked, onPick }: { data: Data; picked?: string; onPi
   );
 }
 
-function Panel({ node, data, onClose }: { node: Node; data: Data; onClose: () => void }) {
+export function Panel({ node, data, onClose }: { node: Node; data: Data; onClose: () => void }) {
   const panel = useReveal<HTMLElement>(); // the panel is keyed by its node, so picking another one brings it up again
   const byId = new Map(data.nodes.map((n) => [n.id, n]));
   const out = data.edges.filter((e) => e.from === node.id).sort((a, b) => b.did - a.did);
