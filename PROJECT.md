@@ -612,6 +612,7 @@ v0.1 is the doc's v1 minus the cuts below, built in slices. Each slice ends with
 - **studio** (Vitest + Playwright): Live renders working, waiting, stalled and done rows; criterion A timed end to end.
 - **acceptance**: the C comparison script and the E stop/restart run, recorded in `docs/verified.md`.
 - **memory** (`pnpm soak`, in CI; "The memory soak" in §6): every GET API 40 times over HTTP on a synthetic session the size of the biggest history, failing on growth, on RSS over the limit, on a non-200 and on a statement prepared per request.
+- **ingest on a long session** (`pnpm ingest-load`, not in CI, #18): one session grows to 15,000 calls (34,505 events) through `POST /ingest` in batches of 200 on a temp SQLite file; it fails when the last 10 batches' median latency is over 2x the first batch's. Measured on dev ac13e48 (2026-11-09): first batch 49 ms (the cold start), steady 5 ms, last 10 median 5 to 6 ms, flat. The Neo4j writer's per-call scan that made batches slower as a session grew (2.0 s at 14,500 calls) left with Neo4j in v0.3.
 - **import memory** (`pnpm import-check`; "The import's memory" in §6): a session of 200,000 events, a main file and subagent files, imported by the CLI under `time`, failing above 150 MB of RSS, on fewer events written than the session holds, or on tables that do not hold what was generated.
 
 ---

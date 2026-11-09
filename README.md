@@ -183,7 +183,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 claude --plugin-dir packages/mod
 ```
 
-`pnpm soak` is the memory check, part of CI: it calls every API 40 times over HTTP on a synthetic session of 46,000 tool calls, the size of the biggest history measured, and fails if the memory after the last round is more than 20% over the fifth's or over 256 MB, if a route doesn't answer 200, or if a route prepares a statement per request. To run it in Linux, on the server's base image:
+`pnpm ingest-load` checks that ingest stays as fast at call 15,000 of one session as at its first batch (it fails over 2x). `pnpm soak` is the memory check, part of CI: it calls every API 40 times over HTTP on a synthetic session of 46,000 tool calls, the size of the biggest history measured, and fails if the memory after the last round is more than 20% over the fifth's or over 256 MB, if a route doesn't answer 200, or if a route prepares a statement per request. To run it in Linux, on the server's base image:
 
 ```bash
 docker run --rm --memory 1500m -v "$PWD":/repo:ro -w /repo node:22-alpine node --expose-gc packages/server/scripts/soak.ts

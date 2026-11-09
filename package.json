@@ -9,6 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p . && tsc -p packages/studio",
+    "ingest-load": "node packages/server/scripts/ingest-load.ts",
     "soak": "node --expose-gc packages/server/scripts/soak.ts",
     "import-check": "node packages/server/scripts/import-check.ts"
   },
