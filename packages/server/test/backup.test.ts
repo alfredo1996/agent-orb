@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -357,7 +357,9 @@ esac
       started(loose);
       mkdirSync(join(loose.dir, 'bk'), { mode: 0o755 }); // made by an older version, under the default umask
       chmodSync(join(loose.dir, 'bk'), 0o755);
-      expect(sh(backup, [], loose.env({ FAKE_ORB: state })).status).toBe(0);
+      const r = sh(backup, [], loose.env({ FAKE_ORB: state }));
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stderr).not.toContain('is not yours'); // no warning when the user owns the folder
       expect(mode(join(loose.dir, 'bk'))).toBe('700');
       const fresh = stack();
       started(fresh);
@@ -365,18 +367,27 @@ esac
       expect(mode(join(fresh.dir, 'bk'))).toBe('700');
     });
 
-    it.skipIf(process.getuid?.() === 0)('a backup folder the user does not own is left as it is: one warning, and the backup still succeeds', () => {
+    // What the test needs is a folder the user does not own, not "not root": skip where /tmp is the user's own, or the script would chmod it.
+    it.skipIf(statSync('/tmp').uid === process.getuid?.())('a backup folder the user does not own is left as it is: one warning, and the backup still succeeds', () => {
       const s = stack();
       started(s);
       // /tmp is root's and sticky, so it is a folder we do not own, and the dated folder goes in it.
       // Resolved, not spelled: it is /private/tmp on macOS, and that path does not exist on Linux (CI).
       const foreign = realpathSync('/tmp');
-      const r = sh(backup, [], { ...s.env({ FAKE_ORB: 'running' }), ORB_BACKUP_DIR: foreign, ORB_BACKUP_KEEP: '100000' }); // keep: prune must not touch what else is in /tmp
+      // A fake `date` (the script's only use of it is the day name) makes the folder unique to this test, so the cleanup removes exactly it and never a real /tmp/YYYY-MM-DD.
+      const day = `orb-bk-${basename(s.dir)}`;
+      const fake = join(s.dir, 'fake-date');
+      mkdirSync(fake);
+      writeFileSync(join(fake, 'date'), `#!/bin/sh\necho ${day}\n`, { mode: 0o755 });
+      const env = s.env({ FAKE_ORB: 'running' });
+      const r = sh(backup, [], { ...env, PATH: `${fake}:${env.PATH}`, ORB_BACKUP_DIR: foreign, ORB_BACKUP_KEEP: '100000' }); // keep: prune must not touch what else is in /tmp
       try {
         expect(r.status, r.stderr).toBe(0);
-        expect(r.stderr).toContain('permissions are left as they are');
+        expect(r.stderr.split('permissions are left as they are')).toHaveLength(2); // exactly one warning
+        expect(readdirSync(join(foreign, day)).sort()).toEqual(['content.db', 'history.db']); // the backup was made, not skipped
       } finally {
-        rmSync(join(foreign, today()), { recursive: true, force: true });
+        rmSync(join(foreign, day), { recursive: true, force: true });
+        rmSync(join(foreign, `.partial-${day}`), { recursive: true, force: true });
       }
     });
 
