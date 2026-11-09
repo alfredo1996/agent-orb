@@ -7,9 +7,17 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    ignore:
+      # The image and CI stay on Node 22; a Node major is a deliberate change, not a weekly PR.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker # the Dockerfile's node:22-alpine digest
     directory: /packages/server
     target-branch: dev
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    ignore:
+      # Same reason: stay on node:22-alpine, so Dependabot only refreshes its digest and never proposes node 24+.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
