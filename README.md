@@ -44,7 +44,7 @@ cd agent-orb
 cp deploy/.env.example deploy/.env
 ```
 
-In `deploy/.env`, set `ORB_TOKEN` to a random value. `openssl rand -hex 24` makes a good one. Then:
+In `deploy/.env`, set `ORB_TOKEN` to a random value. `openssl rand -hex 24` makes a good one. The server refuses to start while it is still the example `change-me`. Then:
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d
@@ -117,7 +117,7 @@ Opus 5.5 is the default model. You can pick Sonnet or Haiku for each run.
 
 ## Backups
 
-`deploy/backup.sh run` copies both files into `~/agent-orb-backups/<date>/` and keeps the newest 7 folders: `history.db`, the history, and `content.db`, the captured text and the analysis reports.
+`deploy/backup.sh run` copies both files into `~/agent-orb-backups/<date>/` and keeps the newest 7 folders: `history.db`, the history, and `content.db`, the captured text and the analysis reports. The folder and the copies are readable by you alone, since they hold your prompts and answers.
 
 Each is copied with SQLite's `VACUUM INTO` while the server runs, so nothing is stopped and nothing is missed. The script uses the image the stack's own container already runs and never pulls or builds one, so the stack must have been started once.
 
@@ -130,7 +130,7 @@ Two things to know about the schedule on a Mac:
 
 To restore, run `deploy/restore.sh ~/agent-orb-backups/<date>`. It asks first, stops the server, puts that day's two files back and starts the server again. A backup made by v0.2, a folder with a `neo4j.dump` in it, can't be restored by this version.
 
-`ORB_BACKUP_DIR` and `ORB_BACKUP_KEEP` change where the copies go and how many are kept; the other settings are listed at the top of the script. On Linux the one-off container writes as its own user, so the backup folder may need to be writable for it.
+`ORB_BACKUP_DIR` and `ORB_BACKUP_KEEP` change where the copies go and how many are kept; the other settings are listed at the top of the script. On Linux the one-off container writes as its own user (`node`, uid 1000), so the owner-only folder works when that is also your user; with another uid, make the folder writable for it.
 
 ## Known limits
 

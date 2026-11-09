@@ -508,13 +508,14 @@ One React app served by the server. Every view is mocked up (desktop and phone) 
 ## 10. Deploy
 
 `deploy/docker-compose.yml` runs one service:
-- `orb-server`: image `ghcr.io/alfredo1996/agent-orb-server:<version>` (built locally while developing), port `127.0.0.1:4040:4040`, env `ORB_TOKEN`; the volume `orb-content-data` at `/var/lib/agent-orb` holds both SQLite files, `history.db` (the history) and `content.db` (the captured text and the reports). The volume keeps the name it had when it held `content.db` alone, so a machine that ran an earlier version keeps its text.
+- `orb-server` (built `FROM node:22-alpine` pinned by digest; a digest bump is the base-image update, #19): image `ghcr.io/alfredo1996/agent-orb-server:<version>` (built locally while developing), port `127.0.0.1:4040:4040`, env `ORB_TOKEN` (the server refuses to start on the example value `change-me`, #19); the volume `orb-content-data` at `/var/lib/agent-orb` holds both SQLite files, `history.db` (the history) and `content.db` (the captured text and the reports). The volume keeps the name it had when it held `content.db` alone, so a machine that ran an earlier version keeps its text.
 
 Install at launch: `docker compose up -d` → in Claude Code, `/plugin marketplace add alfredo1996/agent-orb` and `/plugin install agent-orb` → set endpoint and token in the plugin config menu → the main agent appears in Live.
 
 While developing: `docker compose up --build`, and the mod loaded through `CLAUDE_CODE_PLUGIN_DIRS` / `--plugin-dir`.
 
 Backup (v0.2 slice 4, §15 2026-10-24; v0.3 slice 4, #85): `deploy/backup.sh run` writes `~/agent-orb-backups/<YYYY-MM-DD>/` and keeps the newest 7 (`ORB_BACKUP_KEEP`).
+- The backup folder is `chmod 700`, the dated folders are made under `umask 077` and the copies are `chmod 600` (#19): they hold captured text. On Linux the one-off container writes as `node` (uid 1000), so a host user with another uid has to make the folder writable for it; not tried.
 - Both files are copied with `VACUUM INTO`, a consistent snapshot while the server runs: inside the `orb-server` container when it runs (`compose exec`, then `compose cp`, then the snapshot is removed from its volume), and in a one-off from the container's own image when it is stopped. Nothing is stopped, so the plugin's outbox has nothing to queue. A volume that lacks either file (the server has not started yet) fails the backup, and nothing is published.
 - It writes into `.partial-<date>` and renames it only when complete, so a failed run leaves the earlier folders as they were; the one summary line gives the folder and both sizes.
 - `install` schedules it daily at 03:30 as a launchd agent on macOS (`install --dry-run` prints it, `uninstall` removes it) and prints the crontab line on Linux. It is opt-in; nothing is scheduled by `docker compose up`.

@@ -14,7 +14,7 @@
 #   ORB_BACKUP_KEEP      how many dated folders to keep    (default: 7)
 #
 # Needs bash 3.2 (macOS's own) and Docker Compose v2. On Linux the one-off container writes as its own user
-# (node), so ORB_BACKUP_DIR may need to be writable for it: best effort, not tried here.
+# (node), so it needs to be the same user as yours (uid 1000, the usual first user) to write into the owner-only folder: best effort, not tried here.
 # It never pulls or builds an image: every one-off runs from the image of the stack's own container, so start the stack once.
 set -euo pipefail
 
@@ -133,7 +133,9 @@ run() {
   local day final old rc=0
   day=$(date +%F)
   final=$ORB_BACKUP_DIR/$day
+  umask 077 # the folders and copies are the owner's alone: they hold the captured prompts and answers
   mkdir -p "$ORB_BACKUP_DIR"
+  chmod 700 "$ORB_BACKUP_DIR" # a folder an earlier version made under the default umask
   partial=$ORB_BACKUP_DIR/.partial-$day
   trap finish EXIT
   trap 'exit 130' INT
@@ -153,6 +155,7 @@ run() {
     *) exit "$rc" ;;
   esac
   [ -s "$partial/history.db" ] && [ -s "$partial/content.db" ] || die "the snapshot left no history.db and content.db in $partial, nothing is published"
+  chmod 600 "$partial/history.db" "$partial/content.db" || true # ponytail: on Linux a one-off written as another uid than yours can't be chmod-ed; the 700 folders still keep it private
 
   # 2. Publish: a second run today replaces that day's folder only now, with the new one complete.
   if [ -e "$final" ]; then

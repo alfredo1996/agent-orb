@@ -351,6 +351,18 @@ esac
       expect(r.stdout).toMatch(/history\.db \S+, content\.db \S+/);
     });
 
+    it.each(['running', 'stopped'])('with the server %s, the backup folder, the dated folder and both copies are owner-only, even when the folder already existed loose', (state) => {
+      const s = stack();
+      started(s);
+      mkdirSync(join(s.dir, 'bk'), { mode: 0o755 }); // made by an older version, under the default umask
+      chmodSync(join(s.dir, 'bk'), 0o755);
+      const r = sh(backup, [], s.env({ FAKE_ORB: state }));
+      expect(r.status, r.stderr).toBe(0);
+      const day = join(s.dir, 'bk', today());
+      const mode = (p: string) => (statSync(p).mode & 0o777).toString(8);
+      expect([mode(join(s.dir, 'bk')), mode(day), mode(join(day, 'history.db')), mode(join(day, 'content.db'))]).toEqual(['700', '700', '600', '600']);
+    });
+
     it('a snapshot file left in the volume by a killed run does not stop the next one', () => {
       const s = stack();
       started(s);
