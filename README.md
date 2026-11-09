@@ -179,6 +179,7 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm soak
+pnpm audit --prod --audit-level high
 docker compose -f deploy/docker-compose.yml up -d --build
 claude --plugin-dir packages/mod
 ```
@@ -188,6 +189,8 @@ claude --plugin-dir packages/mod
 ```bash
 docker run --rm --memory 1500m -v "$PWD":/repo:ro -w /repo node:22-alpine node --expose-gc packages/server/scripts/soak.ts
 ```
+
+`pnpm audit --prod --audit-level high` is the dependency check, also part of CI: it fails on a high or critical advisory in what the server image ships. Dependabot proposes weekly updates for the npm packages and the Docker base image as pull requests into `dev`.
 
 Add `--db <copy of history.db>` to run it on a real history instead (in Docker, mount the copy's folder too: the header of `soak.ts` has the command).
 

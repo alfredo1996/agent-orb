@@ -1,0 +1,15 @@
+# GitHub reads this file from the default branch (main) only: it takes effect when dev is promoted.
+version: 2
+updates:
+  - package-ecosystem: npm # the pnpm workspace; one lockfile at the root
+    directory: /
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+  - package-ecosystem: docker # the Dockerfile's node:22-alpine digest
+    directory: /packages/server
+    target-branch: dev
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
