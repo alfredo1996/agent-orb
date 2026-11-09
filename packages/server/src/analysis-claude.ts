@@ -8,7 +8,7 @@ export type RunResult = {
   text: string; model: string; stop: string | null;
   usage: { input: number; output: number; cache_read: number; cache_creation: number };
 };
-/** The API refused (4xx, 5xx): its status and its own message, so the page can say what to fix. Nothing was billed. */
+/** The API refused (4xx, 5xx) or gave no answer (status 0): its status and its own message, so the page can say what to fix. */
 export class ClaudeError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -44,7 +44,7 @@ export function createClaude(apiKey: string, workspaceId?: string): Claude {
         model, max_tokens: MAX_OUTPUT, system, messages: [{ role: 'user', content: user }],
         thinking: { type: 'adaptive' }, output_config: format,
         ...(FALLBACK.has(model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
-      }).catch((e) => { throw plain(e); });
+      }, { maxRetries: 0 }).catch((e) => { throw plain(e); }); // the one billed call: a retry after a dropped connection could bill twice
       const text = r.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
       return {
         text, model: r.model, stop: r.stop_reason,

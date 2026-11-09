@@ -188,6 +188,21 @@ describe('analysis, with a key (a stand-in Claude)', () => {
     expect(ok.status).toBe(200);
   });
 
+  it('no answer from the API on a run does not claim nothing was billed; on an estimate it still does', async () => {
+    const down = new ClaudeError(0, 'Request timed out.');
+    const app2 = buildApp({ store, token: TOKEN, content: content!, reports: openAnalysisStore(':memory:'),
+      claude: { count: async () => 50_000, run: async () => { throw down; } } });
+    const e2 = (await app2.inject({ method: 'POST', url: '/api/analysis/estimate', payload: { ...week, model: 'claude-opus-5-5' } })).json();
+    const r = await app2.inject({ method: 'POST', url: '/api/analysis/run', payload: { estimate: e2.id } });
+    expect(r.statusCode).toBe(502);
+    expect(r.json().error).toBe('No answer from the Claude API (Request timed out.). If it was sent, it may have been billed.');
+    await app2.close();
+    fresh({ count: async () => { throw down; }, run: async () => { throw down; } });
+    const e = await send('POST', '/api/analysis/estimate', { ...week, model: 'claude-opus-5-5' });
+    expect(e.status).toBe(502);
+    expect(e.body.error).toBe('No answer from the Claude API (Request timed out.). Nothing was generated or billed.');
+  });
+
   it('a refusal is billed, so it is recorded and counts against the cap', async () => {
     fresh(standIn(calls, { stop: 'refusal', text: '', usage: { input: 50_000, output: 0, cache_read: 0, cache_creation: 0 } }));
     const e = await send('POST', '/api/analysis/estimate', { ...week, model: 'claude-sonnet-5-5' });

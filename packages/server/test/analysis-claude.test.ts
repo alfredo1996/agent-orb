@@ -144,4 +144,27 @@ describe('createClaude', () => {
       await new Promise((resolve) => dead.close(resolve));
     }
   }, 15_000);
+
+  it('run() sends a request once: a connection dropped after the request arrived is not retried (status 0)', async () => {
+    const drop = createServer((req, res) => { hits++; req.resume(); req.on('end', () => res.socket?.destroy()); });
+    await new Promise<void>((resolve) => drop.listen(0, '127.0.0.1', resolve));
+    const was = process.env.ANTHROPIC_BASE_URL;
+    process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(drop.address() as AddressInfo).port}`;
+    try {
+      const claude = createClaude(KEY);
+      process.env.ANTHROPIC_BASE_URL = was;
+      const e = await refusal(claude.run('claude-opus-5-5', 's', 'u'));
+      expect(e.status).toBe(0);
+      expect(hits).toBe(1); // the SDK's default is 3 requests
+    } finally {
+      process.env.ANTHROPIC_BASE_URL = was;
+      await new Promise((resolve) => drop.close(resolve));
+    }
+  }, 15_000);
+
+  it('count() keeps the SDK\'s retries: a 5xx with no x-should-retry header is asked again', async () => {
+    reply = { status: 500, body: { type: 'error', error: { type: 'api_error', message: 'boom' } }, headers: { 'x-should-retry': 'true', 'retry-after-ms': '1' } };
+    await refusal(createClaude(KEY).count('claude-opus-5-5', 's', 'u'));
+    expect(hits).toBe(3);
+  }, 15_000);
 });
