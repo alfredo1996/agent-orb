@@ -368,8 +368,9 @@ esac
     it.skipIf(process.getuid?.() === 0)('a backup folder the user does not own is left as it is: one warning, and the backup still succeeds', () => {
       const s = stack();
       started(s);
-      // /tmp is root's and sticky, so it is a folder we do not own, and the dated folder goes in it
-      const foreign = '/private/tmp';
+      // /tmp is root's and sticky, so it is a folder we do not own, and the dated folder goes in it.
+      // Resolved, not spelled: it is /private/tmp on macOS, and that path does not exist on Linux (CI).
+      const foreign = realpathSync('/tmp');
       const r = sh(backup, [], { ...s.env({ FAKE_ORB: 'running' }), ORB_BACKUP_DIR: foreign, ORB_BACKUP_KEEP: '100000' }); // keep: prune must not touch what else is in /tmp
       try {
         expect(r.status, r.stderr).toBe(0);
