@@ -391,6 +391,7 @@ describe('cli.ts', () => {
     const run_ = (args: string[], e: NodeJS.ProcessEnv) => promisify(execFile)(process.execPath, [cli, ...args], { env: e });
     await expect(run_(['import'], env())).rejects.toMatchObject({ code: 2, stderr: expect.stringContaining('usage') });
     await expect(run_(['frobnicate'], env())).rejects.toMatchObject({ code: 2 });
+    await expect(run_(['import', 'a', 'b'], env())).rejects.toMatchObject({ code: 2, stderr: expect.stringContaining('usage') });
     await expect(run_(['import', join(root, 'nope')], env())).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining('nope is not a folder') });
     await expect(run_(['import', root], env())).rejects.toMatchObject({ code: 1, stderr: expect.stringContaining('no host yet; set ORB_HOST') });
   }, 60_000);
