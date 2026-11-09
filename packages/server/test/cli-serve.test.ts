@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -17,6 +17,15 @@ afterAll(() => {
 
 describe('cli.ts', () => {
   const cli = new URL('../src/cli.ts', import.meta.url).pathname;
+
+  it.each(['change-me', ''])('refuses ORB_TOKEN=%j before opening any file, and says how to make a real one', async (token) => {
+    const child = spawn(process.execPath, [cli], { env: { PATH: process.env.PATH, ORB_TOKEN: token, HOST: '127.0.0.1', PORT: '0', CONTENT_DB: join(dir, 'refused.db') } });
+    let err = '';
+    child.stderr.on('data', (d) => (err += d));
+    expect(await new Promise((resolve) => child.once('exit', resolve))).toBe(1);
+    expect(err).toContain(token ? 'openssl rand -hex 24' : 'ORB_TOKEN is required');
+    expect(readdirSync(dir)).toEqual([]); // no history.db, no content.db: nothing was opened
+  }, 30_000);
 
   it('serve is the default: no argument starts the server on the two SQLite files and nothing else, and SIGTERM stops it cleanly', async () => {
     const env = { PATH: process.env.PATH, ORB_TOKEN: 'test-token-0123456789', HOST: '127.0.0.1', PORT: '0', CONTENT_DB: join(dir, 'content.db') };

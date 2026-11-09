@@ -13,8 +13,9 @@
 #   ORB_BACKUP_DIR       where the dated folders go        (default: $HOME/agent-orb-backups)
 #   ORB_BACKUP_KEEP      how many dated folders to keep    (default: 7)
 #
-# Needs bash 3.2 (macOS's own) and Docker Compose v2. On Linux the one-off container writes as its own user
-# (node), so ORB_BACKUP_DIR may need to be writable for it: best effort, not tried here.
+# ORB_BACKUP_DIR is made private (700) when you own it; the dated folders and copies inside keep their usual modes, out of reach of anyone else.
+# Needs bash 3.2 (macOS's own) and Docker Compose v2. On Linux the one-off container, used only when the server is stopped,
+# writes as its own user (node, uid 1000), as it did before: best effort, not tried here.
 # It never pulls or builds an image: every one-off runs from the image of the stack's own container, so start the stack once.
 set -euo pipefail
 
@@ -133,11 +134,13 @@ run() {
   local day final old rc=0
   day=$(date +%F)
   final=$ORB_BACKUP_DIR/$day
-  mkdir -p "$ORB_BACKUP_DIR"
   partial=$ORB_BACKUP_DIR/.partial-$day
   trap finish EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  mkdir -p "$ORB_BACKUP_DIR"
+  # The backups hold the captured prompts and answers: the folder that holds them is the owner's alone, and what is inside it is out of anyone else's reach.
+  if [ -O "$ORB_BACKUP_DIR" ]; then chmod 700 "$ORB_BACKUP_DIR"; else echo "backup: $ORB_BACKUP_DIR is not yours, so its permissions are left as they are" >&2; fi
   rm -rf "$partial" # left by a run that was killed today
   mkdir "$partial"
 
