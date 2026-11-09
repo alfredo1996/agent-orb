@@ -117,8 +117,14 @@ describe('createClaude', () => {
     reply = { status: 500, body: { type: 'error', error: { type: 'api_error', message: 'Internal server error' } } };
     const e = await refusal(createClaude(KEY).run('claude-opus-5-5', 's', 'u'));
     expect([e.status, e.message]).toEqual([500, 'Internal server error']);
-    expect(hits).toBe(1); // the stub says x-should-retry: false; in production the SDK retries a 5xx twice before this error is thrown
+    expect(hits).toBe(1);
   });
+
+  it('run() does not retry a 5xx even when the API says to (x-should-retry: true)', async () => {
+    reply = { status: 500, body: { type: 'error', error: { type: 'api_error', message: 'boom' } }, headers: { 'x-should-retry': 'true', 'retry-after-ms': '1' } };
+    await refusal(createClaude(KEY).run('claude-opus-5-5', 's', 'u'));
+    expect(hits).toBe(1);
+  }, 15_000);
 
   it('an error that is not the API\'s passes through as it is: a 200 whose body is not JSON', async () => {
     reply = { status: 200, body: '{not json' };
@@ -162,8 +168,47 @@ describe('createClaude', () => {
     }
   }, 15_000);
 
+  it('run() whose 200 reply is cut mid-body is a ClaudeError with status 0, sent once', async () => {
+    const cut = createServer((req, res) => {
+      hits++;
+      req.resume();
+      req.on('end', () => { res.writeHead(200, { 'content-type': 'application/json', 'content-length': '1000' }); res.write('{"id":'); setTimeout(() => res.socket?.destroy(), 20); });
+    });
+    await new Promise<void>((resolve) => cut.listen(0, '127.0.0.1', resolve));
+    const was = process.env.ANTHROPIC_BASE_URL;
+    process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(cut.address() as AddressInfo).port}`;
+    try {
+      const claude = createClaude(KEY);
+      process.env.ANTHROPIC_BASE_URL = was;
+      const e = await refusal(claude.run('claude-opus-5-5', 's', 'u'));
+      expect([e.status, e.notSent, hits]).toEqual([0, false, 1]);
+    } finally {
+      process.env.ANTHROPIC_BASE_URL = was;
+      await new Promise((resolve) => cut.close(resolve));
+    }
+  }, 15_000);
+
+  it('a refused connection and a name that does not resolve are notSent; a dropped connection is not', async () => {
+    const free = createServer();
+    await new Promise<void>((resolve) => free.listen(0, '127.0.0.1', resolve));
+    const port = (free.address() as AddressInfo).port;
+    await new Promise((resolve) => free.close(resolve)); // nothing listens on it now
+    const was = process.env.ANTHROPIC_BASE_URL;
+    try {
+      for (const url of [`http://127.0.0.1:${port}`, 'http://orb-no-such-host.invalid']) {
+        process.env.ANTHROPIC_BASE_URL = url;
+        const claude = createClaude(KEY);
+        process.env.ANTHROPIC_BASE_URL = was;
+        const e = await refusal(claude.run('claude-opus-5-5', 's', 'u'));
+        expect([e.status, e.notSent]).toEqual([0, true]);
+      }
+    } finally {
+      process.env.ANTHROPIC_BASE_URL = was;
+    }
+  }, 30_000);
+
   it('count() keeps the SDK\'s retries: a 5xx with no x-should-retry header is asked again', async () => {
-    reply = { status: 500, body: { type: 'error', error: { type: 'api_error', message: 'boom' } }, headers: { 'x-should-retry': 'true', 'retry-after-ms': '1' } };
+    reply = { status: 500, body: { type: 'error', error: { type: 'api_error', message: 'boom' } }, headers: { 'x-should-retry': '', 'retry-after-ms': '1' } };
     await refusal(createClaude(KEY).count('claude-opus-5-5', 's', 'u'));
     expect(hits).toBe(3);
   }, 15_000);

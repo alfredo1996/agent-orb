@@ -561,7 +561,7 @@ v0.1 is the doc's v1 minus the cuts below, built in slices. Each slice ends with
 
 **Slice 7 — Analysis with Claude, run by hand** (mockup first)
 - [ ] A project's week, read by Claude through the Anthropic API (key in `deploy/.env`, set by the owner): where tokens go, skills that waste them, repeated failures, changes to try; kept as a report.
-- [ ] Never automatic: Run shows the measured input (token-counting endpoint) and the estimated cost, nothing is sent before Confirm; a monthly cap blocks runs past it; every run lands in the Ledger.
+- [ ] Never automatic: Run shows the measured input (token-counting endpoint) and the estimated cost, nothing is sent before Confirm; a monthly cap blocks runs past it; every run lands in the Ledger (a run that gets no answer from the API is not counted; it may have been billed, so check the Anthropic Console).
 
 **Slice 8 — Launch**
 - [ ] Public brand chosen; README (with a not-affiliated-with-Anthropic line and the minimum Claude Code version), demo GIF.

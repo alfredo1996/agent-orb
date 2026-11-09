@@ -203,6 +203,27 @@ describe('analysis, with a key (a stand-in Claude)', () => {
     expect(e.body.error).toBe('No answer from the Claude API (Request timed out.). Nothing was generated or billed.');
   });
 
+  it('the wording of a failed run, one row per case', async () => {
+    const rows: [ClaudeError, string][] = [
+      [new ClaudeError(0, 'Connection error.', true), "Couldn't reach the Claude API (Connection error.). Nothing was sent or billed."],
+      [new ClaudeError(0, 'Connection error.'), 'No answer from the Claude API (Connection error.). If it was sent, it may have been billed.'],
+      [new ClaudeError(0, 'terminated'), 'No answer from the Claude API (terminated.). If it was sent, it may have been billed.'],
+      [new ClaudeError(429, 'Rate limited'), 'The Claude API refused: Rate limited. Nothing was generated or billed. Estimate again in a minute.'],
+      [new ClaudeError(529, 'Overloaded'), 'The Claude API refused: Overloaded. Nothing was generated or billed. Estimate again in a minute.'],
+      [new ClaudeError(400, 'bad request'), 'The Claude API refused: bad request. Nothing was generated or billed.'],
+      [new ClaudeError(500, 'boom'), 'No answer from the Claude API (boom.). If it was sent, it may have been billed.'],
+      [new ClaudeError(504, 'Gateway Timeout'), 'No answer from the Claude API (Gateway Timeout.). If it was sent, it may have been billed.'],
+    ];
+    for (const [err, want] of rows) {
+      const a = buildApp({ store, token: TOKEN, content: content!, reports: openAnalysisStore(':memory:'),
+        claude: { count: async () => 50_000, run: async () => { throw err; } } });
+      const e = (await a.inject({ method: 'POST', url: '/api/analysis/estimate', payload: { ...week, model: 'claude-opus-5-5' } })).json();
+      const r = await a.inject({ method: 'POST', url: '/api/analysis/run', payload: { estimate: e.id } });
+      expect([r.statusCode, r.json().error]).toEqual([502, want]);
+      await a.close();
+    }
+  });
+
   it('a refusal is billed, so it is recorded and counts against the cap', async () => {
     fresh(standIn(calls, { stop: 'refusal', text: '', usage: { input: 50_000, output: 0, cache_read: 0, cache_creation: 0 } }));
     const e = await send('POST', '/api/analysis/estimate', { ...week, model: 'claude-sonnet-5-5' });

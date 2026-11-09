@@ -99,13 +99,18 @@ export function analysis(app: FastifyInstance, { store: history, content, report
   const month = () => store.spent(monthStart(Date.now())).cost;
   const noKey = { error: 'No API key: add ANTHROPIC_API_KEY to deploy/.env and restart the server. Nothing was sent.' };
   // An API refusal (a bad key, a missing workspace, a bad request) is said plainly; such a request generates and bills nothing.
-  // Status 0 is no answer at all (a timeout, a dropped connection): a run may have been generated and billed, which we cannot know; an estimate never bills.
+  // The wording of a failed call, in one place. An estimate bills nothing, whatever happened. A run is billed only if it generated: not sent (a refused connection),
+  // busy (429, 529: both rejected before generation) and any other 4xx say so; no answer (status 0, a cut reply) and 500/502/503/504 may have generated, which we cannot know.
   const refused = (e: unknown, run = false) => {
     if (!(e instanceof ClaudeError)) throw e;
     const m = e.message.trim();
     const t = /[.!?]$/.test(m) ? m : `${m}.`;
-    if (e.status === 0) return { error: `No answer from the Claude API (${t}). ${run ? 'If it was sent, it may have been billed.' : 'Nothing was generated or billed.'}` };
-    return { error: `The Claude API refused: ${t} Nothing was generated or billed.` };
+    const none = 'Nothing was generated or billed.';
+    if (!run) return { error: e.status === 0 ? `No answer from the Claude API (${t}). ${none}` : `The Claude API refused: ${t} ${none}` };
+    if (e.notSent) return { error: `Couldn't reach the Claude API (${t}). Nothing was sent or billed.` };
+    if (e.status === 429 || e.status === 529) return { error: `The Claude API refused: ${t} ${none} Estimate again in a minute.` };
+    if (e.status === 0 || e.status >= 500) return { error: `No answer from the Claude API (${t}). If it was sent, it may have been billed.` };
+    return { error: `The Claude API refused: ${t} ${none}` };
   };
 
   app.get('/api/analysis', async () => ({
