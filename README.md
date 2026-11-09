@@ -179,6 +179,7 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm soak
+pnpm audit --prod --audit-level high
 docker compose -f deploy/docker-compose.yml up -d --build
 claude --plugin-dir packages/mod
 ```
@@ -192,6 +193,8 @@ docker run --rm --memory 1500m -v "$PWD":/repo:ro -w /repo node:22-alpine node -
 Add `--db <copy of history.db>` to run it on a real history instead (in Docker, mount the copy's folder too: the header of `soak.ts` has the command).
 
 `pnpm ingest-load` is the ingest speed check (not in CI): one session grows to 15,000 main-agent calls through `POST /ingest`, in plugin-shaped events, and it fails if the last 10 batches' median is over 2x the session's own first batch (after a warm-up). `--content full` adds texts and edit claims, `--stream` keeps a live-view client open. It catches a writer that scans a session's rows per event; it is a relative limit, so a slowdown under 2x passes.
+
+`pnpm audit --prod --audit-level high` is the dependency check, also part of CI: it fails on a high or critical advisory in what the server image ships. Once `dev` reaches `main`, Dependabot proposes weekly updates for the npm packages (not `@types/node` majors) and the Docker base image (a digest refresh of `node:22-alpine`, not a newer Node major) as pull requests into `dev`.
 
 The design and every decision are in [PROJECT.md](PROJECT.md). [docs/verified.md](docs/verified.md) records the engine facts the plugin relies on, checked against a real Claude Code. The plan after v0.1 is in PROJECT.md §15. Issue numbers in the code and in PROJECT.md (#81, #114) refer to the development history before v0.3.0, which isn't public; this repository's own issues start after it.
 
