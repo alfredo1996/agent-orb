@@ -105,7 +105,7 @@ Add `ANTHROPIC_API_KEY` to `deploy/.env`, plus `ANTHROPIC_WORKSPACE_ID` if your 
 
 1. Pick a project and a period: the last 7 days, the last 30 days, or one session. **Estimate** counts the input with the API's token counter and shows the most the run can cost.
 2. Nothing is sent until you press **Confirm**.
-3. A monthly cap, $20 by default and editable on the page, blocks runs past it. Every run is counted in the Ledger.
+3. A monthly cap, $20 by default and editable on the page, blocks runs past it. Every run is counted in the Ledger; a run that gets no answer from the API isn't counted, and it may have been billed (check the Anthropic Console).
 
 Opus 5.5 is the default model. You can pick Sonnet or Haiku for each run.
 
