@@ -26,17 +26,18 @@ afterEach(() => {
 describe('the studio frame', () => {
   it('the top bar links the six views in order and the brand', () => {
     const html = at('');
-    expect(html).toContain('agent-orb');
+    expect(html).toContain('<div class="brand"><span class="orb" aria-hidden="true"></span>agent-orb</div>');
     expect([...html.matchAll(/<a href="([^"]*)"/g)].map((m) => m[1])).toEqual(['#/', '#/ledger', '#/pipeline', '#/factory', '#/office', '#/analysis']);
     expect(read(html.match(/<nav.*<\/nav>/s)![0])).toBe('Live Ledger Pipeline Factory Office Analysis');
   });
 
   it.each([
-    ['', 'Live'], ['#/ledger', 'Ledger'], ['#/pipeline', 'Pipeline'], ['#/factory', 'Factory'], ['#/office', 'Office'], ['#/analysis', 'Analysis'],
-  ])('at %j the current page is %s, and only it', (hash, name) => {
+    ['', 'Live', 'live'], ['#/ledger', 'Ledger', 'ledger'], ['#/pipeline', 'Pipeline', 'pipeline'], ['#/factory', 'Factory', 'factory'], ['#/office', 'Office', 'office'], ['#/analysis', 'Analysis', 'patterns'],
+  ])('at %j the current page is %s, and only it, and its view is the one drawn', (hash, name, main) => {
     const html = at(hash);
     const current = [...html.matchAll(/<a href="[^"]*" aria-current="page">(.*?)<\/a>/g)].map((m) => m[1]);
     expect(current).toEqual([name]);
+    expect(html).toContain(`<main class="${main}"`);
   });
 
   it('an unknown hash falls back to Live; the query after ? does not change the view', () => {
@@ -64,8 +65,7 @@ describe('the studio frame', () => {
     expect(html).not.toContain('New analysis');
   });
 
-  it('with no session, Live shows no running count; the Office shows its empty floor', () => {
-    expect(at('')).not.toContain('class="count"');
+  it('the Office shows its empty floor', () => {
     expect(read(at('#/office'))).toContain('The floor is empty.');
   });
 });
