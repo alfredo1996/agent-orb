@@ -508,13 +508,14 @@ One React app served by the server. Every view is mocked up (desktop and phone) 
 ## 10. Deploy
 
 `deploy/docker-compose.yml` runs one service:
-- `orb-server`: image `ghcr.io/alfredo1996/agent-orb-server:<version>` (built locally while developing), port `127.0.0.1:4040:4040`, env `ORB_TOKEN`; the volume `orb-content-data` at `/var/lib/agent-orb` holds both SQLite files, `history.db` (the history) and `content.db` (the captured text and the reports). The volume keeps the name it had when it held `content.db` alone, so a machine that ran an earlier version keeps its text.
+- `orb-server` (built `FROM node:22-alpine` pinned by digest; a digest bump is the base-image update, #19; Dependabot proposes it, #14): image `ghcr.io/alfredo1996/agent-orb-server:<version>` (built locally while developing), port `127.0.0.1:4040:4040`, env `ORB_TOKEN` (the server refuses to start on the example value `change-me`, #19); the volume `orb-content-data` at `/var/lib/agent-orb` holds both SQLite files, `history.db` (the history) and `content.db` (the captured text and the reports). The volume keeps the name it had when it held `content.db` alone, so a machine that ran an earlier version keeps its text.
 
 Install at launch: `docker compose up -d` → in Claude Code, `/plugin marketplace add alfredo1996/agent-orb` and `/plugin install agent-orb` → set endpoint and token in the plugin config menu → the main agent appears in Live.
 
 While developing: `docker compose up --build`, and the mod loaded through `CLAUDE_CODE_PLUGIN_DIRS` / `--plugin-dir`.
 
 Backup (v0.2 slice 4, §15 2026-10-24; v0.3 slice 4, #85): `deploy/backup.sh run` writes `~/agent-orb-backups/<YYYY-MM-DD>/` and keeps the newest 7 (`ORB_BACKUP_KEEP`).
+- `ORB_BACKUP_DIR` is `chmod 700` when the user owns it (otherwise one warning and it is left as it is) (#19): the backups hold captured text, and inside a private folder the dated folders and copies keep their usual modes, so restore's bind mount reads them for any uid. On Linux the one-off container, used only with the server stopped, writes as `node` (uid 1000), as before #19; not tried.
 - Both files are copied with `VACUUM INTO`, a consistent snapshot while the server runs: inside the `orb-server` container when it runs (`compose exec`, then `compose cp`, then the snapshot is removed from its volume), and in a one-off from the container's own image when it is stopped. Nothing is stopped, so the plugin's outbox has nothing to queue. A volume that lacks either file (the server has not started yet) fails the backup, and nothing is published.
 - It writes into `.partial-<date>` and renames it only when complete, so a failed run leaves the earlier folders as they were; the one summary line gives the folder and both sizes.
 - `install` schedules it daily at 03:30 as a launchd agent on macOS (`install --dry-run` prints it, `uninstall` removes it) and prints the crontab line on Linux. It is opt-in; nothing is scheduled by `docker compose up`.
@@ -560,7 +561,7 @@ v0.1 is the doc's v1 minus the cuts below, built in slices. Each slice ends with
 
 **Slice 7 — Analysis with Claude, run by hand** (mockup first)
 - [ ] A project's week, read by Claude through the Anthropic API (key in `deploy/.env`, set by the owner): where tokens go, skills that waste them, repeated failures, changes to try; kept as a report.
-- [ ] Never automatic: Run shows the measured input (token-counting endpoint) and the estimated cost, nothing is sent before Confirm; a monthly cap blocks runs past it; every run lands in the Ledger.
+- [ ] Never automatic: Run shows the measured input (token-counting endpoint) and the estimated cost, nothing is sent before Confirm; a monthly cap blocks runs past it; every run lands in the Ledger (a run that gets no answer from the API is not counted; it may have been billed, so check the Anthropic Console).
 
 **Slice 8 — Launch**
 - [ ] Public brand chosen; README (with a not-affiliated-with-Anthropic line and the minimum Claude Code version), demo GIF.
@@ -611,6 +612,8 @@ v0.1 is the doc's v1 minus the cuts below, built in slices. Each slice ends with
 - **studio** (Vitest + Playwright): Live renders working, waiting, stalled and done rows; criterion A timed end to end.
 - **acceptance**: the C comparison script and the E stop/restart run, recorded in `docs/verified.md`.
 - **memory** (`pnpm soak`, in CI; "The memory soak" in §6): every GET API 40 times over HTTP on a synthetic session the size of the biggest history, failing on growth, on RSS over the limit, on a non-200 and on a statement prepared per request.
+- **ingest on a long session** (`pnpm ingest-load`, not in CI, #18): after a 5-batch warm-up on another session, one session grows to 15,000 main-agent calls (about 17,900 with its 437 subagents, 58,805 events) through `POST /ingest` in batches of 200 on a temp SQLite file, in the plugin's event shapes (`build.*`: a `turn.step` per request, single-turn subagents ending in `agent.complete` and `findings.report`); it fails when the last 10 batches' median latency is over 2x the session's own first batch. `--content full` adds texts and edit claims, `--stream` holds a `/stream` client open in another process. Measured on dev (2026-11-09): first batch 6 to 8 ms, last 10 median 6 to 9 ms, flat in all four modes; a per-call scan injected into the writer fails it (ratios 5 and 8). The relative limit means a slowdown under 2x passes. The Neo4j writer's per-call scan that made batches slower as a session grew (2.0 s at 14,500 calls) left with Neo4j in v0.3.
+- **dependencies** (`pnpm audit --prod --audit-level high`, #14; a step in CI's `test` job right after the install, and the local gate's `audit` step): fails on a high or critical advisory in what the image ships. `pnpm audit --prod` with no level was clean when #14 landed (fastify 5.12.8, @fastify/static 10.1.10). `.github/dependabot.yml` opens a weekly PR into `dev` for npm (the workspace root) and for the Dockerfile's pinned `node:22-alpine` digest (docker, `/packages/server`), at most 3 open per ecosystem; Node semver-majors (the `node` image, `@types/node`) are ignored, since the image and CI stay on Node 22. GitHub reads that file from `main` only, so it starts when `dev` is promoted; Dependabot security-fix PRs stay off (they would target `main`), alerts are on.
 - **import memory** (`pnpm import-check`; "The import's memory" in §6): a session of 200,000 events, a main file and subagent files, imported by the CLI under `time`, failing above 150 MB of RSS, on fewer events written than the session holds, or on tables that do not hold what was generated.
 
 ---

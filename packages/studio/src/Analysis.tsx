@@ -220,7 +220,7 @@ function Reports({ views, hidden }: { views: ReactNode; hidden: boolean }) {
 }
 
 /** A stored report under the list: the summary, its sections with the evidence, the changes to try. Keyed by its row, so another pick brings it up again. */
-function OpenReport({ report }: { report: Report | null }) {
+export function OpenReport({ report }: { report: Report | null }) {
   const panel = useReveal<HTMLElement>();
   return (
     <article ref={panel} className="report" aria-label="The open report">

@@ -30,6 +30,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Dependency audit (fails on a high or critical advisory in what the image ships)
+        run: pnpm audit --prod --audit-level high
       - run: pnpm typecheck
       - run: pnpm exec tsc -p packages/mod
       - run: pnpm test # no container: the server's tests run on temp SQLite files

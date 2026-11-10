@@ -99,10 +99,18 @@ export function analysis(app: FastifyInstance, { store: history, content, report
   const month = () => store.spent(monthStart(Date.now())).cost;
   const noKey = { error: 'No API key: add ANTHROPIC_API_KEY to deploy/.env and restart the server. Nothing was sent.' };
   // An API refusal (a bad key, a missing workspace, a bad request) is said plainly; such a request generates and bills nothing.
-  const refused = (e: unknown) => {
+  // The wording of a failed call, in one place. An estimate bills nothing, whatever happened. A run is billed only if it generated: not sent (a refused connection),
+  // busy (429, 529: both rejected before generation) and any other 4xx say so; no answer (status 0, a cut reply) and 500/502/503/504 may have generated, which we cannot know.
+  const refused = (e: unknown, run = false) => {
     if (!(e instanceof ClaudeError)) throw e;
     const m = e.message.trim();
-    return { error: `The Claude API refused: ${/[.!?]$/.test(m) ? m : `${m}.`} Nothing was generated or billed.` };
+    const t = /[.!?]$/.test(m) ? m : `${m}.`;
+    const none = 'Nothing was generated or billed.';
+    if (!run) return { error: e.status === 0 ? `No answer from the Claude API (${t}). ${none}` : `The Claude API refused: ${t} ${none}` };
+    if (e.notSent) return { error: `Couldn't reach the Claude API (${t}). Nothing was sent or billed.` };
+    if (e.status === 429 || e.status === 529) return { error: `The Claude API refused: ${t} ${none} Estimate again in a minute.` };
+    if (e.status === 0 || e.status >= 500) return { error: `No answer from the Claude API (${t}). If it was sent, it may have been billed.` };
+    return { error: `The Claude API refused: ${t} ${none}` };
   };
 
   app.get('/api/analysis', async () => ({
@@ -153,7 +161,7 @@ export function analysis(app: FastifyInstance, { store: history, content, report
     if (!verdict.allowed) return reply.code(409).send({ error: `This run could take the month to $${verdict.after.toFixed(2)}, past the $${store.cap().toFixed(2)} cap. Nothing was sent.` });
     pending.delete(p.id); // one confirmation, one request
     let r: Awaited<ReturnType<Claude['run']>>;
-    try { r = await claude.run(p.model, SYSTEM, p.text); } catch (e) { return reply.code(502).send(refused(e)); }
+    try { r = await claude.run(p.model, SYSTEM, p.text); } catch (e) { return reply.code(502).send(refused(e, true)); }
     const cost = costUsd(r.model, r.usage) ?? costAtMost(p.model, r.usage.input, r.usage.output);
     const row = { id: randomUUID(), project: p.scope.project, from_ts: p.scope.from ?? null, to_ts: p.scope.to ?? null, session: p.scope.session ?? null,
       model: r.model, input_tokens: r.usage.input, output_tokens: r.usage.output, cost, created_at: Date.now() };

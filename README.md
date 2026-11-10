@@ -44,7 +44,7 @@ cd agent-orb
 cp deploy/.env.example deploy/.env
 ```
 
-In `deploy/.env`, set `ORB_TOKEN` to a random value. `openssl rand -hex 24` makes a good one. Then:
+In `deploy/.env`, set `ORB_TOKEN` to a random value. `openssl rand -hex 24` makes a good one. The server refuses to start while it is still the example `change-me`; under `up -d` the refusal shows in `docker compose -f deploy/docker-compose.yml logs orb-server`. Then:
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d
@@ -105,7 +105,7 @@ Add `ANTHROPIC_API_KEY` to `deploy/.env`, plus `ANTHROPIC_WORKSPACE_ID` if your 
 
 1. Pick a project and a period: the last 7 days, the last 30 days, or one session. **Estimate** counts the input with the API's token counter and shows the most the run can cost.
 2. Nothing is sent until you press **Confirm**.
-3. A monthly cap, $20 by default and editable on the page, blocks runs past it. Every run is counted in the Ledger.
+3. A monthly cap, $20 by default and editable on the page, blocks runs past it. Every run is counted in the Ledger; a run that gets no answer from the API isn't counted, and it may have been billed (check the Anthropic Console).
 
 Opus 5.5 is the default model. You can pick Sonnet or Haiku for each run.
 
@@ -117,7 +117,7 @@ Opus 5.5 is the default model. You can pick Sonnet or Haiku for each run.
 
 ## Backups
 
-`deploy/backup.sh run` copies both files into `~/agent-orb-backups/<date>/` and keeps the newest 7 folders: `history.db`, the history, and `content.db`, the captured text and the analysis reports.
+`deploy/backup.sh run` copies both files into `~/agent-orb-backups/<date>/` and keeps the newest 7 folders: `history.db`, the history, and `content.db`, the captured text and the analysis reports. The backup folder (`ORB_BACKUP_DIR`) is made readable by you alone, since the copies hold your prompts and answers.
 
 Each is copied with SQLite's `VACUUM INTO` while the server runs, so nothing is stopped and nothing is missed. The script uses the image the stack's own container already runs and never pulls or builds one, so the stack must have been started once.
 
@@ -130,7 +130,7 @@ Two things to know about the schedule on a Mac:
 
 To restore, run `deploy/restore.sh ~/agent-orb-backups/<date>`. It asks first, stops the server, puts that day's two files back and starts the server again. A backup made by v0.2, a folder with a `neo4j.dump` in it, can't be restored by this version.
 
-`ORB_BACKUP_DIR` and `ORB_BACKUP_KEEP` change where the copies go and how many are kept; the other settings are listed at the top of the script. On Linux the one-off container writes as its own user, so the backup folder may need to be writable for it.
+`ORB_BACKUP_DIR` and `ORB_BACKUP_KEEP` change where the copies go and how many are kept; the other settings are listed at the top of the script. A folder you do not own is left as it is, with a warning. On Linux the one-off container, used only when the server is stopped, writes as its own user (`node`, uid 1000), as it did before; not tried.
 
 ## Known limits
 
@@ -138,6 +138,7 @@ To restore, run `deploy/restore.sh ~/agent-orb-backups/<date>`. It asks first, s
 - Live state is held in memory, so restarting the server clears the live cards. The history, the Ledger and the reports keep everything.
 - A session counts under the folder it started in.
 - It's built for one person on one machine. The studio has no login, so keep it on 127.0.0.1.
+- Analysis's Estimate, Confirm and monthly cap trust every program on your machine. The server refuses them from another website's page, but a request that comes from no page (a script, `curl`) passes, so a program running on your machine could raise the cap and spend your `ANTHROPIC_API_KEY`. A token wouldn't stop it: such a program can read the key from `deploy/.env` itself. Run Analysis only on a machine whose software you trust, or leave the key out.
 - Factory's findings come from the subagents the plugin asks. A workflow agent can't be asked, since Claude Code doesn't let a plugin change its prompt (Code Review's agents are workflow agents), so its findings don't show.
 - A review the main session does itself, with no subagent, isn't asked either.
 - Factory's issue cost is an estimate by time windows. A session on an issue branch (`fix/90-…` is #90) counts whole for that issue; in any other session the turns before a PR opened count for that PR's issue, and the rest is "not on an issue", which has no way to be assigned by hand. A PR names its issue by its branch number, then by `Closes #N` in its body (the first, when there are several), which the plugin reads on your machine: only the number leaves.
@@ -178,6 +179,7 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm soak
+pnpm audit --prod --audit-level high
 docker compose -f deploy/docker-compose.yml up -d --build
 claude --plugin-dir packages/mod
 ```
@@ -189,6 +191,10 @@ docker run --rm --memory 1500m -v "$PWD":/repo:ro -w /repo node:22-alpine node -
 ```
 
 Add `--db <copy of history.db>` to run it on a real history instead (in Docker, mount the copy's folder too: the header of `soak.ts` has the command).
+
+`pnpm ingest-load` is the ingest speed check (not in CI): one session grows to 15,000 main-agent calls through `POST /ingest`, in plugin-shaped events, and it fails if the last 10 batches' median is over 2x the session's own first batch (after a warm-up). `--content full` adds texts and edit claims, `--stream` keeps a live-view client open. It catches a writer that scans a session's rows per event; it is a relative limit, so a slowdown under 2x passes.
+
+`pnpm audit --prod --audit-level high` is the dependency check, also part of CI: it fails on a high or critical advisory in what the server image ships. Once `dev` reaches `main`, Dependabot proposes weekly updates for the npm packages (not `@types/node` majors) and the Docker base image (a digest refresh of `node:22-alpine`, not a newer Node major) as pull requests into `dev`.
 
 The design and every decision are in [PROJECT.md](PROJECT.md). [docs/verified.md](docs/verified.md) records the engine facts the plugin relies on, checked against a real Claude Code. The plan after v0.1 is in PROJECT.md §15. Issue numbers in the code and in PROJECT.md (#81, #114) refer to the development history before v0.3.0, which isn't public; this repository's own issues start after it.
 

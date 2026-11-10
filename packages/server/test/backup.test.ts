@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -236,14 +236,14 @@ case "$kind $verb" in
         "$NODE" -e "$(mapped "$last")";;
       *) exit 98;;
     esac;;
-  "compose cp") cp "$(onvol "\${1#orb-server:}")" "$2";;
+  "compose cp") cp "$(onvol "\${1#orb-server:}")" "$2"; chmod 644 "$2";;   # docker keeps the container's mode, whatever the script's umask
   "docker inspect") case $last in c-*) echo "sha256:img-\${last#c-}";; *) echo "Error: no such object: $last" >&2; exit 1;; esac;;
   "docker run")
     case "$*" in
       *"--entrypoint node"*)
         if [ "\${FAKE_FAIL:-}" = snapshot ]; then echo "Error: the fake snapshot failed" >&2; exit 1; fi
         if [ "\${FAKE_FAIL:-}" = nofile ]; then exit 0; fi   # exits 0 and writes nothing
-        "$NODE" -e "$(mapped "$last")";;
+        (umask 022; "$NODE" -e "$(mapped "$last")");;   # the container's own umask, not the script's
       *"--entrypoint sh"*)
         if [ "\${FAKE_FAIL:-}" = copy ]; then echo "Error: the fake copy failed" >&2; exit 1; fi
         sh -c "$(mapped "$last")";;
@@ -349,6 +349,46 @@ esac
       expect(readdirSync(s.vol).filter((f) => f.startsWith('.backup'))).toEqual([]); // nothing left in the volume
       expect(r.stdout).toContain(join(s.dir, 'bk', today()));
       expect(r.stdout).toMatch(/history\.db \S+, content\.db \S+/);
+    });
+
+    it.each(['running', 'stopped'])('with the server %s, ORB_BACKUP_DIR ends at 700, made new or loose beforehand', (state) => {
+      const mode = (p: string) => (statSync(p).mode & 0o777).toString(8);
+      const loose = stack();
+      started(loose);
+      mkdirSync(join(loose.dir, 'bk'), { mode: 0o755 }); // made by an older version, under the default umask
+      chmodSync(join(loose.dir, 'bk'), 0o755);
+      const r = sh(backup, [], loose.env({ FAKE_ORB: state }));
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stderr).not.toContain('is not yours'); // no warning when the user owns the folder
+      expect(mode(join(loose.dir, 'bk'))).toBe('700');
+      const fresh = stack();
+      started(fresh);
+      expect(sh(backup, [], fresh.env({ FAKE_ORB: state })).status).toBe(0);
+      expect(mode(join(fresh.dir, 'bk'))).toBe('700');
+    });
+
+    // What the test needs is a folder the user does not own, not "not root": skip where /tmp is the user's own, or the script would chmod it.
+    it.skipIf(statSync('/tmp').uid === process.getuid?.())('a backup folder the user does not own is left as it is: one warning, and the backup still succeeds', () => {
+      const s = stack();
+      started(s);
+      // /tmp is root's and sticky, so it is a folder we do not own, and the dated folder goes in it.
+      // Resolved, not spelled: it is /private/tmp on macOS, and that path does not exist on Linux (CI).
+      const foreign = realpathSync('/tmp');
+      // A fake `date` (the script's only use of it is the day name) makes the folder unique to this test, so the cleanup removes exactly it and never a real /tmp/YYYY-MM-DD.
+      const day = `orb-bk-${basename(s.dir)}`;
+      const fake = join(s.dir, 'fake-date');
+      mkdirSync(fake);
+      writeFileSync(join(fake, 'date'), `#!/bin/sh\necho ${day}\n`, { mode: 0o755 });
+      const env = s.env({ FAKE_ORB: 'running' });
+      const r = sh(backup, [], { ...env, PATH: `${fake}:${env.PATH}`, ORB_BACKUP_DIR: foreign, ORB_BACKUP_KEEP: '100000' }); // keep: prune must not touch what else is in /tmp
+      try {
+        expect(r.status, r.stderr).toBe(0);
+        expect(r.stderr.split('permissions are left as they are')).toHaveLength(2); // exactly one warning
+        expect(readdirSync(join(foreign, day)).sort()).toEqual(['content.db', 'history.db']); // the backup was made, not skipped
+      } finally {
+        rmSync(join(foreign, day), { recursive: true, force: true });
+        rmSync(join(foreign, `.partial-${day}`), { recursive: true, force: true });
+      }
     });
 
     it('a snapshot file left in the volume by a killed run does not stop the next one', () => {

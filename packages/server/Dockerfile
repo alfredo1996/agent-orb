@@ -1,5 +1,6 @@
 # Build from the repo root: docker build -f packages/server/Dockerfile .
-FROM node:22-alpine AS studio
+# The base image is pinned by digest: it updates by bumping this digest (`docker buildx imagetools inspect node:22-alpine`); Dependabot (`.github/dependabot.yml`, docker ecosystem) proposes the bump as a PR into dev.
+FROM node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS studio
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
@@ -9,7 +10,7 @@ COPY tsconfig.json ./
 COPY packages/studio packages/studio
 RUN pnpm --filter @agent-orb/studio build
 
-FROM node:22-alpine
+FROM node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./

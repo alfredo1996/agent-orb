@@ -191,7 +191,9 @@ describe('live state', () => {
   });
 });
 
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildApp } from '../src/app.ts';
@@ -200,16 +202,46 @@ describe('the studio at /', () => {
   it('serves the studio build when there is one, and the API either way', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'orb-studio-'));
     writeFileSync(join(dir, 'index.html'), '<title>agent-orb · Live</title>');
+    mkdirSync(join(dir, 'assets'));
+    writeFileSync(join(dir, 'assets', 'a.js'), 'console.log(1)');
     const withStudio = buildApp({ token: 't', studioDir: dir });
     const res = await withStudio.inject({ method: 'GET', url: '/' });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('agent-orb · Live');
-    expect((await withStudio.inject({ method: 'GET', url: '/../package.json' })).statusCode).toBe(404);
+    const asset = await withStudio.inject({ method: 'GET', url: '/assets/a.js' });
+    expect(asset.statusCode).toBe(200);
+    expect(asset.headers['content-type']).toMatch(/javascript/);
+    expect(asset.body).toBe('console.log(1)');
     const without = buildApp({ token: 't', studioDir: join(dir, 'missing') });
     expect((await without.inject({ method: 'GET', url: '/' })).statusCode).toBe(404);
     expect((await without.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
     await withStudio.close();
     await without.close();
+  });
+
+  it('does not serve a file outside the studio build, over a real socket (inject normalises the path)', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'orb-studio-'));
+    const dir = join(parent, 'dist');
+    mkdirSync(dir);
+    writeFileSync(join(dir, 'index.html'), '<title>studio</title>');
+    writeFileSync(join(parent, 'secret.txt'), 'outside-the-build');
+    const app = buildApp({ token: 't', studioDir: dir });
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const { port } = app.server.address() as AddressInfo;
+    const get = (path: string) =>
+      new Promise<{ status: number; body: string }>((resolve, reject) => {
+        http
+          .get({ host: '127.0.0.1', port, path }, (r) => {
+            let body = '';
+            r.on('data', (c) => (body += c));
+            r.on('end', () => resolve({ status: r.statusCode ?? 0, body }));
+          })
+          .on('error', reject);
+      });
+    const res = await get('/../secret.txt');
+    expect(res.status).not.toBe(200);
+    expect(res.body).not.toContain('outside-the-build');
+    await app.close();
   });
 });
 

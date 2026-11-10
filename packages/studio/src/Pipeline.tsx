@@ -113,7 +113,7 @@ export function Pipeline({ now }: { now: number }) {
   );
 }
 
-function OrgChart({ data, picked, onPick }: { data: Data; picked?: string; onPick: (role: string) => void }) {
+export function OrgChart({ data, picked, onPick }: { data: Data; picked?: string; onPick: (role: string) => void }) {
   const pos = useMemo(() => layoutRoles(data.roles.map((r) => r.role)), [data]);
   const width = Math.max(1000, ...[...pos.values()].map((p) => p.x + NODE.w / 2 + 20));
   const height = Math.max(...[...pos.values()].map((p) => p.y + NODE.h)) + 24;
@@ -159,7 +159,7 @@ function OrgChart({ data, picked, onPick }: { data: Data; picked?: string; onPic
   );
 }
 
-function RolePanel({ role, catalog, project, onFix, onClose }: { role: Role; catalog: Catalog; project: string; onFix: (body: object) => Promise<void>; onClose: () => void }) {
+export function RolePanel({ role, catalog, project, onFix, onClose }: { role: Role; catalog: Catalog; project: string; onFix: (body: object) => Promise<void>; onClose: () => void }) {
   const [all, setAll] = useState(false); // the panel is keyed by its role, so picking another role starts closed again
   const panel = useReveal<HTMLElement>();
   const byType = new Map<string, AgentRow[]>();
