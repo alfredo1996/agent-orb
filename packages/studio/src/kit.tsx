@@ -139,11 +139,11 @@ export function Say({ said }: { said: Said }) {
   return <>{said.map((s, i) => (typeof s === 'string' ? s : <b key={i}>{s.b}</b>))}</>;
 }
 
-/** The reading on top of a view (#102): what its figures add up to, in a sentence or two, written from them so it changes with them. */
-export function Reading({ said }: { said: Said }) {
+/** The reading on top of a view (#102): what its figures add up to, in a sentence or two, written from them so it changes with them. `by` says what it was written from, where that is not figures. */
+export function Reading({ said, by = 'Written from the figures below; it changes with them.' }: { said: Said; by?: string }) {
   return (
     <section className="card said" aria-label="Reading">
-      <div><p><Say said={said} /></p><span className="by">Written from the figures below; it changes with them.</span></div>
+      <div><p><Say said={said} /></p><span className="by">{by}</span></div>
     </section>
   );
 }
