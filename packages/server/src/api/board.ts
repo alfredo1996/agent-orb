@@ -35,8 +35,13 @@ export const PRS_OF = `SELECT r.number AS number, r.issue AS issue, r.head AS he
 /** A session that reaches issues: `issues` are those it reaches (its branch's alone, else those of the PRs it linked), and `at` its own last event, which is how recently it reached each. */
 type Reach = { id: string; branch: string | null; at: number; own: number | null; links: Link[]; issues: Set<number> };
 type PrRow = { number: number; head: string | null; mergedAt: number | null };
+const newest = <T extends { number: number }>(list: T[] | undefined) => list?.reduce<T | undefined>((a, b) => (a && a.number > b.number ? a : b), undefined);
 
-export function boardOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number) {
+/**
+ * Which sessions reach which issue, and which issues show for a milestone: what the board works its stages out from, and (#66) what GET /api/links ties together, so the two never disagree on
+ * the issues or on who reached them. `shown` is each issue to show, with whether it is outside the milestone; `mergedPr` an issue's merged PR when that is the newest it has.
+ */
+export function reachOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number) {
   const week = now - FLIGHT_MS;
 
   // The issues as the plugin last read them: the open ones, and those that have left the list since, with the milestone and title they had.
@@ -82,7 +87,6 @@ export function boardOf(store: Store, content: ContentStore, project: string, ch
   }
   const openOf = new Map<number, ReturnType<typeof openPrs>['prs']>();
   for (const p of openPrs(store, content, now, project, null, false).prs) if (p.issue !== null) openOf.set(p.issue, [...(openOf.get(p.issue) ?? []), p]);
-  const newest = <T extends { number: number }>(list: T[] | undefined) => list?.reduce<T | undefined>((a, b) => (a && a.number > b.number ? a : b), undefined);
   /** The issue's merged PR, when it is the newest it has: a newer open PR means it is in flight again. */
   const mergedPr = (issue: number) => {
     const m = newest(prsOf.get(issue)?.filter((p) => p.mergedAt !== null));
@@ -95,8 +99,13 @@ export function boardOf(store: Store, content: ContentStore, project: string, ch
   const shown = new Map<number, boolean>(); // → outside the milestone
   for (const [number, o] of open) if (milestone !== null && o.milestone === milestone && (o.goneAt === null || mergedPr(number))) shown.set(number, false);
   for (const r of reaches) if (r.at >= week) for (const issue of r.issues) if (!shown.has(issue) && !isGone(issue) && !mergedPr(issue)) shown.set(issue, true);
+  return { open, reaches, counts, milestone, mode, prsOf, openOf, mergedPr, shown };
+}
 
-  // The last file written for each shown issue: all of a session's on the issue's branch, else those inside the window of a PR the session linked.
+export function boardOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number) {
+  const { open, reaches, counts, milestone, mode, prsOf, openOf, mergedPr, shown } = reachOf(store, content, project, chosenParam, now);
+
+  // The last file written for each shown issue: all of a session's on the issue's branch, else those inside the window of a PR the session linked. GET /api/links (#66) gives an issue its files by the same rule.
   const lastWrite = new Map<number, number>();
   const bump = (issue: number, ts: number) => lastWrite.set(issue, Math.max(lastWrite.get(issue) ?? 0, ts));
   for (const r of reaches) {

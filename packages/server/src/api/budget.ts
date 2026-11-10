@@ -34,8 +34,11 @@ export function windowIssue(links: Link[], ts: number): number | null {
   return null;
 }
 
-/** An issue as the last reads left it. `goneAt` is null while the plugin's read lists it as open, else when it left the list (closed, or past gh's limit of 200): its milestone and title are kept (#32). */
-export type OpenIssue = { milestone: string | null; title: string | null; goneAt: number | null };
+/**
+ * An issue as the last reads left it. `goneAt` is null while the plugin's read lists it as open, else when it left the list (closed, or past gh's limit of 200): its milestone and title are kept (#32).
+ * `mentions` (#66) is the issues its text names, as the writer stored them: a JSON array of numbers, or null.
+ */
+export type OpenIssue = { milestone: string | null; title: string | null; goneAt: number | null; mentions: string | null };
 
 /**
  * The project's issues by number, as the plugin's reads of the open issues left them. Two project rows with the name (a repo seen from two machines, with no remote) may differ on one issue: the row
@@ -44,8 +47,8 @@ export type OpenIssue = { milestone: string | null; title: string | null; goneAt
  */
 export function openIssues(store: Store, project: string) {
   const issues = new Map<number, OpenIssue>();
-  for (const r of each(store, `SELECT o.number AS number, o.milestone AS milestone, o.title AS title, o.gone_at AS goneAt FROM open_issues o JOIN projects p ON p.id = o.project_id
-    WHERE p.name = :project ORDER BY coalesce(p.prs_read_at, 0)`, { project })) issues.set(r.number, { milestone: r.milestone, title: r.title, goneAt: r.goneAt });
+  for (const r of each(store, `SELECT o.number AS number, o.milestone AS milestone, o.title AS title, o.gone_at AS goneAt, o.mentions AS mentions FROM open_issues o JOIN projects p ON p.id = o.project_id
+    WHERE p.name = :project ORDER BY coalesce(p.prs_read_at, 0)`, { project })) issues.set(r.number, { milestone: r.milestone, title: r.title, goneAt: r.goneAt, mentions: r.mentions });
   return issues;
 }
 
