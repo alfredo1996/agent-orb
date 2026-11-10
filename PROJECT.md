@@ -798,6 +798,17 @@ This supersedes the v0.4 "Explain" of the 2026-10-25 split: Explain is v0.5 and 
 - #27's step 6, a NeoBoard PR adding `orb-role` and the blocks to its agent files, is dropped.
 - Known limits (README): a workflow agent can't be asked (Claude Code ignores a hook's rewrite of its prompt), a review done by the main session with no subagent isn't asked, and a narrow test run passing on the head counts as the gate.
 
+### Decision (owner, 2026-11-10, in chat): v0.5 is Follow, and its mockup is approved
+"Approve it": `design/home-issue.html`, with the Map added after "we're missing the relationship between the issues". The plan behind it is #64. In short:
+- Follow answers what's going on across the owner's projects and how a milestone's issues touch each other. It only reads: the studio sends no message to a session and starts none.
+- Two kinds of link between issues: a session on each wrote the same file, which is already recorded, and one issue's text mentions the other, which the plugin reads, sending only the numbers. A same-file link between two unmerged issues is marked "in flight together".
+- The Map is a second view of the Factory board: an issue sits in the column of its stage, with the agent on it now, and lines join the issues that are linked.
+- A board row opens a page in place of the sheet: where the issue stands, when each stage was reached, and its story with one line per agent run, beside the four checks, the findings and the cost.
+- Home becomes the page the studio opens on: one card per project with its milestone and a row per issue in flight, and the changes since the owner last looked.
+- Four slices, one issue and one PR each: the links and the Map; the issue page; Home; Since you last looked.
+
+This puts Follow ahead of Explain: Explain is v0.6 and Share v0.7.
+
 Earlier (v1.0): TypeScript everywhere, Fastify server; Neo4j Community + APOC with the server as its only client (replaced by SQLite on 2026-10-26, above); cost computed server-side from `pricing.json`.
 
 ---
