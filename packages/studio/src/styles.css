@@ -774,17 +774,18 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .map .mp .dim { opacity: .15; }
 .map .mp-colt { position: absolute; top: 0; width: 152px; display: flex; justify-content: space-between; font-size: 12px; font-weight: 500; color: var(--muted); }
 .map .mp-node { position: absolute; width: 152px; height: 76px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); display: grid; align-content: center; gap: 3px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.map .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } /* said to a screen reader only */
 .map .mp-node:hover { border-color: var(--accent); }
 .map .mp-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .map .mp-node b { font-weight: 600; font-size: 13px; line-height: 1.25; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; } /* two lines; the whole title is the card's tooltip and in the list */
 .map .mp-node small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .map .mp-node .model { font-size: 12px; color: inherit; vertical-align: bottom; }
-.map .mp-node.t-bad { box-shadow: inset 4px 0 0 var(--bad-dot); }
-.map .mp-node.t-wait { box-shadow: inset 4px 0 0 var(--wait-dot); }
-.map .mp-node.t-ok { box-shadow: inset 4px 0 0 var(--ok-dot); }
+.map .mp-node.t-bad { --mark: var(--bad-dot); box-shadow: inset 4px 0 0 var(--mark); }
+.map .mp-node.t-wait { --mark: var(--wait-dot); box-shadow: inset 4px 0 0 var(--mark); }
+.map .mp-node.t-ok { --mark: var(--ok-dot); box-shadow: inset 4px 0 0 var(--mark); }
 .map .mp-node.out { border-style: dashed; }
 .map .mp-node.dim { opacity: .35; }
-.map .mp-node[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.map .mp-node[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--mark, transparent), 0 0 0 3px var(--accent-soft); } /* a pressed card keeps its mark */
 .map .mp-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 4px 20px 14px; font-size: 13px; color: var(--muted); }
 .map .mp-legend span { display: inline-flex; align-items: center; gap: 8px; }
 .map .mp-legend i { width: 10px; height: 10px; border-radius: 2px; }

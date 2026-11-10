@@ -179,7 +179,8 @@ describe('Event schema', () => {
   it('project.open_prs issues: the numbers an issue mentions travel, at most 20, and its body has no field to travel in (v0.5 slice 1, #66)', () => {
     const read = (issue: object) => ev('project.open_prs', { prs: [], issues: [{ number: 409, ...issue }] });
     expect(Event.parse(read({ mentions: [12, 7] })).data).toEqual({ prs: [], issues: [{ number: 409, mentions: [12, 7] }] });
-    expect(Event.parse(read({})).data).toEqual({ prs: [], issues: [{ number: 409 }] }); // an older plugin sends none
+    expect(Event.parse(read({})).data).toEqual({ prs: [], issues: [{ number: 409 }] }); // an older plugin sends none, and so does a read that did not read the body
+    expect(Event.parse(read({ mentions: [] })).data).toEqual({ prs: [], issues: [{ number: 409, mentions: [] }] }); // read, and names none
     expect(Event.safeParse(read({ mentions: Array.from({ length: 20 }, (_, i) => i + 1) })).success).toBe(true);
     for (const bad of [Array.from({ length: 21 }, (_, i) => i + 1), [0], [1.5], ['12'], 12]) expect(Event.safeParse(read({ mentions: bad })).success, JSON.stringify(bad)).toBe(false);
     expect(JSON.stringify(Event.parse(read({ mentions: [12], body: 'the private text, after #12' })))).not.toMatch(/private|body/);

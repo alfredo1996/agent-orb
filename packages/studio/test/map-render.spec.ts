@@ -70,7 +70,7 @@ describe('the Map: the cards', () => {
 
   it('an issue with no link still shows, as a card with no line', () => {
     const html = band();
-    expect(card(html, 415).text).toBe('#415 Sync conflict dialog implementer');
+    expect(card(html, 415).text).toBe('#415 Sync conflict dialog implementer , stalled');
     expect(LINKS.some((l) => l.a === 415 || l.b === 415)).toBe(false);
   });
 
@@ -79,12 +79,29 @@ describe('the Map: the cards', () => {
     expect(html).toContain('<span class="model sonnet">implementer</span>');
     expect(card(html, 398).text).toBe('#398 Crash on an empty feed reviewer · v2.2.1');
     expect(card(html, 403).text).toBe('#403 Offline banner No session'); // its session ended
-    expect(card(html, 412).text).toBe('#412 Queue uploads while offline No session'); // Live shows no session of it
+    expect(card(html, 412).text).toBe('#412 Queue uploads while offline No session , ready'); // Live shows no session of it
   });
 
   it('a card is marked when an agent on it is stalled, when one waits for your OK, and when its PR is ready; an issue outside the milestone is dashed', () => {
     const html = band();
     expect(Object.fromEntries(cards(html).map((c) => [c.n, c.cls]))).toEqual({ 417: '', 419: '', 415: 't-bad', 398: 'out', 409: 't-wait', 407: '', 412: 't-ok', 403: '' });
+  });
+
+  it('a mark is said in words too, for a screen reader and the tooltip: hidden text after the agent line and the same words on the title; a card with no mark has none', () => {
+    const html = band();
+    const words = Object.fromEntries([...html.matchAll(/<button type="button" class="mp-node[^"]*"[^>]*data-issue="(\d+)"[^>]*title="([^"]*)"[^>]*>(.*?)<\/button>/g)]
+      .map((m) => [m[1]!, { title: m[2]!, hidden: [...m[3]!.matchAll(/<span class="sr">(.*?)<\/span>/g)].map((x) => x[1]) }]));
+    expect(words['415']).toEqual({ title: 'Sync conflict dialog, stalled', hidden: [', stalled'] });
+    expect(words['409']).toEqual({ title: 'Retry after an expired token, waits on you', hidden: [', waits on you'] });
+    expect(words['412']).toEqual({ title: 'Queue uploads while offline, ready', hidden: [', ready'] });
+    expect(words['417']).toEqual({ title: 'Clear the cache on sign-out', hidden: [] });
+    expect(html.match(/class="sr"/g)).toHaveLength(3);
+  });
+
+  it('the cards are in the page in the order they sit, column by column and top to bottom, whatever order the board lists them in', () => {
+    const order = (b: BoardIssue[]) => cards(band({ board: board({ issues: b }) })).map((c) => c.n);
+    expect(order(ALL)).toEqual([417, 419, 415, 398, 409, 407, 412, 403]);
+    expect(order(ALL.toReversed())).toEqual([417, 419, 415, 398, 409, 407, 412, 403]);
   });
 
   it('with Content off a card shows its number and no title, as a board row does', () => {
@@ -164,6 +181,14 @@ describe('the Map: the list of links under it', () => {
     expect(failed).toContain('<p class="nothing" role="alert">The links could not be read: The server answered 502.</p>');
     expect(cards(failed)).toHaveLength(ALL.length);
     expect(plain(band({ error: 'The server answered 502.' }))).toContain('Every link · 7'); // a failed read after a good one keeps the good one
+  });
+
+  it('a board read that fails after a good one says so above the map, and the last good cards stay', () => {
+    const html = band({ boardError: 'The server answered 500.' });
+    expect(html).toContain('<p class="nothing" role="alert">The board could not be read: The server answered 500.</p>');
+    expect(html.indexOf('The board could not be read')).toBeLessThan(html.indexOf('class="mp-scroll"'));
+    expect(cards(html)).toHaveLength(ALL.length);
+    expect(band()).not.toContain('The board could not be read');
   });
 
   it('a board with no issue says what the board says, and draws no map', () => {

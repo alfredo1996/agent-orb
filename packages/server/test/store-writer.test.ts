@@ -548,8 +548,14 @@ describe('project.open_prs issues (#66): the issues an issue mentions are set wi
 
   it('the next read replaces them: an edited body, and one that mentions nothing any more; an issue that left the list keeps what it had', () => {
     plugin([read([{ number: 1, mentions: [2] }, { number: 2, mentions: [1] }, { number: 3, mentions: [1] }], { ts: T })]);
-    plugin([read([{ number: 1, mentions: [3] }, { number: 2 }], { ts: T + 1000 })]); // 3 closed
+    plugin([read([{ number: 1, mentions: [3] }, { number: 2, mentions: [] }], { ts: T + 1000 })]); // 3 closed
     expect(rows()).toEqual([{ number: 1, mentions: '[3]', gone: 0 }, { number: 2, mentions: null, gone: 0 }, { number: 3, mentions: '[1]', gone: 1 }]);
+  });
+
+  it('an issue with no `mentions` key (the body was not read) keeps what its row had, an empty list clears it, a list replaces it; a new row with none is null', () => {
+    plugin([read([{ number: 1, mentions: [2] }, { number: 2, mentions: [1] }, { number: 3, mentions: [1, 2] }], { ts: T })]);
+    plugin([read([{ number: 1 }, { number: 2, mentions: [] }, { number: 3, mentions: [4] }, { number: 4 }], { ts: T + 1000 })]);
+    expect(rows()).toEqual([{ number: 1, mentions: '[2]', gone: 0 }, { number: 2, mentions: null, gone: 0 }, { number: 3, mentions: '[4]', gone: 0 }, { number: 4, mentions: null, gone: 0 }]);
   });
 });
 

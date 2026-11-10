@@ -64,7 +64,7 @@ export function layoutMap<L extends MapLink>(stages: readonly string[], issues: 
     const row = rows[col]!++;
     pos.set(i.number, { x: LEFT + COL * col, y: TOP + ROW * row, col, row });
   }
-  const width = LEFT * 2 + COL * (stages.length - 1) + MAP_NODE.w;
+  const width = LEFT + COL * (stages.length - 1) + MAP_NODE.w + BULGE; // room right of the last column for a line between two of its cards (whether or not there is one, so a card never moves)
   const last = Math.max(1, ...rows) - 1;
 
   // Each line: its two ends, upper (or left) first, and its shape.
@@ -121,7 +121,9 @@ export function layoutMap<L extends MapLink>(stages: readonly string[], issues: 
   for (const g of edges.filter((x) => x.e.link.kind === 'file' && x.e.link.files?.length).toSorted((p, q) => rank(p.e.link) - rank(q.e.link))) {
     const text = fileTail(g.e.link.files![0]!);
     const w = text.length * CHAR;
-    const x0 = Math.max(4, Math.min(width - 4 - w, g.anchor === 'middle' ? g.x - w / 2 : g.x));
+    // a name to the right of a side line that does not fit before the canvas's edge goes just to the left of the line (g.x is 6px right of it) instead of being pushed over it
+    const at = g.anchor === 'middle' ? g.x - w / 2 : g.x + w > width - 4 ? g.x - 12 - w : g.x;
+    const x0 = Math.max(4, Math.min(width - 4 - w, at));
     const top = gapTop(g.gap);
     const y = [0, LINE, -LINE, 2 * LINE, -2 * LINE].map((dy) => g.y + 4 + dy) // the baseline: the text's middle on the line
       .find((base) => base - 11 >= top + 2 && base + 3 <= top + GAP - 2 && !placed.some((p) => x0 < p.x1 + 8 && p.x0 < x0 + w + 8 && base - 11 < p.y1 && p.y0 < base + 3));

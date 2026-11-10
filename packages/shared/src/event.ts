@@ -214,7 +214,7 @@ export const Event = z.discriminatedUnion('kind', [
 // #28 (issue cost): `created_at` is when the PR opened, and `issue` the one it closes (the branch's number, else the first `Closes #N` of its body, read on the machine: only the number
 // travels). `issues` is the open issues' numbers and their milestone's title (none for an excluded project): absent, a read says nothing about them. #32: an issue's own `title` rides
 // with them only with Content on full (the board names its rows with it); with Content off a read carries none, and the server drops the one it held.
-// #66 (the Map): an issue's `mentions` are the issues its text names as `#N`, found on the machine: the numbers travel, for every project, and the text never does. At most 20.
+// #66 (the Map): an issue's `mentions` are the issues its text names as `#N`, found on the machine: the numbers travel, for every project, and the text never does. At most 20. Absent: the body was not read, and the server keeps what it had; an empty list: it was read and names none.
   Base.extend({ kind: z.literal('project.open_prs'), data: z.object({
     prs: z.array(z.object({
       number: z.number().int().positive(),

@@ -81,10 +81,10 @@ describe('the open issues\' milestones', () => {
 
   it('keeps a number and its milestone\'s title, and an issue\'s own title only when the Content helper gives it: never a body', () => {
     const issues = parseOpenIssues(LIST)!;
-    expect(issues).toEqual([{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }, { number: 411 }]);
+    expect(issues).toEqual([{ number: 409, milestone: 'v0.4 Factory', mentions: [] }, { number: 410 }, { number: 411 }]);
     expect(JSON.stringify(issues)).not.toMatch(/Retry after|private text|the plan/); // Content off: the helper is not passed
     const titled = parseOpenIssues(LIST, true, (s) => s)!;
-    expect(titled).toEqual([{ number: 409, milestone: 'v0.4 Factory', title: 'Retry after an expired token' }, { number: 410 }, { number: 411 }]);
+    expect(titled).toEqual([{ number: 409, milestone: 'v0.4 Factory', title: 'Retry after an expired token', mentions: [] }, { number: 410 }, { number: 411 }]);
     expect(JSON.stringify(titled)).not.toMatch(/private text|the plan/);
     expect(parseOpenIssues(LIST, true, () => undefined)).toEqual(issues); // the helper says nothing leaves (Content is not full): none does
   });
@@ -121,7 +121,7 @@ describe('the issues an issue mentions', () => {
     ['#7', [7]], ['(#7)', [7]], ['see #7.', [7]], ['#7 and #8,#9', [7, 8, 9]], ['Closes #7', [7]], ['- [ ] #7\n- [x] #8', [7, 8]], ['#123456789', [123456789]],
     ['o/r#7', []], ['word#7', []], ['under_#7', []], ['https://github.com/o/r/issues/7#8', []], ['docs/#7', []], ['#0', []], ['#07', []], ['# 7', []], ['#7a', []], ['#1234567890', []], ['seven', []], ['', []],
   ])('%j mentions %j', (body, mentions) => {
-    expect(one(1, body)).toEqual(mentions.length ? { number: 1, mentions } : { number: 1 });
+    expect(one(1, body)).toEqual({ number: 1, mentions }); // a body that names none still carries the empty list: it was read
   });
 
   it('no word of the body is in the built event, with Content on full too: only the numbers', () => {
@@ -137,8 +137,9 @@ describe('the issues an issue mentions', () => {
     expect(one(409, body).mentions).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
   });
 
-  it('output with no body, or a body that is not text, gives no mentions key', () => {
+  it('output with no body, or a body that is not text, gives no mentions key: absent is "not read", and an empty list is "read, names none"', () => {
     expect(parseOpenIssues(JSON.stringify([{ number: 5 }, { number: 6, body: null }, { number: 7, body: 12 }]))).toEqual([{ number: 5 }, { number: 6 }, { number: 7 }]);
+    expect(parseOpenIssues(JSON.stringify([{ number: 8, body: '' }]))).toEqual([{ number: 8, mentions: [] }]);
   });
 
   it('an excluded project sends them too, as it sends the issue\'s number', () => {

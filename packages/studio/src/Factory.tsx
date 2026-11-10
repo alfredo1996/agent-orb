@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { askFor, boardFor, pinAfter, type Pin } from './board-view.ts';
+import { askFor, boardFor, linksFor, linksQuery, pinAfter, type Pin } from './board-view.ts';
 import { MapBand, mapReading, type LinksData } from './FactoryMap.tsx';
 import { usd } from './format.ts';
 import { trapTab, usePhone } from './History.tsx';
@@ -593,12 +593,13 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
   // The Map's links are a third read, asked for only while the Map is open (it reads every written path of the board's sessions, which the board's own read every 30 seconds does not):
   // for the milestone the board shows, so the two answers are about the same issues. A failure leaves the cards and the last links, and says so.
   const mapped = boarded ? boarded.milestone : undefined; // undefined: the board has not answered yet; null: it shows no milestone
+  const ask = linksQuery(view, project, boarded);
   useEffect(() => {
-    if (view !== 'map' || !project || mapped === undefined) return;
+    if (!ask) return;
     let alive = true;
     const load = async () => {
       try {
-        const res = await fetch(`/api/links?${new URLSearchParams({ project, ...(mapped ? { milestone: mapped } : {}) })}`);
+        const res = await fetch(`/api/links?${ask}`);
         if (!res.ok) throw new Error(`The server answered ${res.status}.`);
         const body = (await res.json()) as LinksData;
         if (alive) setLinks(body), setLinksError(undefined);
@@ -612,9 +613,9 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
       alive = false;
       clearInterval(t);
     };
-  }, [view, project, mapped]);
-  useEffect(() => setPressed(undefined), [project, mapped]); // a card of another milestone is not pressed in this one
-  const linked = links && boarded && links.project === project && links.milestone === boarded.milestone ? links : undefined;
+  }, [ask]);
+  useEffect(() => (setPressed(undefined), setLinksError(undefined)), [project, mapped]); // a card of another milestone is not pressed in this one, and its error is not this one's
+  const linked = linksFor(links, project, boarded);
   const save: Save = async (target, amount) => {
     try {
       const res = await fetch('/api/budget', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project, ...target, usd: amount }) });
@@ -645,7 +646,7 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
         <>
           {boardError && !boarded && <div className="empty"><b>The Map could not load.</b><span>The board could not be read: {boardError}</span></div>}
           {boarded && linked && <Reading said={mapReading(boarded, linked.links)} by="Counted from the links below. No model writes this." />}
-          {boarded && <MapBand board={boarded} links={linked} error={linksError} sessions={sessions} picked={pressed} onPick={setPressed} phone={phone} />}
+          {boarded && <MapBand board={boarded} links={linked} error={linksError} boardError={boardError} sessions={sessions} picked={pressed} onPick={setPressed} phone={phone} />}
         </>
       )}
       {view === 'board' && shown && (

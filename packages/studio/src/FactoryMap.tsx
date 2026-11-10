@@ -21,6 +21,7 @@ export type LinksData = { project: string; milestone: string | null; links: Issu
 
 const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 const list = (numbers: number[]) => numbers.map((n) => `#${n}`).join(', ').replace(/, (#\d+)$/, ' and $1');
+const MARK_WORDS = { bad: 'stalled', wait: 'waits on you', ok: 'ready' };
 const hot = (l: IssueLink) => l.kind === 'file' && l.together;
 
 /**
@@ -80,11 +81,11 @@ function LinkRow({ link: l, titles }: { link: IssueLink; titles: ReadonlyMap<num
 
 /**
  * The Map band. `board` is the page's own read of GET /api/board and `links` its read of GET /api/links for the same milestone (none yet: the cards show and the list waits; `error`: the read
- * failed, and the last answer, if any, stays). `sessions` are the ones Live shows, for the agent on each issue. `picked` is the pressed card, which the page holds; one that has left the board
+ * failed, and the last answer, if any, stays). `boardError`: the board's own read failed after a good one, and the last good cards stay. `sessions` are the ones Live shows, for the agent on each issue. `picked` is the pressed card, which the page holds; one that has left the board
  * is no longer pressed. `phone`: only the list.
  */
-export function MapBand({ board, links, error, sessions, picked, onPick, phone }: {
-  board: BoardData; links?: LinksData; error?: string; sessions: readonly Session[]; picked?: number; onPick: (issue: number | undefined) => void; phone: boolean;
+export function MapBand({ board, links, error, boardError, sessions, picked, onPick, phone }: {
+  board: BoardData; links?: LinksData; error?: string; boardError?: string; sessions: readonly Session[]; picked?: number; onPick: (issue: number | undefined) => void; phone: boolean;
 }) {
   const all = onBoard(board, links?.links ?? []);
   const sel = picked !== undefined && board.issues.some((i) => i.number === picked) ? picked : undefined;
@@ -102,6 +103,7 @@ export function MapBand({ board, links, error, sessions, picked, onPick, phone }
       <h2 id="fmap-h">Map{board.milestone != null && ` · ${board.milestone}`} {board.issues.length > 0 && (
         <span className="hint">{board.milestone === null ? `${outside} in flight` : `${count(inside, 'issue')}${outside > 0 ? `, plus ${outside} in flight outside it` : ''}`}{links && ` · ${count(all.length, 'link')}`}</span>
       )}</h2>
+      {boardError && <p className="nothing" role="alert">The board could not be read: {boardError}</p>}
       {error && <p className="nothing" role="alert">The links could not be read: {error}</p>}
       {!board.issues.length && <p className="nothing">{board.milestone !== null ? `No open issue in ${board.milestone}, and none in flight.` : 'No issue to map: no open issue has a milestone, and none is in flight.'}</p>}
       {map && (
@@ -120,16 +122,18 @@ export function MapBand({ board, links, error, sessions, picked, onPick, phone }
                 ))}
               </svg>
               {STAGES.map((s, c) => <span key={s} className="mp-colt" style={{ left: map.cols[c]!.x }}><span>{STAGE_LABEL[s]}</span><span className="num">{map.cols[c]!.count}</span></span>)}
-              {board.issues.map((i) => {
-                const p = map.pos.get(i.number);
-                if (!p) return null;
+              {/* in the page in the order they sit, column by column and top to bottom, so Tab follows the eye */}
+              {board.issues.filter((i) => map.pos.has(i.number)).toSorted((a, b) => map.pos.get(a.number)!.col - map.pos.get(b.number)!.col || map.pos.get(a.number)!.row - map.pos.get(b.number)!.row).map((i) => {
+                const p = map.pos.get(i.number)!;
                 const { who, mark } = nowOn(i, sessions);
+                const say = mark && MARK_WORDS[mark]; // the mark is a colour: said in words for a screen reader and the tooltip
                 const cls = ['mp-node', mark && `t-${mark}`, i.outside && 'out', sel !== undefined && sel !== i.number && !near.has(i.number) && 'dim'].filter(Boolean).join(' ');
                 return (
-                  <button key={i.number} type="button" className={cls} style={{ left: p.x, top: p.y }} data-issue={i.number} aria-pressed={sel === i.number} title={i.title}
+                  <button key={i.number} type="button" className={cls} style={{ left: p.x, top: p.y }} data-issue={i.number} aria-pressed={sel === i.number} title={[i.title, say].filter(Boolean).join(', ') || undefined}
                     onClick={() => onPick(sel === i.number ? undefined : i.number)}>
                     <b>#{i.number}{i.title ? ` ${i.title}` : ''}</b>
                     <small>{who ? <span className={`model ${who.tone}`}>{who.name}</span> : 'No session'}{i.outside && ` · ${i.milestone ?? 'outside'}`}</small>
+                    {say && <span className="sr">, {say}</span>}
                   </button>
                 );
               })}

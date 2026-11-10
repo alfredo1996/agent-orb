@@ -862,10 +862,10 @@ const MENTIONS_MAX = 20; // as shared/src/event.ts: past it the event would be r
 // ponytail: by shape alone, so a `#12` inside a code block, a hex colour of digits (`#123456`) and an HTML entity (`&#123;`) read as mentions. The server keeps only those between issues on the board.
 const MENTION = /(?<![\w/])#([1-9]\d{0,8})(?!\w)/g;
 
-/** The issues a body mentions (#66), in order, each once, never the issue itself, at most 20. Only these numbers are kept of the body. */
-function mentionsOf(body: unknown, own: number): number[] {
+/** The issues a body mentions (#66), in order, each once, never the issue itself, at most 20. Only these numbers are kept of the body. None at all (`undefined`) when there is no body to read: absent means not read, an empty list means read and names none. */
+function mentionsOf(body: unknown, own: number): number[] | undefined {
   const found = new Set<number>();
-  if (typeof body !== 'string') return [];
+  if (typeof body !== 'string') return undefined;
   for (const m of body.matchAll(MENTION)) {
     if (Number(m[1]) !== own) found.add(Number(m[1]));
     if (found.size >= MENTIONS_MAX) break;
@@ -954,8 +954,8 @@ export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined
 /**
  * The open issues in `openIssuesArgv`'s output: a number and its milestone's title, and (#32) the issue's own title when `text` gives it, never a body. `milestones: false` (an excluded
  * project) leaves the milestone out: a title is a name. `text` decides whether the issue's title travels: the plugin passes its Content helper (masked, and nothing unless Content is on full);
- * without it, none does. #66: `mentions` are the issues its body names as `#N`, numbers alone, for every project (an excluded one too, as its own number travels); an issue that mentions none,
- * or output with no body, has no such key. Nothing when the output is not gh's list; an empty list is a read of no open issues. At most 500.
+ * without it, none does. #66: `mentions` are the issues its body names as `#N`, numbers alone, for every project (an excluded one too, as its own number travels); an
+ * issue whose output has a body carries the key always, an empty list when it names none, and one with no body (the read asked again without `body`) has no such key: the server keeps what it had. Nothing when the output is not gh's list; an empty list is a read of no open issues. At most 500.
  */
 export function parseOpenIssues(stdout: string, milestones = true, text?: (s: string) => string | undefined): OpenIssue[] | undefined {
   let list: unknown;
@@ -971,7 +971,7 @@ export function parseOpenIssues(stdout: string, milestones = true, text?: (s: st
     const milestone = milestones && typeof i.milestone?.title === 'string' && i.milestone.title ? i.milestone.title.slice(0, 200) : undefined;
     const title = text && typeof i.title === 'string' && i.title ? text(i.title)?.slice(0, 200) : undefined;
     const mentions = mentionsOf(i.body, i.number);
-    issues.push({ number: i.number, ...(milestone ? { milestone } : {}), ...(title ? { title } : {}), ...(mentions.length ? { mentions } : {}) });
+    issues.push({ number: i.number, ...(milestone ? { milestone } : {}), ...(title ? { title } : {}), ...(mentions ? { mentions } : {}) });
     if (issues.length >= OPEN_ISSUES_MAX) break;
   }
   return issues;

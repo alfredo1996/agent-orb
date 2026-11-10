@@ -55,6 +55,22 @@ describe('layoutMap: where each issue sits', () => {
       expect(p.x + MAP_NODE.w).toBeLessThanOrEqual(m.width);
       expect(p.y + MAP_NODE.h).toBeLessThanOrEqual(m.height);
     }
+    for (const e of m.edges) for (const n of e.d.match(/-?\d+(?:\.\d+)?/g)!.filter((_, k) => k % 2 === 0).map(Number)) expect(n, e.d).toBeGreaterThanOrEqual(0), expect(n, e.d).toBeLessThanOrEqual(m.width); // every x of every path, control points too
+  });
+
+  it('a line between two cards of the last column, rows apart, bulges inside the canvas, and its name is put to the left of the line, where there is room, never clamped away from it', () => {
+    const three = layoutMap(STAGES, [...ISSUES, { number: 404, stage: 'merged' }, { number: 405, stage: 'merged' }], [file(403, 405, 'src/net/status.ts')]);
+    const e = three.edges[0]!;
+    expect(e.d).toMatch(/^M\d/);
+    for (const x of e.d.match(/-?\d+(?:\.\d+)?/g)!.filter((_, k) => k % 2 === 0).map(Number)) expect(x).toBeLessThanOrEqual(three.width);
+    const l = e.label!;
+    expect(l).toBeDefined();
+    const edge = three.pos.get(403)!.x + MAP_NODE.w;
+    const crossesAt = edge + 21; // the curve's furthest point out is three quarters of its 28px bulge, which is where it crosses the middle of the gap
+    const w = l.text.length * 7.3;
+    expect(l.anchor).toBe('start');
+    expect(Math.abs(l.x + w - (crossesAt - 6))).toBeLessThanOrEqual(8); // the name ends just before the line
+    expect(l.x).toBeGreaterThanOrEqual(0);
   });
 
   it('a card stays where it is whatever links it has, whichever is pressed and whatever order the board lists it in: only its stage and the numbers beside it place it', () => {

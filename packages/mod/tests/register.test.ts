@@ -1747,7 +1747,7 @@ test('v0.4 slice 2: the open issues\' milestones travel with the open PRs, and a
   await w.clock.advance(2_000)
   expect(w.gh.issueCalls).toEqual([{ argv: ISSUES_ARGV, cwd: '/repo' }])
   expect(w.gh.openCalls).toHaveLength(1) // the issue read is no second PR read
-  expect(openSent(w).map((e) => e.data)).toEqual([{ prs: [expect.objectContaining({ number: 416, created_at: Date.parse('2026-11-01T14:10:00Z'), issue: 409 })], issues: [{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }] }])
+  expect(openSent(w).map((e) => e.data)).toEqual([{ prs: [expect.objectContaining({ number: 416, created_at: Date.parse('2026-11-01T14:10:00Z'), issue: 409 })], issues: [{ number: 409, milestone: 'v0.4 Factory', mentions: [] }, { number: 410 }] }])
   expect(JSON.stringify(w.sent())).not.toMatch(/Vault key|Closes|private text|Retry after an expired/)
 })
 
@@ -1762,7 +1762,7 @@ test('v0.4 slice 2: a gh issue list that fails still sends the PRs, with no issu
   w.gh.issues = ISSUE_LIST
   await w.clock.advance(5 * MIN + 2_000)
   await w.clock.advance(2_000)
-  expect(openSent(w).map((e) => e.data.issues)).toEqual([undefined, [{ number: 409 }, { number: 410 }]])
+  expect(openSent(w).map((e) => e.data.issues)).toEqual([undefined, [{ number: 409, mentions: [] }, { number: 410 }]])
 })
 
 // v0.5 slice 1 (#66, the Map): an issue's body is read for the issues it mentions, and only their numbers leave, for an excluded project too.
@@ -1775,7 +1775,7 @@ test('v0.5 slice 1: the issues an issue mentions travel as numbers, and nothing 
   await boot($)
   await w.clock.advance(2_000)
   expect(w.gh.issueCalls).toEqual([{ argv: ISSUES_ARGV, cwd: '/repo' }])
-  expect(openSent(w).map((e) => e.data.issues)).toEqual([[{ number: 409, mentions: [412] }, { number: 412 }]])
+  expect(openSent(w).map((e) => e.data.issues)).toEqual([[{ number: 409, mentions: [412] }, { number: 412, mentions: [] }]])
   expect(JSON.stringify(w.sent())).not.toMatch(/Vault key|See #|no mention here|Retry after/)
 })
 
@@ -1810,7 +1810,7 @@ test('v0.4 slice 6: with Content off, or in an excluded project, no issue title 
   w.gh.issues = ISSUE_LIST
   await boot($)
   await w.clock.advance(2_000)
-  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }])
+  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409, milestone: 'v0.4 Factory', mentions: [] }, { number: 410 }])
 })
 
 test('v0.4 slice 6: an excluded project sends issue numbers alone, whatever Content is set to', { options: { token: 'tok', content: 'full', excludeProjects: 'o/r' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
@@ -1819,7 +1819,7 @@ test('v0.4 slice 6: an excluded project sends issue numbers alone, whatever Cont
   w.gh.issues = ISSUE_LIST
   await boot($)
   await w.clock.advance(2_000)
-  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409 }, { number: 410 }])
+  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409, mentions: [] }, { number: 410 }])
   expect(JSON.stringify(w.sent())).not.toMatch(/Retry after|v0.4 Factory/)
 })
 
