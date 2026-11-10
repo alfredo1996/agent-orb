@@ -124,7 +124,7 @@ export function App() {
       </header>
 
       <ProjectContext.Provider value={{ projects, choice, pick }}>
-        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} live={new Set(list.map((s) => s.id))} /> : view === 'office' ? <Office sessions={running} all={sessions} now={now} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} />}
+        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} live={new Set(list.map((s) => s.id))} sessions={list} /> : view === 'office' ? <Office sessions={running} all={sessions} now={now} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} />}
       </ProjectContext.Provider>
     </div>
   );

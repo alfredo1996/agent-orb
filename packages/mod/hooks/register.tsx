@@ -4,7 +4,7 @@ import type { EngineInterface as $, Register } from 'claude-code'
 import type { OrbAgentRow, OrbEventRow, OrbView } from '../types'
 import {
   BATCH, build, capText, changesArgv, checkStalls, commandClass, enqueue, errorClass, errorShape, filesTouched, fingerprintFiles, fingerprintsFrom, fmtTokens, goalNotice, hostName, isExcluded, mask, modelLabel, newOutbox, newTracker,
-  normalizeRemote, openIssuesArgv, openPrsArgv, parseChanges, parseFactory, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, toolContent, type ContentMode, type FactoryMemory, type Goal, type GoalSent,
+  normalizeRemote, openIssuesArgv, openIssuesBareArgv, openPrsArgv, parseChanges, parseFactory, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, toolContent, type ContentMode, type FactoryMemory, type Goal, type GoalSent,
   backgroundFromFrontmatter, familyOf, judgeMerge, mergesIn, modelCheck, modelFromFrontmatter, pricierNotice, remoteNamed, rejectedIn, roleFromFrontmatter, settle, statusText, stopWaits, takeBatch, tokensOf, usageOf,
   descriptionOf, FINDINGS_ASK, preloadOf, refsIn, type CatalogAgent, type CatalogSkill, type Ctx, type Ev, type Refs, type Role, type SkillLoad,
 } from './core.ts'
@@ -339,7 +339,7 @@ async function sendPrs($: $, excluded: boolean) {
  * the server's ready() reads, sent as one event. Only numbers, the branch, the head, the merge state, check names and results and each bot's latest comment time leave;
  * never a comment's text. An excluded project sends no branches. No gh, or a gh that fails or is not logged in, sends nothing, quietly; a call that hangs is not repeated.
  * #28: each PR also carries when it opened and the issue it closes (its body is read here, only the number leaves), and the open issues' numbers and milestones ride in the same
- * event, from a second gh call that, failing, leaves them out.
+ * event, from a second gh call that, failing, leaves them out. #66: that call reads each issue's body too, for the issues it mentions: their numbers leave, the body does not.
  * #32: a PR the last read sent and this one lacks has merged or been closed, and the merged list says which; so that is read right here (the existing read, `sendPrs`) and sent before the open list, and
  * a merge reaches the server with the list that no longer holds the PR, not at the next session start. If gh cannot answer, nothing is sent this time: the server keeps what it had, and the next read tries both.
  * ponytail: every session in a repo reads it; three sessions in one repo ask three times in 5 minutes. Share the last read through `$.store` if GitHub's rate limit is ever met.
@@ -354,7 +354,11 @@ async function readOpenPrs($: $) {
     if (prs && ctx) {
       if ([...openNumbers].some((n) => !prs.some((p) => p.number === n)) && !(await sendPrs($, excluded).catch(() => false))) return
       // #28: the open issues' milestones ride in the same event. A read that fails leaves `issues` out, so the server keeps the last.
-      const i = await $.process.run(openIssuesArgv, { cwd: checkout, timeoutMs: 60_000 }).catch(() => undefined)
+      // #66: the read asks for each issue's body, for the issues it mentions. An answer cut at what one read returns (4 MiB) is no list, so it is asked again without the bodies:
+      // the milestones and titles still arrive, with no mentions this time.
+      const ask = (argv: readonly string[]) => $.process.run(argv, { cwd: checkout, timeoutMs: 60_000 }).catch(() => undefined)
+      let i = await ask(openIssuesArgv)
+      if (i?.isStdoutTruncated) i = await ask(openIssuesBareArgv)
       const issues = i && i.exitCode === 0 ? parseOpenIssues(i.stdout, !excluded, text) : undefined
       if (ctx) push($, build.projectOpenPrs(ctx, prs, issues))
       openNumbers = new Set(prs.map((p) => p.number))

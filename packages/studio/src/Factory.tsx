@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { askFor, boardFor, pinAfter, type Pin } from './board-view.ts';
+import { askFor, boardFor, linksFor, linksQuery, pinAfter, type Pin } from './board-view.ts';
+import { MapBand, mapReading, type LinksData } from './FactoryMap.tsx';
 import { usd } from './format.ts';
 import { trapTab, usePhone } from './History.tsx';
-import { PageHeader, ProjectSelect, Reading, useProject, type Said } from './kit.tsx';
+import { PageHeader, ProjectSelect, Reading, Seg, useProject, type Said } from './kit.tsx';
+import type { Session } from './Live.tsx';
 
 // Factory (v0.4 slice 1, #27), drawn as approved in design/v0.4-factory.html, the Factory and Findings boards, from GET /api/factory: each open PR with the first
 // reason it isn't ready for your ok, or "Ready for your ok", and its findings in a sheet. Nothing here merges: the merge stays yours.
@@ -11,6 +13,7 @@ import { PageHeader, ProjectSelect, Reading, useProject, type Said } from './kit
 // nothing is ever stopped. Slice 3 (#29) adds the Machine band (the Mac's free memory and its containers by project, from GET /api/machine) and a "Left running" row in Needs you for
 // each group the server flags; nothing here removes a container. Slice 6 (#32) adds the Board band between Needs you and the Budget card, from GET /api/board: one milestone at a time, a row
 // per issue with its stage on a track of seven, whether its PR is ready, its cost against its budget and its sessions with a link to Live. The board repeats no session's state.
+// v0.5 slice 1 (#66) adds a Board and Map switch: the Map (FactoryMap.tsx) shows the board's issues by stage with the links between them, from GET /api/links, read only while the Map is open.
 
 type Cond = { ok: boolean | null; note: string };
 export type FactoryFinding = { id: string; severity: string; file: string; fate: 'open' | 'dismissed' | 'fixed'; title?: string; why?: string };
@@ -179,7 +182,7 @@ function CostSection({ issue, cost, onSave }: { issue: number | null | undefined
   );
 }
 
-const STAGE_LABEL: Record<BoardStage, string> = { queued: 'Queued', building: 'Building', reviewing: 'Reviewing', fixing: 'Fixing', gate: 'Gate', ready: 'Ready', merged: 'Merged' };
+export const STAGE_LABEL: Record<BoardStage, string> = { queued: 'Queued', building: 'Building', reviewing: 'Reviewing', fixing: 'Fixing', gate: 'Gate', ready: 'Ready', merged: 'Merged' };
 
 /** Seven segments, one a stage: those before the issue's stage lit, its own marked, green once the issue is ready or merged, red when the test run or a check on its head failed. */
 function Track({ stage, bad }: { stage: BoardStage; bad?: true }) {
@@ -498,8 +501,10 @@ export function PrSheet({ pr, readAt, now, sheet, onClose, cost, onSave }: { pr:
   );
 }
 
-/** `live`: the sessions Live shows right now, which the board's links can reach. */
-export function Factory({ now, live }: { now: number; live: ReadonlySet<string> }) {
+const NO_SESSIONS: readonly Session[] = [];
+
+/** `live`: the sessions Live shows right now, which the board's links can reach. `sessions`: the same sessions with their agents, for the Map's "who is on it now". */
+export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; live: ReadonlySet<string>; sessions?: readonly Session[] }) {
   const { project, projects } = useProject(true); // one project: the page reads one repo's PRs
   const [data, setData] = useState<FactoryData>();
   const [budget, setBudget] = useState<BudgetData>();
@@ -510,6 +515,10 @@ export function Factory({ now, live }: { now: number; live: ReadonlySet<string> 
   const [machineError, setMachineError] = useState<string>();
   const [error, setError] = useState<string>();
   const [picked, setPicked] = useState<number>();
+  const [view, setView] = useState<'board' | 'map'>('board'); // ponytail: kept in the page, so a reload opens on Board. In the hash when another page links to a milestone's Map (#64, Home).
+  const [links, setLinks] = useState<LinksData>();
+  const [linksError, setLinksError] = useState<string>();
+  const [pressed, setPressed] = useState<number>(); // the Map's pressed card
   const opener = useRef<HTMLElement>(null);
   const phone = usePhone();
 
@@ -580,6 +589,33 @@ export function Factory({ now, live }: { now: number; live: ReadonlySet<string> 
   const boarded = boardFor(last, askFor(milestone, pin.current, project)); // and the rows only for the milestone asked for
   const costed = budget && budget.project === project ? budget : undefined;
   const costs = costed && new Map(costed.issues.map((i) => [i.number, i]));
+
+  // The Map's links are a third read, asked for only while the Map is open (it reads every written path of the board's sessions, which the board's own read every 30 seconds does not):
+  // for the milestone the board shows, so the two answers are about the same issues. A failure leaves the cards and the last links, and says so.
+  const mapped = boarded ? boarded.milestone : undefined; // undefined: the board has not answered yet; null: it shows no milestone
+  const ask = linksQuery(view, project, boarded);
+  useEffect(() => {
+    if (!ask) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/links?${ask}`);
+        if (!res.ok) throw new Error(`The server answered ${res.status}.`);
+        const body = (await res.json()) as LinksData;
+        if (alive) setLinks(body), setLinksError(undefined);
+      } catch (e) {
+        if (alive) setLinksError((e as Error).message);
+      }
+    };
+    void load();
+    const t = setInterval(load, REFRESH_MS);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [ask]);
+  useEffect(() => (setPressed(undefined), setLinksError(undefined)), [project, mapped]); // a card of another milestone is not pressed in this one, and its error is not this one's
+  const linked = linksFor(links, project, boarded);
   const save: Save = async (target, amount) => {
     try {
       const res = await fetch('/api/budget', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project, ...target, usd: amount }) });
@@ -601,11 +637,19 @@ export function Factory({ now, live }: { now: number; live: ReadonlySet<string> 
   }, [shown, picked]);
   return (
     <main className="factory">
-      <PageHeader title="Factory" sub="What's blocked, what's ready, and what's left running" views={shown ? <Asof readAt={shown.readAt} now={now} /> : <span />} project={<ProjectSelect one />}
+      <PageHeader title="Factory" sub={view === 'map' ? "How this milestone's issues touch each other" : "What's blocked, what's ready, and what's left running"}
+        views={<><Seg value={view} onChange={setView} label="Factory view" options={[['board', 'Board'], ['map', 'Map']]} />{shown && <Asof readAt={shown.readAt} now={now} />}</>} project={<ProjectSelect one />}
         period={<MilestoneSelect milestones={last?.milestones ?? []} value={milestone ?? last?.milestone ?? null} onChange={(m) => setChosen({ project, milestone: m })} />} />
       {error && <div className="empty"><b>Factory could not load.</b><span>{error}</span></div>}
       {projects?.length === 0 && <div className="empty"><b>Nothing recorded yet.</b><span>Factory starts when a session runs with the agent-orb plugin.</span></div>}
-      {shown && (
+      {view === 'map' && (
+        <>
+          {boardError && !boarded && <div className="empty"><b>The Map could not load.</b><span>The board could not be read: {boardError}</span></div>}
+          {boarded && linked && <Reading said={mapReading(boarded, linked.links)} by="Counted from the links below. No model writes this." />}
+          {boarded && <MapBand board={boarded} links={linked} error={linksError} boardError={boardError} sessions={sessions} picked={pressed} onPick={setPressed} phone={phone} />}
+        </>
+      )}
+      {view === 'board' && shown && (
         <>
           <Reading said={factoryReading(shown)} />
           <NeedsYou prs={shown.prs} costs={costs} left={leftRunning(machine)} now={now} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />
@@ -613,7 +657,7 @@ export function Factory({ now, live }: { now: number; live: ReadonlySet<string> 
           {costed && <BudgetCard data={costed} onSave={save} />}
         </>
       )}
-      <MachineBands data={machine} error={machineError} now={now} />
+      {view === 'board' && <MachineBands data={machine} error={machineError} now={now} />}
       {pr && createPortal(
         <>
           <div className="scrim" onClick={close} aria-hidden="true" />

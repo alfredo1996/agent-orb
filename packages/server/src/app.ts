@@ -12,6 +12,7 @@ import { goal } from './api/goal.ts';
 import { history } from './api/history.ts';
 import { openContentStore, type ContentStore } from './content-store.ts';
 import { ledger } from './api/ledger.ts';
+import { links } from './api/links.ts';
 import { patterns } from './api/patterns.ts';
 import { pipeline } from './api/pipeline.ts';
 import { skills } from './api/skills.ts';
@@ -83,6 +84,7 @@ export function buildApp({ store = openStore(':memory:'), token, logger = false,
   factory(app, { store, content, now }); // v0.4 slice 1 (#27): ready() per open PR, and its findings; a finding's title and reason are in the text store
   budget(app, { store, now }); // v0.4 slice 2 (#28): what each issue cost against its budget, and the budgets the owner sets
   board(app, { store, content, now }); // v0.4 slice 6 (#32): each issue of a milestone from queued to merged, its stage read from what the agents did
+  links(app, { store, content, now }); // v0.5 slice 1 (#66): how the board's issues touch each other, a file two of them wrote or a mention, worked out on read for the Map
   machine(app, { store, now }); // v0.4 slice 3 (#29): the Mac's latest sample per host, its containers grouped and flagged
   stop(app, { store, token, now }); // v0.4 slice 5 (#31): Live's Stop, queued here and taken by the session's plugin; the clock is the one a stop's ten minutes run by
   return app;

@@ -759,6 +759,51 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
   .board .lab, .board .costcell .lab { display: block; }
   .board .nothing, .board .notissue, .board .bnote { padding-left: 16px; padding-right: 16px; }
 }
+/* The Map (v0.5 slice 1, #66; design/home-issue.html, the Map board): cards in the column of their stage, HTML over an SVG layer that draws the lines and the file names, as on Pipeline.
+   On a phone the page renders the list of links alone, so nothing here hides the canvas. */
+.factory .ph-views { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.map .nothing { margin: 0; padding: 14px 20px; color: var(--muted); font-size: 14px; }
+.map .mp-scroll { overflow-x: auto; padding: 16px 20px 0; }
+.map .mp { position: relative; margin: 0 auto; }
+.map .mp > svg { position: absolute; inset: 0; display: block; }
+.map .mp-e { fill: none; stroke: var(--accent); stroke-opacity: .5; stroke-width: 2.5; stroke-linecap: round; }
+.map .mp-e.hot { stroke: var(--wait-dot); stroke-opacity: 1; }
+.map .mp-e.said { stroke: var(--muted); stroke-opacity: .7; stroke-width: 1.5; stroke-dasharray: 5 5; }
+.map .mp .el { font: 500 12px var(--mono); fill: var(--muted); }
+.map .mp .elbg { fill: var(--surface); } /* under a name: the line it sits on stops at it */
+.map .mp .dim { opacity: .15; }
+.map .mp-colt { position: absolute; top: 0; width: 152px; display: flex; justify-content: space-between; font-size: 12px; font-weight: 500; color: var(--muted); }
+.map .mp-node { position: absolute; width: 152px; height: 76px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); display: grid; align-content: center; gap: 3px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.map .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } /* said to a screen reader only */
+.map .mp-node:hover { border-color: var(--accent); }
+.map .mp-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.map .mp-node b { font-weight: 600; font-size: 13px; line-height: 1.25; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; } /* two lines; the whole title is the card's tooltip and in the list */
+.map .mp-node small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map .mp-node .model { font-size: 12px; color: inherit; vertical-align: bottom; }
+.map .mp-node.t-bad { --mark: var(--bad-dot); box-shadow: inset 4px 0 0 var(--mark); }
+.map .mp-node.t-wait { --mark: var(--wait-dot); box-shadow: inset 4px 0 0 var(--mark); }
+.map .mp-node.t-ok { --mark: var(--ok-dot); box-shadow: inset 4px 0 0 var(--mark); }
+.map .mp-node.out { border-style: dashed; }
+.map .mp-node.dim { opacity: .35; }
+.map .mp-node[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--mark, transparent), 0 0 0 3px var(--accent-soft); } /* a pressed card keeps its mark */
+.map .mp-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 4px 20px 14px; font-size: 13px; color: var(--muted); }
+.map .mp-legend span { display: inline-flex; align-items: center; gap: 8px; }
+.map .mp-legend i { width: 10px; height: 10px; border-radius: 2px; }
+.map .mp-legend i.bad { background: var(--bad-dot); } .map .mp-legend i.wait { background: var(--wait-dot); } .map .mp-legend i.ok { background: var(--ok-dot); }
+.map .mp-legend i.out { width: 18px; height: 12px; border-radius: 4px; border: 1px dashed var(--muted); }
+.map .mp-day { padding: 8px 20px; background: var(--sunk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
+.map .mp-link { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 132px; gap: 4px 16px; align-items: center; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
+.map .mp-day + .mp-link { border-top: 0; }
+.map .mp-link b { font-weight: 600; }
+.map .mp-link .sub { font-size: 13px; color: var(--muted); }
+.map .mp-link code { font: 12px var(--mono); }
+.map .mp-link .flag { justify-self: start; font-size: 12px; font-weight: 500; padding: 2px 7px; border-radius: 6px; white-space: nowrap; color: var(--wait); background: var(--wait-bg); }
+.map .mp-none { padding: 14px 20px; font-size: 14px; color: var(--muted); }
+.map .bnote { padding: 10px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); border-radius: 0 0 14px 14px; }
+@container (max-width: 700px) {
+  .map .mp-link { grid-template-columns: minmax(0, 1fr); padding-left: 16px; padding-right: 16px; }
+  .map .nothing, .map .mp-day, .map .mp-none, .map .bnote { padding-left: 16px; padding-right: 16px; }
+}
 /* Machine (v0.4 slice 3, #29; design/v0.4-factory.html, the Machine band). Like the other bands, it narrows with its container, not the window. */
 .machine { scroll-margin-top: 16px; }
 .machine:focus-visible { outline: 2px solid var(--accent-ink, var(--ink)); outline-offset: 2px; }

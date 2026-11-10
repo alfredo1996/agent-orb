@@ -111,6 +111,14 @@ describe('roles (issue #8)', () => {
   });
 });
 
+describe('the paths left out of a PR\'s size (v0.5 slice 1, #66)', () => {
+  it('the plugin and shared hold one skip list, so the Map links no file a PR\'s size leaves out', () => {
+    expect(mod.UNCOUNTED.source).toBe(shared.UNCOUNTED.source);
+    expect(mod.UNCOUNTED.flags).toBe(shared.UNCOUNTED.flags);
+    expect(['pnpm-lock.yaml', 'apps/web/dist/app.js', 'icons/menu.svg', 'src/a.ts', 'PROJECT.md'].map((p) => shared.UNCOUNTED.test(p))).toEqual([true, true, true, false, false]);
+  });
+});
+
 describe('model families (v0.2 slice 2)', () => {
   it('the mod ranks exactly the families the server accepts in model_check, so a flag the mod raises is never dropped', () => {
     expect([...FAMILIES]).toEqual([...MODEL_FAMILIES]);

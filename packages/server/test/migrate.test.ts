@@ -47,6 +47,18 @@ describe('opening a history file made before #28', () => {
     db.close();
   });
 
+  it('#66: an open_issues table made by #32 has no mentions; opening takes the column and keeps its rows', () => {
+    const path = join(dir, 'before-66.db');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, title TEXT, gone_at INTEGER, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
+      INSERT INTO open_issues (project_id, number, milestone, title) VALUES ('p', 409, 'v0.4 Factory', 'Retry after an expired token');`);
+    old.close();
+    const db = openStore(path);
+    expect({ ...get(db, 'SELECT number, milestone, title, gone_at, mentions FROM open_issues') }).toEqual({ number: 409, milestone: 'v0.4 Factory', title: 'Retry after an expired token', gone_at: null, mentions: null });
+    db.close();
+    openStore(path).close(); // and opens again
+  });
+
   it('#32: a finding_reports table made by #27 has no reviewed_at; opening takes the column and keeps its rows', () => {
     const path = join(dir, 'before-32-reports.db');
     const old = new DatabaseSync(path);

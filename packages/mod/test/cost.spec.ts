@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Event } from '../../shared/src/index.ts';
-import { build, issueOf, openIssuesArgv, openPrsArgv, parseOpenIssues, parseOpenPrs, type Ctx } from '../hooks/core.ts';
+import { build, issueOf, openIssuesArgv, openIssuesBareArgv, openPrsArgv, parseOpenIssues, parseOpenPrs, type Ctx } from '../hooks/core.ts';
 
 // v0.4 slice 2 (#28, Factory): what an issue cost. The plugin reads each open PR's opening time and the issue it names, and the open issues' milestones. A PR's body is read
 // here and goes no further: only the issue number found in it leaves the machine.
@@ -68,8 +68,9 @@ describe('the open-PR read, for cost', () => {
 });
 
 describe('the open issues\' milestones', () => {
-  it('asks gh for the open issues\' numbers, milestones and titles only', () => {
-    expect(openIssuesArgv).toEqual(['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title']);
+  it('asks gh for the open issues\' numbers, milestones, titles and (#66) bodies; and for the same without the bodies, when they are too much for one read', () => {
+    expect(openIssuesArgv).toEqual(['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title,body']);
+    expect(openIssuesBareArgv).toEqual(['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title']);
   });
 
   const LIST = JSON.stringify([
@@ -80,10 +81,10 @@ describe('the open issues\' milestones', () => {
 
   it('keeps a number and its milestone\'s title, and an issue\'s own title only when the Content helper gives it: never a body', () => {
     const issues = parseOpenIssues(LIST)!;
-    expect(issues).toEqual([{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }, { number: 411 }]);
+    expect(issues).toEqual([{ number: 409, milestone: 'v0.4 Factory', mentions: [] }, { number: 410 }, { number: 411 }]);
     expect(JSON.stringify(issues)).not.toMatch(/Retry after|private text|the plan/); // Content off: the helper is not passed
     const titled = parseOpenIssues(LIST, true, (s) => s)!;
-    expect(titled).toEqual([{ number: 409, milestone: 'v0.4 Factory', title: 'Retry after an expired token' }, { number: 410 }, { number: 411 }]);
+    expect(titled).toEqual([{ number: 409, milestone: 'v0.4 Factory', title: 'Retry after an expired token', mentions: [] }, { number: 410 }, { number: 411 }]);
     expect(JSON.stringify(titled)).not.toMatch(/private text|the plan/);
     expect(parseOpenIssues(LIST, true, () => undefined)).toEqual(issues); // the helper says nothing leaves (Content is not full): none does
   });
@@ -105,6 +106,50 @@ describe('the open issues\' milestones', () => {
     expect(parseOpenIssues('[]')).toEqual([]);
     expect(parseOpenIssues(JSON.stringify([{ number: 'x' }, { number: 0 }, { number: 5, milestone: { title: '' } }]))).toEqual([{ number: 5 }]);
     expect(parseOpenIssues(JSON.stringify(Array.from({ length: 700 }, (_, i) => ({ number: i + 1 }))))!.length).toBe(500);
+  });
+});
+
+// v0.5 slice 1 (#66, the Map): the issues an issue's text mentions. The body is read here and goes no further: only the numbers leave the machine, for every project.
+describe('the issues an issue mentions', () => {
+  const one = (number: number, body: unknown, milestones = true) => parseOpenIssues(JSON.stringify([{ number, body }]), milestones)![0]!;
+
+  it('a body gives the numbers it mentions, in order: not another repository\'s, not the issue\'s own, each once', () => {
+    expect(one(409, 'Blocked by #12, see owner/repo#13 and #409 itself.\n\nAgain: #12, then #7')).toEqual({ number: 409, mentions: [12, 7] });
+  });
+
+  it.each<[string, number[]]>([
+    ['#7', [7]], ['(#7)', [7]], ['see #7.', [7]], ['#7 and #8,#9', [7, 8, 9]], ['Closes #7', [7]], ['- [ ] #7\n- [x] #8', [7, 8]], ['#123456789', [123456789]],
+    ['o/r#7', []], ['word#7', []], ['under_#7', []], ['https://github.com/o/r/issues/7#8', []], ['docs/#7', []], ['#0', []], ['#07', []], ['# 7', []], ['#7a', []], ['#1234567890', []], ['seven', []], ['', []],
+  ])('%j mentions %j', (body, mentions) => {
+    expect(one(1, body)).toEqual({ number: 1, mentions }); // a body that names none still carries the empty list: it was read
+  });
+
+  it('no word of the body is in the built event, with Content on full too: only the numbers', () => {
+    const issues = parseOpenIssues(JSON.stringify([{ number: 409, title: 'Retry', body: 'Rotate the vault key before the cutover, after #12.' }]), true, (s) => s)!;
+    expect(issues).toEqual([{ number: 409, title: 'Retry', mentions: [12] }]);
+    const e = build.projectOpenPrs(ctx, [], issues);
+    expect(JSON.stringify(e)).not.toMatch(/vault|cutover|Rotate|after|body/);
+    expect(Event.safeParse(e).data).toEqual(e); // and the server's schema takes the field as it is
+  });
+
+  it('at most 20: a 21st mention is cut', () => {
+    const body = Array.from({ length: 25 }, (_, i) => `#${i + 1}`).join(' ');
+    expect(one(409, body).mentions).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+  });
+
+  it('output with no body, or a body that is not text, gives no mentions key: absent is "not read", and an empty list is "read, names none"', () => {
+    expect(parseOpenIssues(JSON.stringify([{ number: 5 }, { number: 6, body: null }, { number: 7, body: 12 }]))).toEqual([{ number: 5 }, { number: 6 }, { number: 7 }]);
+    expect(parseOpenIssues(JSON.stringify([{ number: 8, body: '' }]))).toEqual([{ number: 8, mentions: [] }]);
+  });
+
+  it('an excluded project sends them too, as it sends the issue\'s number', () => {
+    expect(one(409, 'after #12', false)).toEqual({ number: 409, mentions: [12] });
+  });
+
+  it('a long body is read in linear time', () => {
+    const t = process.cpuUsage();
+    expect(one(1, `${'#'.repeat(200_000)}${'x#1 '.repeat(50_000)}#5`).mentions).toEqual([5]);
+    expect(process.cpuUsage(t).user / 1000).toBeLessThan(500); // ms of CPU; a quadratic read of 400,000 characters takes minutes
   });
 });
 
