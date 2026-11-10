@@ -537,6 +537,22 @@ describe('project.open_prs issues (#32): a title travels only with Content on fu
   });
 });
 
+describe('project.open_prs issues (#66): the issues an issue mentions are set with its row', () => {
+  const read = (issues: object[], o: Opts = {}) => ev('project.open_prs', { prs: [], issues }, { remote: REMOTE, ...o });
+  const rows = () => q('SELECT number, mentions, gone_at IS NOT NULL AS gone FROM open_issues WHERE project_id = :project ORDER BY number', { project: REMOTE });
+
+  it('a read sets each issue\'s mentions as a JSON list; an issue that carries none (no mention, or an older plugin) has null', () => {
+    plugin([read([{ number: 1, mentions: [2, 30] }, { number: 2 }], { ts: T })]);
+    expect(rows()).toEqual([{ number: 1, mentions: '[2,30]', gone: 0 }, { number: 2, mentions: null, gone: 0 }]);
+  });
+
+  it('the next read replaces them: an edited body, and one that mentions nothing any more; an issue that left the list keeps what it had', () => {
+    plugin([read([{ number: 1, mentions: [2] }, { number: 2, mentions: [1] }, { number: 3, mentions: [1] }], { ts: T })]);
+    plugin([read([{ number: 1, mentions: [3] }, { number: 2 }], { ts: T + 1000 })]); // 3 closed
+    expect(rows()).toEqual([{ number: 1, mentions: '[3]', gone: 0 }, { number: 2, mentions: null, gone: 0 }, { number: 3, mentions: '[1]', gone: 1 }]);
+  });
+});
+
 describe('project.changes', () => {
   const sha = (c: string) => c.repeat(40);
   const changes = (commits: object[], o: Opts = {}) => ev('project.changes', { commits }, { remote: REMOTE, ...o });

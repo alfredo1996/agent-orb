@@ -57,7 +57,8 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
     // v0.4 slice 1 (#27): `gh pr list --state open ...` answers `gh.open`, and is recorded in `openCalls` (not `calls`, which is the merged list's)
     open: '', openCalls: [] as { argv: readonly string[]; cwd?: string }[],
     // v0.4 slice 2 (#28): `gh issue list --state open ...` answers `gh.issues` (empty: gh printed nothing usable) and is recorded in `issueCalls`
-    issues: '', issueCalls: [] as { argv: readonly string[]; cwd?: string }[] }
+    // #66: `issuesCut` makes the read that asks for bodies come back cut short, as one past 4 MiB does (half of `gh.issues`, marked truncated); the read without bodies answers whole
+    issues: '', issuesCut: false, issueCalls: [] as { argv: readonly string[]; cwd?: string }[] }
   // #107: `uname -s` names the platform and `scutil --get LocalHostName` the Mac's own name; `hostname -s` ('mbp') is the network's. Linux by default,
   // so a test that wants a Mac sets `os` before the session starts. `scutilExit` non-zero makes scutil fail as it does when no LocalHostName is set.
   const machine = { os: 'Linux', localHostName: 'Alfredos-MacBook-Pro-4', scutilExit: 0, calls: [] as string[][] }
@@ -104,7 +105,10 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
       ;(issue ? gh.issueCalls : open ? gh.openCalls : gh.calls).push({ argv: e.argv, cwd: e.init?.cwd })
       if (gh.hang) return new Promise(() => {})
       if (gh.missing) return { deny: 'spawn gh ENOENT' }
-      return { value: { exitCode: !issue && !open && gh.mergedExit !== undefined ? gh.mergedExit : gh.exitCode, stdout: issue ? gh.issues : open ? gh.open : gh.out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      const bodies = String(e.argv.at(-1)).includes('body') // gh prints only the fields `--json` names: a read that does not ask for bodies gets none
+      const cut = issue && gh.issuesCut && bodies
+      const listed = issue && !bodies ? withoutBodies(gh.issues) : gh.issues
+      return { value: { exitCode: !issue && !open && gh.mergedExit !== undefined ? gh.mergedExit : gh.exitCode, stdout: cut ? gh.issues.slice(0, gh.issues.length / 2) : issue ? listed : open ? gh.open : gh.out, stderr: '', isStdoutTruncated: cut, isStderrTruncated: false } }
     }
     const isLog = e.argv[0] === 'git' && e.argv[3] === 'log'
     if (isLog) git.calls.push(e.argv)
@@ -193,6 +197,15 @@ const boot = async ($: any) => {
   await $.turn.start({ text: 'go', turnId: 't-1' })
 }
 const opts = { options: { token: 'tok', stallMinutes: 15 } }
+/** gh's list as it prints it when `--json` names no `body`; what is not a list is left as it is. */
+function withoutBodies(out: string) {
+  try {
+    const list = JSON.parse(out)
+    return Array.isArray(list) ? JSON.stringify(list.map(({ body: _, ...i }: Record<string, unknown>) => i)) : out
+  } catch {
+    return out
+  }
+}
 
 test('a model request becomes a turn.step event with all four token counts', opts, async ($: any, on: any) => {
   const w = world(on)
@@ -1677,7 +1690,7 @@ const OPEN_LIST = JSON.stringify([{
 }])
 const openSent = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'project.open_prs')
 const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']
-const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title']
+const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title,body']
 
 test('v0.4 slice 1: the open PRs are read in the checkout at session start and every 5 minutes after, and no comment text, title or commit message leaves', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
   const w = world(on)
@@ -1750,6 +1763,31 @@ test('v0.4 slice 2: a gh issue list that fails still sends the PRs, with no issu
   await w.clock.advance(5 * MIN + 2_000)
   await w.clock.advance(2_000)
   expect(openSent(w).map((e) => e.data.issues)).toEqual([undefined, [{ number: 409 }, { number: 410 }]])
+})
+
+// v0.5 slice 1 (#66, the Map): an issue's body is read for the issues it mentions, and only their numbers leave, for an excluded project too.
+const MENTION_LIST = JSON.stringify([{ number: 409, title: 'Retry after an expired token', body: 'Vault key plan, after #412 and o/r#7.\n\nSee #412 again, and #409.', milestone: { title: 'v0.4 Factory' } }, { number: 412, body: 'no mention here', milestone: null }])
+
+test('v0.5 slice 1: the issues an issue mentions travel as numbers, and nothing of its body does; an excluded project sends them too', { options: { token: 'tok', excludeProjects: 'o/r' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = MENTION_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.issueCalls).toEqual([{ argv: ISSUES_ARGV, cwd: '/repo' }])
+  expect(openSent(w).map((e) => e.data.issues)).toEqual([[{ number: 409, mentions: [412] }, { number: 412 }]])
+  expect(JSON.stringify(w.sent())).not.toMatch(/Vault key|See #|no mention here|Retry after/)
+})
+
+test('v0.5 slice 1: bodies too long for one read (gh\'s answer cut at 4 MiB) are asked for again without them: the milestones still arrive, with no mentions', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = MENTION_LIST
+  w.gh.issuesCut = true
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.issueCalls.map((c) => c.argv.at(-1))).toEqual(['number,milestone,title,body', 'number,milestone,title'])
+  expect(openSent(w).map((e) => e.data.issues)).toEqual([[{ number: 409, milestone: 'v0.4 Factory' }, { number: 412 }]])
 })
 
 // v0.4 slice 6 (#32): an issue's title names a row of the board, so it leaves only with Content on full, masked; an excluded project sends numbers only.

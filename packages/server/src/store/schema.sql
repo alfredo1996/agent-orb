@@ -121,7 +121,9 @@ CREATE TABLE IF NOT EXISTS finding_reports (project_id TEXT NOT NULL, ref TEXT N
 -- title (#32) is the issue's own title, sent only with Content on full: the board names its rows with it, and a read without one clears it of the issues the read lists.
 -- gone_at (#32) is when an issue left the list (closed, or past gh's limit of 200): the row keeps its milestone and title, so the board can show it as Merged on its milestone when its PR merged.
 -- Null: it is in the last read. A later read that lists the issue again (reopened) clears it. ponytail: the closed rows are never pruned (a few a week); a DELETE of the old ones if a project ever closes thousands.
-CREATE TABLE IF NOT EXISTS open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, title TEXT, gone_at INTEGER, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
+-- mentions (#66) is the issues its text names as `#N`, a JSON array of numbers the plugin found on the machine (at most 20; the text itself is never sent): each read sets it with the row, and
+-- null is none, or a plugin from before #66. GET /api/links draws the ones between two issues the board shows.
+CREATE TABLE IF NOT EXISTS open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, title TEXT, gone_at INTEGER, mentions TEXT, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS budgets (project TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, usd REAL NOT NULL, PRIMARY KEY (project, kind, key)) WITHOUT ROWID;
 -- A test run's result per project and commit, from a run on a clean tree (#34; 7 to 64 hex characters, matched against a PR's head by prefix): the latest wins.
 CREATE TABLE IF NOT EXISTS gates (project_id TEXT NOT NULL, commit_sha TEXT NOT NULL, result TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (project_id, commit_sha)) WITHOUT ROWID;
