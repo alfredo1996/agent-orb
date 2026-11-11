@@ -52,7 +52,7 @@ export function Office({ sessions, all, now }: { sessions: Session[]; all: Recor
         <section className="card">
           <Explain summary="How to read the office">
             <span className="key">
-              <span><b>Colour</b> = model: <span style={{ color: 'var(--opus)' }}>■</span> Opus <span style={{ color: 'var(--sonnet)' }}>■</span> Sonnet <span style={{ color: 'var(--haiku)' }}>■</span> Haiku</span>
+              <span><b>Colour</b> = model: <span style={{ color: 'var(--opus)' }}>■</span> Opus <span style={{ color: 'var(--sonnet)' }}>■</span> Sonnet <span style={{ color: 'var(--haiku)' }}>■</span> Haiku <span style={{ color: 'var(--fable)' }}>■</span> Fable</span>
               <span><b>Screen</b>: code = typing (Edit, Write, Bash) · page = reading (Read, Grep, Glob) · globe = browsing (Web*)</span>
               <span><b>Bubble</b>: … thinking · ? waiting for you · ! stalled · ✓ done (leaves soon) · × error</span>
               <span><b>Dotted line</b>: a delegation, from the parent's desk to the new bot</span>

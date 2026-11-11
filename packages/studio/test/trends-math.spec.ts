@@ -20,7 +20,7 @@ const inZone = <T,>(tz: string, fn: () => T): T => {
   }
 };
 const bucket = (over: Partial<TBucket> = {}): TBucket => ({
-  bucket: '2026-10-19', main: 0, typed: 0, generic: 0, opus: 0, sonnet: 0, haiku: 0, other: 0, tokens: 0, cacheRead: 0, inputSide: 0, activeDays: 0, prompts: 0, costPartial: false, ...over,
+  bucket: '2026-10-19', main: 0, typed: 0, generic: 0, opus: 0, fable: 0, sonnet: 0, haiku: 0, other: 0, tokens: 0, cacheRead: 0, inputSide: 0, activeDays: 0, prompts: 0, costPartial: false, ...over,
 });
 
 describe('the span a view shows', () => {
@@ -87,6 +87,7 @@ describe('what a bucket cost', () => {
     expect(totalOf(b, 'model')).toBe(200);
     expect(totalOf(bucket({ main: 1, typed: 2, generic: 4, opus: 8, sonnet: 16, haiku: 32, other: 64 }), 'who')).toBe(7);
     expect(totalOf(bucket({ main: 1, typed: 2, generic: 4, opus: 8, sonnet: 16, haiku: 32, other: 64 }), 'model')).toBe(120);
+    expect(totalOf(bucket({ opus: 8, fable: 128, other: 64 }), 'model')).toBe(200); // #73: Fable counts in the model split
   });
 });
 
@@ -240,6 +241,12 @@ describe('a bar as stacked segments', () => {
       { key: 'sonnet', y: 120, h: 28, top: false, color: 'var(--sonnet)' },
       { key: 'haiku', y: 105, h: 13, top: false, color: 'var(--haiku)' },
       { key: 'other', y: 100, h: 3, top: true, color: 'var(--faint)' },
+    ]);
+  });
+
+  it('#73: by model, Fable sits on Opus, in its own colour', () => {
+    expect(barSegments(bucket({ opus: 100, fable: 50, sonnet: 20 }), 'model', y).map((s) => [s.key, s.color])).toEqual([
+      ['opus', 'var(--opus)'], ['fable', 'var(--fable)'], ['sonnet', 'var(--sonnet)'],
     ]);
   });
 

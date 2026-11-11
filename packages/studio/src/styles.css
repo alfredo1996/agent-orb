@@ -8,7 +8,7 @@
   --wait: #7f4f00; --wait-bg: #fff1d1; --wait-line: #d99300; --wait-dot: #d99300;
   --bad: #ae1f27; --bad-bg: #fde8e8; --bad-row: #fff6f6; --bad-line: #e0343c; --bad-dot: #e0343c;
   --done: #5f6378; --done-bg: #eceef4; --done-dot: #9a9db0;
-  --opus: #b03a8e; --opus-bg: #f8e9f3; --sonnet: #2566d6; --sonnet-bg: #e8f0fd; --haiku: #009a85; --haiku-bg: #e0f4f0;
+  --opus: #b03a8e; --opus-bg: #f8e9f3; --sonnet: #2566d6; --sonnet-bg: #e8f0fd; --haiku: #009a85; --haiku-bg: #e0f4f0; --fable: #9c6b00;
   --term-bg: #fbfbfc; --term-text: #1d2128; --term-dim: #7a828d;
   --shadow: 0 1px 2px rgba(21, 22, 42, .04), 0 2px 8px rgba(21, 22, 42, .04);
   --pop: 0 8px 28px rgba(21, 22, 42, .16);
@@ -29,7 +29,7 @@
     --wait: #f2bd4d; --wait-bg: #36290b; --wait-line: #e6a823; --wait-dot: #e6a823;
     --bad: #ff8a8f; --bad-bg: #3b1518; --bad-row: #22141a; --bad-line: #f0545b; --bad-dot: #f0545b;
     --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
-    --opus: #cf62bd; --opus-bg: #3a1a33; --sonnet: #5f92f2; --sonnet-bg: #1b2842; --haiku: #18a690; --haiku-bg: #11302b;
+    --opus: #cf62bd; --opus-bg: #3a1a33; --sonnet: #5f92f2; --sonnet-bg: #1b2842; --haiku: #18a690; --haiku-bg: #11302b; --fable: #c08a1e;
     --term-bg: #0a0c0f; --term-text: #d9dde2; --term-dim: #737b86;
     --shadow: none; --pop: 0 8px 28px rgba(0, 0, 0, .5);
     color-scheme: dark;
@@ -44,7 +44,7 @@
   --wait: #f2bd4d; --wait-bg: #36290b; --wait-line: #e6a823; --wait-dot: #e6a823;
   --bad: #ff8a8f; --bad-bg: #3b1518; --bad-row: #22141a; --bad-line: #f0545b; --bad-dot: #f0545b;
   --done: #a3a6c0; --done-bg: #212334; --done-dot: #6b6e86;
-  --opus: #cf62bd; --opus-bg: #3a1a33; --sonnet: #5f92f2; --sonnet-bg: #1b2842; --haiku: #18a690; --haiku-bg: #11302b;
+  --opus: #cf62bd; --opus-bg: #3a1a33; --sonnet: #5f92f2; --sonnet-bg: #1b2842; --haiku: #18a690; --haiku-bg: #11302b; --fable: #c08a1e;
   --term-bg: #0a0c0f; --term-text: #d9dde2; --term-dim: #737b86;
   --shadow: none; --pop: 0 8px 28px rgba(0, 0, 0, .5);
   color-scheme: dark;
@@ -166,7 +166,7 @@ tr:last-child td { border-bottom: 0; }
 .tw { overflow-x: auto; }
 .model { display: inline-flex; align-items: center; gap: 7px; font: 400 13px/1.2 var(--sans); color: var(--text); white-space: nowrap; }
 .model::before { content: ""; width: 9px; height: 9px; border-radius: 2px; background: var(--m, var(--data)); flex: none; }
-.model.opus { --m: var(--opus); } .model.sonnet { --m: var(--sonnet); } .model.haiku { --m: var(--haiku); } .model.other { --m: var(--faint); }
+.model.opus { --m: var(--opus); } .model.sonnet { --m: var(--sonnet); } .model.haiku { --m: var(--haiku); } .model.fable { --m: var(--fable); } .model.other { --m: var(--faint); }
 .tip { display: grid; gap: 4px; width: 212px; padding: 9px 12px; border-radius: 9px; background: var(--ink); color: var(--bg); font-size: 13px; box-shadow: var(--pop); }
 .tip b { font-weight: 600; }
 .tip .row { display: flex; justify-content: space-between; gap: 16px; font-family: var(--mono); }
@@ -178,7 +178,7 @@ tr:last-child td { border-bottom: 0; }
 .state.stalled, .state.error, .state.claim { color: var(--bad); background: var(--bad-bg); --c-dot: var(--bad-dot); }
 .state.done, .state.stopped { color: var(--done); background: var(--done-bg); --c-dot: var(--done-dot); }
 .av { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 600 13px/1 var(--sans); color: #fff; flex: none; }
-.av.opus { background: var(--opus); } .av.sonnet { background: var(--sonnet); } .av.haiku { background: var(--haiku); } .av.other { background: var(--faint); }
+.av.opus { background: var(--opus); } .av.sonnet { background: var(--sonnet); } .av.haiku { background: var(--haiku); } .av.fable { background: var(--fable); } .av.other { background: var(--faint); }
 .tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--border); }
 .tabs button { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; font: 500 14px/1 var(--sans); color: var(--muted); background: none; border: 0; border-bottom: 2px solid transparent; padding: 0 10px; cursor: pointer; }
 .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
@@ -458,7 +458,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .pipeline .lanes .nm small.bad { color: var(--bad); }
 .pipeline .lanes .lt { position: relative; min-height: 44px; border-bottom: 1px solid var(--line); }
 .pipeline .lbar { position: absolute; top: 14px; height: 16px; min-width: 3px; border-radius: 4px; background: var(--m); }
-.pipeline .lbar.opus { --m: var(--opus); } .pipeline .lbar.sonnet { --m: var(--sonnet); } .pipeline .lbar.haiku { --m: var(--haiku); } .pipeline .lbar.other { --m: var(--faint); }
+.pipeline .lbar.opus { --m: var(--opus); } .pipeline .lbar.sonnet { --m: var(--sonnet); } .pipeline .lbar.haiku { --m: var(--haiku); } .pipeline .lbar.fable { --m: var(--fable); } .pipeline .lbar.other { --m: var(--faint); }
 .pipeline .lbar.wait { top: 18px; height: 8px; opacity: .55; }
 .pipeline .lbar.stall { background: repeating-linear-gradient(45deg, var(--bad-dot) 0 6px, var(--bad-bg) 6px 12px); }
 .pipeline .lanes .ax { grid-column: 2; position: relative; height: 24px; }

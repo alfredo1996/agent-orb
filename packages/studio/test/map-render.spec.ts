@@ -237,7 +237,7 @@ describe('nowOn: who is on an issue, and its mark', () => {
   it('names the agent that needs you before one that works, and a working subagent before the main agent that waits on it', () => {
     expect(on(i409, SESSIONS)).toEqual({ who: { name: 'fixer', tone: 'sonnet' }, mark: 'wait' });
     expect(on(ALL.find((i) => i.number === 398)!, SESSIONS)).toEqual({ who: { name: 'reviewer', tone: 'opus' } });
-    expect(on(i409, [live('s-409', [agent('main', { model: 'claude-fable-5-1' })])])).toEqual({ who: { name: 'main', tone: 'other' } });
+    expect(on(i409, [live('s-409', [agent('main', { model: 'claude-fable-5-1' })])])).toEqual({ who: { name: 'main', tone: 'fable' } }); // #73: Fable's own colour
   });
 
   it('a stall comes before a wait, and both before ready; a session that ended, or that is not this issue\'s, marks nothing', () => {

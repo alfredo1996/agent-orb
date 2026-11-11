@@ -27,6 +27,7 @@ const IS_GENERIC = `(a.type IS NULL OR a.type IN (${GENERIC_SQL}))`;
 const IS_TYPED = `(a.type IS NOT NULL AND a.type <> 'main' AND NOT a.type IN (${GENERIC_SQL}))`;
 const cost = (when: string) => `sum(CASE WHEN ${when} THEN x.cost_usd ELSE 0 END)`;
 const FAMILY = (name: string) => `instr(lower(x.model), '${name}') > 0`;
+const FABLE = `(${FAMILY('fable')} OR ${FAMILY('mythos')})`; // #73: one family, as the model check ranks them
 
 // Every request with the agent that made it, the session and the project.
 const LIVE = 'FROM api_requests x JOIN turns t ON t.id = x.turn_id JOIN agents a ON a.id = t.agent_id JOIN sessions s ON s.id = a.session_id';
@@ -62,8 +63,8 @@ export function trends(app: FastifyInstance, { store }: { store: Store }) {
 
     const spent = all(store, `SELECT ${bucket} AS bucket,
         ${cost(IS_MAIN)} AS main, ${cost(IS_TYPED)} AS typed, ${cost(IS_GENERIC)} AS generic,
-        ${cost(FAMILY('opus'))} AS opus, ${cost(FAMILY('sonnet'))} AS sonnet, ${cost(FAMILY('haiku'))} AS haiku,
-        ${cost(`NOT (${FAMILY('opus')} OR ${FAMILY('sonnet')} OR ${FAMILY('haiku')})`)} AS other,
+        ${cost(FAMILY('opus'))} AS opus, ${cost(FABLE)} AS fable, ${cost(FAMILY('sonnet'))} AS sonnet, ${cost(FAMILY('haiku'))} AS haiku,
+        ${cost(`NOT (${FAMILY('opus')} OR ${FABLE} OR ${FAMILY('sonnet')} OR ${FAMILY('haiku')})`)} AS other,
         sum(x.input + x.output + x.cache_read + x.cache_creation) AS tokens, sum(x.cache_read) AS cacheRead,
         sum(x.input + x.cache_read + x.cache_creation) AS inputSide,
         count(DISTINCT ${day}) AS activeDays, count(*) FILTER (WHERE x.cost_usd IS NULL) > 0 AS costPartial
@@ -85,7 +86,7 @@ export function trends(app: FastifyInstance, { store }: { store: Store }) {
       files: JSON.parse(c.files), hashes: c.hashes ? JSON.parse(c.hashes) : [], day: dayOf(tz, c.ts) }));
 
     const buckets = new Map<string, Record<string, any>>();
-    const empty = { main: 0, typed: 0, generic: 0, opus: 0, sonnet: 0, haiku: 0, other: 0, tokens: 0, cacheRead: 0, inputSide: 0, activeDays: 0, prompts: 0, costPartial: false };
+    const empty = { main: 0, typed: 0, generic: 0, opus: 0, fable: 0, sonnet: 0, haiku: 0, other: 0, tokens: 0, cacheRead: 0, inputSide: 0, activeDays: 0, prompts: 0, costPartial: false };
     for (const b of spent) buckets.set(b.bucket, { ...empty, ...b, costPartial: Boolean(b.costPartial) });
     for (const p of prompts) buckets.set(p.bucket, { ...empty, ...buckets.get(p.bucket), bucket: p.bucket, prompts: p.prompts });
 

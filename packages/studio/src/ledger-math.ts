@@ -22,10 +22,10 @@ export const fillDays = (series: Bucket[], from: number, to: number): Bucket[] =
   dayKeys(from, to).map((k) => series.find((b) => b.bucket === k) ?? { bucket: k, tokens: 0, cost: 0, byModel: {} });
 
 export function families(byModel: Record<string, number>) {
-  const out = { opus: 0, sonnet: 0, haiku: 0, other: 0 };
+  const out = { opus: 0, sonnet: 0, haiku: 0, fable: 0, other: 0 };
   for (const [model, n] of Object.entries(byModel)) {
-    const f = /claude-(opus|sonnet|haiku)-/.exec(model)?.[1] as 'opus' | 'sonnet' | 'haiku' | undefined;
-    out[f ?? 'other'] += n;
+    const f = /claude-(opus|sonnet|haiku|fable|mythos)-/.exec(model)?.[1];
+    out[(f === 'mythos' ? 'fable' : f ?? 'other') as keyof typeof out] += n; // #73: Mythos is Fable's family
   }
   return out;
 }
@@ -67,9 +67,9 @@ export function moveBar(keyName: string, at: number, n: number) {
 /** The one bar in the tab order: the last one focused, else the busiest (`busy`, -1 when none), else the first; always one of the `n`. */
 export const tabStop = (last: number | undefined, busy: number, n: number) => Math.max(0, Math.min(last ?? busy, n - 1));
 
-export type Family = 'haiku' | 'sonnet' | 'opus' | 'other';
+export type Family = 'haiku' | 'sonnet' | 'opus' | 'fable' | 'other';
 /** Bottom to top. */
-export const STACK: Family[] = ['haiku', 'sonnet', 'opus', 'other'];
+export const STACK: Family[] = ['haiku', 'sonnet', 'opus', 'fable', 'other'];
 
 /**
  * One bar as stacked segments, bottom to top, in the order given, from the scale `y` (a value to its pixel row). Parts with nothing
