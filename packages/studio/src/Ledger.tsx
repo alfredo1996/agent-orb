@@ -167,9 +167,9 @@ function Ranked({ title, rows }: { title: string; rows: { key: string; name: Rea
 
 // Fifths of a 1-2-5 maximum land on round numbers (0, 10M, 20M … 50M).
 const TICKS = [0, 0.2, 0.4, 0.6, 0.8, 1];
-const COLOR: Record<Family, string> = { haiku: 'var(--haiku)', sonnet: 'var(--sonnet)', opus: 'var(--opus)', other: 'var(--faint)' };
-const NAME: Record<Family, string> = { opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku', other: 'Other' };
-const TOP_DOWN: Family[] = ['opus', 'sonnet', 'haiku', 'other']; // the legend, the tooltip, the table and the phone's bars (left to right) read as the stack looks
+const COLOR: Record<Family, string> = { haiku: 'var(--haiku)', sonnet: 'var(--sonnet)', opus: 'var(--opus)', fable: 'var(--fable)', other: 'var(--faint)' };
+const NAME: Record<Family, string> = { fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku', other: 'Other' };
+const TOP_DOWN: Family[] = ['fable', 'opus', 'sonnet', 'haiku', 'other']; // the legend, the tooltip, the table and the phone's bars (left to right) read as the stack looks
 const TIP_ID = 'ledger-tip';
 const UNIT_NAME = { day: 'Day', week: 'Week', month: 'Month' } as const;
 
@@ -186,7 +186,7 @@ export function Chart({ series, unit, onUnit, total }: { series: Bucket[]; unit:
   const label = (key: string) => bucketLabel(key, unit);
   const every = Math.max(1, Math.ceil(series.length / Math.floor((W - L - R) / 64))); // a label every 64 px at most
   const fam = series.map((b) => families(b.byModel));
-  const shown = TOP_DOWN.filter((k) => k !== 'other' || fam.some((f) => f.other > 0));
+  const shown = TOP_DOWN.filter((k) => (k !== 'other' && k !== 'fable') || fam.some((f) => f[k] > 0)); // Fable and Other only in a range that has them
   const h = at === undefined ? undefined : series[at];
   const hf = at === undefined ? undefined : fam[at];
 

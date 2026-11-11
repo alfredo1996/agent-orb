@@ -8,7 +8,7 @@ import { bucketLabel, dayKey, dayKeys, rangeOf, stackParts } from './ledger-math
 export type TrendUnit = 'week' | 'day';
 export type Split = 'who' | 'model';
 export type TBucket = {
-  bucket: string; main: number; typed: number; generic: number; opus: number; sonnet: number; haiku: number; other: number;
+  bucket: string; main: number; typed: number; generic: number; opus: number; fable: number; sonnet: number; haiku: number; other: number;
   tokens: number; cacheRead: number; inputSide: number; activeDays: number; prompts: number; costPartial: boolean;
 };
 export type Side = { days: number; cost: number; generic: number; typed: number; opus: number };
@@ -44,7 +44,7 @@ export function spanOf(unit: TrendUnit, now: Date) {
   return { from: first.getTime(), to: now.getTime() };
 }
 
-const zero = (bucket: string): TBucket => ({ bucket, main: 0, typed: 0, generic: 0, opus: 0, sonnet: 0, haiku: 0, other: 0, tokens: 0, cacheRead: 0, inputSide: 0, activeDays: 0, prompts: 0, costPartial: false });
+const zero = (bucket: string): TBucket => ({ bucket, main: 0, typed: 0, generic: 0, opus: 0, fable: 0, sonnet: 0, haiku: 0, other: 0, tokens: 0, cacheRead: 0, inputSide: 0, activeDays: 0, prompts: 0, costPartial: false });
 
 /** The API returns only buckets with data; the chart needs every one of the span, a bucket with nothing as zeros. */
 export function fillBuckets(buckets: TBucket[], unit: TrendUnit, from: number, to: number): TBucket[] {
@@ -73,7 +73,7 @@ export const axisMoney = (v: number) => (v >= 1000 ? `$${+(v / 1000).toFixed(1)}
 
 // ── Who spent, which model: the two ways to stack a bar ──────────────────────
 
-type PartKey = 'main' | 'typed' | 'generic' | 'opus' | 'sonnet' | 'haiku' | 'other';
+type PartKey = 'main' | 'typed' | 'generic' | 'opus' | 'fable' | 'sonnet' | 'haiku' | 'other';
 export type Part = { key: PartKey; name: string; long: string; color: string };
 /** Bottom to top; the legend, the tooltip and the table read in the same order. `long` is the legend's wording. */
 export const PARTS: Record<Split, Part[]> = {
@@ -84,6 +84,7 @@ export const PARTS: Record<Split, Part[]> = {
   ],
   model: [
     { key: 'opus', name: 'Opus', long: 'Opus', color: 'var(--opus)' },
+    { key: 'fable', name: 'Fable', long: 'Fable', color: 'var(--fable)' }, // #73: beside Opus, the other priciest family
     { key: 'sonnet', name: 'Sonnet', long: 'Sonnet', color: 'var(--sonnet)' },
     { key: 'haiku', name: 'Haiku', long: 'Haiku', color: 'var(--haiku)' },
     { key: 'other', name: 'Other', long: 'Other', color: 'var(--faint)' },

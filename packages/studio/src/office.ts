@@ -31,7 +31,7 @@ const DONE_STAYS_MS = 60_000; // "done: green check, leaves after a while"
 export type Seat = { key: string; session: string; agent: string; x: number; y: number; lead: boolean; model: string; activity: Activity; label: string; caption: string; state: LiveAgent['state'] };
 export type Room = { project: string; width: number; height: number; tokens: number; cost: number; costPartial: boolean; contextPercent?: number; seats: Seat[]; lines: { from: string; to: string }[] };
 
-const family = (m?: string) => /opus|sonnet|haiku/.exec(m ?? '')?.[0] ?? 'other';
+const family = (m?: string) => /opus|sonnet|haiku|fable|mythos/.exec(m ?? '')?.[0]?.replace('mythos', 'fable') ?? 'other'; // #73: Mythos is Fable's colour
 const short = (ms: number) => { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m` : `${Math.floor(s / 3600)}h`; };
 
 const toolName = (t: string) => t.replace(/^mcp__.+?__/, ''); // mcp__Claude_Browser__navigate → navigate

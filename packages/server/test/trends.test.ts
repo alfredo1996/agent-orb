@@ -169,6 +169,18 @@ describe('GET /api/trends: buckets', () => {
     expect(w2.activeDays).toBe(4); // 19, 20, 21 and 22 Oct: distinct days over every project, not a sum per project
   });
 
+  it('#73: Fable and Mythos are a family of their own, not "other" (it adds a project, after the tests that read every project\'s buckets)', async () => {
+    const FABLED = { cwd: '/Users/a/fabled', name: 'fabled', git_remote: 'github.com/o/fabled' };
+    const reqs = [['claude-fable-5-2', u(100, 10_000)], ['claude-mythos-5-1', u(100, 10_000)], [OPUS, u(100, 10_000)]] as const;
+    write(reqs.map(([model, usage], i) => ev(FABLED, 'f-1', iso('2026-11-02T10:00:00Z') + i, 'turn.step', { model, usage, stop_reason: 'end_turn', tool_use_ids: [] }, { turn_id: `t-f-${i}` })));
+    const { body } = await get({ project: 'fabled', unit: 'week', from: iso('2026-11-01T23:00:00Z'), to: iso('2026-11-08T23:00:00Z'), tz: 'Europe/Rome' });
+    const [b] = body.buckets;
+    close(b.fable, costUsd('claude-fable-5-2', u(100, 10_000))! + costUsd('claude-mythos-5-1', u(100, 10_000))!);
+    close(b.opus, costUsd(OPUS, u(100, 10_000))!);
+    expect(b.other).toBe(0);
+    close(b.main + b.typed + b.generic, b.opus + b.fable + b.sonnet + b.haiku + b.other); // the two splits still agree
+  });
+
   it('nothing for a project with no data, and 400 on a bad query', async () => {
     expect((await get({ ...view, project: 'nobody' })).body).toEqual({ buckets: [], changes: [] });
     expect((await get({ ...view, to: view.from })).status).toBe(400);
