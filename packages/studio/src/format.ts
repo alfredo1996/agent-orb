@@ -42,10 +42,13 @@ export const ago = (ms: number) => {
   return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`;
 };
 
-/** `claude-opus-5-5` → Opus 5.5 with its badge colour; anything else as given. */
+/**
+ * `claude-opus-5-5` → Opus 5.5 with its badge colour, `claude-fable-5` → Fable 5; anything else as given. A date after the version (`-20260101`) is not a minor version.
+ * ponytail (#71): Fable and Mythos take the "Other" colour, as the Ledger counts them; a colour of their own is a design change across the Ledger, Pipeline and Office.
+ */
 export const modelLabel = (id?: string) => {
-  const m = id && /claude-(opus|sonnet|haiku)-(\d+)-(\d+)/.exec(id);
-  if (m) return { text: `${m[1]![0]!.toUpperCase()}${m[1]!.slice(1)} ${m[2]}.${m[3]}`, tone: m[1]! };
+  const m = id && /claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2}))?(?!\d)/.exec(id);
+  if (m) return { text: `${m[1]![0]!.toUpperCase()}${m[1]!.slice(1)} ${m[2]}${m[3] ? `.${m[3]}` : ''}`, tone: /fable|mythos/.test(m[1]!) ? 'other' : m[1]! };
   return { text: id || '—', tone: '' };
 };
 

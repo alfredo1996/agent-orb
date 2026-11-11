@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite';
+import type { Usage } from '@agent-orb/shared';
+import { costUsd } from '../cost.ts';
 
 // The history store (#81): one SQLite file beside the text store (content-store.ts), the graph's facts as tables (schema.sql).
 export type Store = DatabaseSync;
@@ -28,7 +30,27 @@ export function openStore(path: string): Store {
       if (!/duplicate column name/i.test(String(e))) throw e;
     }
   }
+  priceUnpriced(db);
   return db;
+}
+
+/**
+ * #71: a request is priced once, when it is written, so one on a model pricing.json did not know yet was stored with no cost. Once the table knows the model,
+ * the next open prices it; a stored price is never worked out again. Every open reads only the unpriced rows (the partial index `requests_unpriced`), not the table.
+ */
+function priceUnpriced(db: Store) {
+  const priced = all(db, 'SELECT id, model, input, output, cache_read, cache_creation FROM api_requests WHERE cost_usd IS NULL')
+    .map((r) => ({ id: r.id, usd: costUsd(r.model, r as Usage) }))
+    .filter((r) => r.usd !== null);
+  if (!priced.length) return;
+  db.exec('BEGIN IMMEDIATE'); // the import is a second process on this file
+  try {
+    for (const r of priced) run(db, 'UPDATE api_requests SET cost_usd = :usd WHERE id = :id AND cost_usd IS NULL', r);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 // Columns added after a file could exist (#103: what a PR was counted from, and when a session linked it; #27: when the open PRs were read; #28: a session's branch, and when a PR opened and the issue it closes; #29: the last event of a session; #32: an open issue's title and when it left the list, and the time of a findings ref's latest reviewer report; #66: the issues an open issue mentions); schema.sql has them for a new file.
