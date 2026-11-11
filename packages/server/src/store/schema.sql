@@ -150,6 +150,8 @@ CREATE INDEX IF NOT EXISTS turns_agent ON turns (agent_id);
 CREATE INDEX IF NOT EXISTS prompts_session ON prompts (session_id);
 CREATE INDEX IF NOT EXISTS requests_turn ON api_requests (turn_id);
 CREATE INDEX IF NOT EXISTS requests_ts ON api_requests (ts);
+-- #71: the requests stored with no price (a model pricing.json did not know yet), which openStore prices again; few, so every open reads only them.
+CREATE INDEX IF NOT EXISTS requests_unpriced ON api_requests (model) WHERE cost_usd IS NULL;
 CREATE INDEX IF NOT EXISTS calls_turn_success ON tool_calls (turn_id, success);
 CREATE INDEX IF NOT EXISTS calls_failed ON tool_calls (turn_id) WHERE success = 0;
 CREATE INDEX IF NOT EXISTS calls_tests ON tool_calls (turn_id) WHERE command_class = 'test';
