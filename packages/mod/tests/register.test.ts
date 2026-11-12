@@ -1846,6 +1846,43 @@ test('v0.4 slice 6: when a PR leaves the open list the merged PRs are read at on
   expect(openSent(w)[2]!.data.prs).toEqual([])
 })
 
+// #62: a PR the session opened and that merged before any read saw it open was never in a read's list, so nothing was missing and the merged list waited for the next session start.
+// The session sent its link, and that is enough: the next read treats it as a PR the last read held.
+const MERGED_417 = JSON.stringify([{ additions: 3, deletions: 0, headRefName: 'fix/411-banner', mergedAt: '2026-11-05T09:01:00Z', number: 417, title: 'Show the banner', files: [{ path: 'b.ts', additions: 3, deletions: 0 }] }])
+
+test('#62: a PR the session linked that merged before the next read is read for at that read, once, and sent before the open list', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  printing(on, { toolu_1: { text: `Creating pull request for fix/411-banner into dev in o/r\n\n${PR_URL(417)}\n` } })
+  const w = world(on)
+  w.gh.open = '[]'
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(1) // the merged list at session start
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_1', command: 'gh pr create' }) // opened, and merged seconds later
+  w.gh.out = MERGED_417
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(2)
+  expect(sentKinds(w)).toEqual(['project.open_prs', 'project.prs', 'project.open_prs'])
+  expect(prsSent(w)[0]!.data.prs.map((p: any) => p.number)).toEqual([417])
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(2) // once: the read after it misses nothing
+})
+
+test('#62: a PR the session linked that is still open at the next read is found open: no read of the merged list', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  printing(on, { toolu_1: { text: PR_URL(416) } })
+  const w = world(on)
+  w.gh.open = '[]'
+  await boot($)
+  await w.clock.advance(2_000)
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_1', command: 'gh pr create' })
+  w.gh.open = OPEN_LIST // PR 416, open
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(1)
+  expect(sentKinds(w)).toEqual(['project.open_prs', 'project.open_prs'])
+})
+
 test('v0.4 slice 6: a PR that left the list without merging (closed) is read for, finds nothing, and the open list is sent all the same', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
   const w = world(on)
   w.gh.open = OPEN_LIST

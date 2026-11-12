@@ -342,6 +342,7 @@ async function sendPrs($: $, excluded: boolean) {
  * event, from a second gh call that, failing, leaves them out. #66: that call reads each issue's body too, for the issues it mentions: their numbers leave, the body does not.
  * #32: a PR the last read sent and this one lacks has merged or been closed, and the merged list says which; so that is read right here (the existing read, `sendPrs`) and sent before the open list, and
  * a merge reaches the server with the list that no longer holds the PR, not at the next session start. If gh cannot answer, nothing is sent this time: the server keeps what it had, and the next read tries both.
+ * #62: a PR the session printed the URL of counts as held too (the link adds it to `openNumbers`), so one that opened and merged between two reads is read for at the next.
  * ponytail: every session in a repo reads it; three sessions in one repo ask three times in 5 minutes. Share the last read through `$.store` if GitHub's rate limit is ever met.
  */
 async function readOpenPrs($: $) {
@@ -780,6 +781,9 @@ export const register: Register = (on, options) => {
         for (const n of prNumbersIn(r.text, c.project.git_remote)) {
           if (prLinked.has(n)) continue
           prLinked.add(n)
+          // #62: and the next open read treats it as a PR the last read held, so one that opened and merged between two reads is missing from it and the merged list is read then.
+          // ponytail: a link sent while a read is waiting on gh is overwritten by that read's list; the PR then waits for the next session start. Keep links added mid-read if that is ever seen.
+          openNumbers.add(n)
           push($, build.sessionPr(c, n), { agent: label(k), kind: 'session.pr', detail: `#${n}` })
         }
       }
