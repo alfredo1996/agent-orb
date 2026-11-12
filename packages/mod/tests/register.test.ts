@@ -1690,7 +1690,7 @@ const OPEN_LIST = JSON.stringify([{
 }])
 const openSent = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'project.open_prs')
 const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']
-const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title,body']
+const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title,createdAt,body']
 
 test('v0.4 slice 1: the open PRs are read in the checkout at session start and every 5 minutes after, and no comment text, title or commit message leaves', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
   const w = world(on)
@@ -1786,7 +1786,7 @@ test('v0.5 slice 1: bodies too long for one read (gh\'s answer cut at 4 MiB) are
   w.gh.issuesCut = true
   await boot($)
   await w.clock.advance(2_000)
-  expect(w.gh.issueCalls.map((c) => c.argv.at(-1))).toEqual(['number,milestone,title,body', 'number,milestone,title'])
+  expect(w.gh.issueCalls.map((c) => c.argv.at(-1))).toEqual(['number,milestone,title,createdAt,body', 'number,milestone,title,createdAt'])
   expect(openSent(w).map((e) => e.data.issues)).toEqual([[{ number: 409, milestone: 'v0.4 Factory' }, { number: 412 }]])
 })
 
