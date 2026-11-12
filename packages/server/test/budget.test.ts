@@ -26,6 +26,8 @@ const spend = (session: string, ts: number, usd: number, model = SONNET, project
 const link = (session: string, ts: number, number: number) => ev(session, ts, 'session.pr', { number });
 const pr = (number: number, over: object = {}) => ({ number, head: `feat/${number}`, head_oid: 'a'.repeat(40), merge_state: 'CLEAN', checks: [], bots: [], ...over });
 const read = (ts: number, prs: object[], issues?: object[], project: Project = MOBILE) => ev('reader', ts, 'project.open_prs', { prs, ...(issues ? { issues } : {}) }, {}, project);
+/** The merged list the plugin reads: a PR's head and when it merged, never the issue it closes. It is the only read that stores a PR's head. */
+const merged = (ts: number, prs: object[]) => ev('reader', ts, 'project.prs', { prs: prs.map((p) => ({ additions: 1, deletions: 1, ...p })) });
 
 let app: ReturnType<typeof buildApp>;
 let NOW = NOW0;
@@ -213,6 +215,27 @@ describe('the budget: a default per milestone, an override per issue, no default
     expect((await put({ project: 'nobody', issue: 409, usd: 5 })).status).toBe(404);
     expect((await put({ project: 'mobile-app', issue: 409, usd: 5 }, { origin: 'https://evil.example' })).status).toBe(403);
     expect((await issue(409))).toBeUndefined(); // none of that was saved
+  });
+});
+
+describe('GET /api/budget: a PR merged before any read saw it open (#63)', () => {
+  it('its head names the issue: the window up to its opening is that issue\'s, not "not on an issue"', async () => {
+    await send(start('s-1', 'dev'), spend('s-1', T0 + MIN, 2), link('s-1', T0 + 10 * MIN, 48), spend('s-1', T0 + 12 * MIN, 3),
+      merged(T0 + 15 * MIN, [{ number: 48, merged_at: T0 + 10 * MIN, head: 'fix/90-deploy-hardening' }]));
+    expect(await issue(90)).toMatchObject({ usd: 2, whole: 0, windows: 2 });
+    expect((await budget()).notOnIssue.usd).toBe(3); // after the PR: no issue
+  });
+
+  it('an issue the read stored wins over the number the head names: the head is read only when the row has none', async () => {
+    await send(start('s-1', 'dev'), spend('s-1', T0 + MIN, 2), link('s-1', T0 + 10 * MIN, 48), read(T0 + 11 * MIN, [pr(48, { head: 'fix/90-deploy-hardening', issue: 409 })]),
+      merged(T0 + 15 * MIN, [{ number: 48, merged_at: T0 + 12 * MIN, head: 'fix/90-deploy-hardening' }]));
+    expect(((await budget()).issues as IssueCost[]).map((i) => [i.number, i.usd])).toEqual([[409, 2]]);
+  });
+
+  it('a PR with no issue whose head names none stays on no issue', async () => {
+    await send(start('s-1', 'dev'), spend('s-1', T0 + MIN, 2), link('s-1', T0 + 10 * MIN, 57), merged(T0 + 15 * MIN, [{ number: 57, merged_at: T0 + 10 * MIN, head: 'chore/release-0.4.1' }]),
+      spend('s-1', T0 + 20 * MIN, 3), link('s-1', T0 + 25 * MIN, 58)); // and a PR no read has given a head
+    expect(await budget()).toMatchObject({ issues: [], notOnIssue: { usd: 5 } });
   });
 });
 

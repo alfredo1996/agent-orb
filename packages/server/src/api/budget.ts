@@ -20,9 +20,12 @@ const Put = z.union([
 /** A PR the session linked: when it opened, and the issue it closes (none: it closes no issue). */
 export type Link = { at: number; issue: number | null };
 
-/** The PRs a session linked, by opening time: the PR's own `created_at` where the read gave one, else when the session first linked it. The board (#32) reaches issues through the same list. */
-export const sessionLinks = (store: Store, id: string) => all(store, `SELECT coalesce(r.created_at, sp.ts) AS at, r.issue AS issue FROM session_prs sp JOIN pull_requests r ON r.id = sp.pr_id
-  WHERE sp.session_id = :id AND coalesce(r.created_at, sp.ts) IS NOT NULL ORDER BY at`, { id }) as Link[];
+/**
+ * The PRs a session linked, by opening time: the PR's own `created_at` where the read gave one, else when the session first linked it. The board (#32) and the Map (#66) reach issues through the same list.
+ * A PR's issue is the one the open-PR read stored, else the number its head names (#63): a PR merged before any read saw it open has only the merged list's head, as GET /api/board's PR map reads it.
+ */
+export const sessionLinks = (store: Store, id: string): Link[] => all(store, `SELECT coalesce(r.created_at, sp.ts) AS at, r.issue AS issue, r.head AS head FROM session_prs sp JOIN pull_requests r ON r.id = sp.pr_id
+  WHERE sp.session_id = :id AND coalesce(r.created_at, sp.ts) IS NOT NULL ORDER BY at`, { id }).map((r) => ({ at: r.at, issue: r.issue ?? branchIssue(r.head) }));
 
 /**
  * The issue a request belongs to in a session that is on no issue branch: the first PR the session opened at or after it (the PR's window runs from the session's previous PR up to
