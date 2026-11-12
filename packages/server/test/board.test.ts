@@ -215,6 +215,12 @@ describe('GET /api/board: Merged, and what the store knows of it', () => {
     expect((await board()).issues.map((i) => i.number)).toEqual([403]);
   });
 
+  it('a session on the integration branch reaches the issue through such a PR, by the issue its head names (#63)', async () => {
+    await send(start('s-dev', 'dev'), write('s-dev', T0 + MIN), link('s-dev', T0 + 5 * MIN, 405), read(NOW0 - MIN, [], issues(403)),
+      merged(NOW0 - 5 * MIN, [{ number: 405, merged_at: T0 + 9 * MIN, head: 'fix/403-banner' }]));
+    expect(await row(403)).toMatchObject({ stage: 'merged', sessionCount: 1, sessions: [{ id: 's-dev' }] });
+  });
+
   it('a PR that left the open list and is not known merged is not Merged, and has no Gate or Ready: it may have been closed', async () => {
     NOW = T0 + 5 * MIN;
     await send(start('s-409', 'fix/409-retry'), write('s-409', T0 + MIN), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }), gate(T0 + 3 * MIN, 'pass'),
