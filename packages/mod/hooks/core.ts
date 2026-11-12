@@ -840,7 +840,7 @@ export function parseFindings(report: string, text: (s: string) => string | unde
 export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };
 // created_at is when the PR opened and issue the one it closes (#28): the body is read for `Closes #N` and goes no further.
 export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; created_at?: number; issue?: number; checks: Check[]; bots: { author: string; at: number }[] };
-export type OpenIssue = { number: number; milestone?: string; title?: string; mentions?: number[] };
+export type OpenIssue = { number: number; milestone?: string; title?: string; created_at?: number; mentions?: number[] };
 // gh's `commits` asks GitHub for 100 commits of 100 authors a PR, and GitHub refuses a query of more than 500,000 nodes before running it: 50 PRs fail, on every repo.
 const OPEN_PRS_MAX = 40;
 const OPEN_PRS_BUDGET = 250_000; // characters of JSON, as PRS_BUDGET: 100 PRs of 200 checks would pass the server's 1 MB request, and a refused event is lost
@@ -850,9 +850,10 @@ export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', St
 /**
  * The open issues' numbers and milestones (#28): what a milestone's budget default is matched to. #32: and their titles, which only name a row of the board and leave only with Content on full.
  * #66: and their bodies, read here for the issues each mentions and sent no further. gh lists at most 200 here; a read keeps at most 500.
+ * #69: and when each was opened, so a merged PR whose branch names an issue opened after it merged is not taken for that issue's.
  * ponytail: 200 bodies are read every 5 minutes. If that read turns slow, read bodies only for issues updated since the last read.
  */
-const ISSUE_FIELDS = 'number,milestone,title';
+const ISSUE_FIELDS = 'number,milestone,title,createdAt';
 export const openIssuesArgv = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', `${ISSUE_FIELDS},body`];
 /** The same read without the bodies, for when they pass what one read returns (4 MiB): the milestones and titles still arrive, with no mentions that time. */
 export const openIssuesBareArgv = [...openIssuesArgv.slice(0, -1), ISSUE_FIELDS];
@@ -955,7 +956,8 @@ export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined
  * The open issues in `openIssuesArgv`'s output: a number and its milestone's title, and (#32) the issue's own title when `text` gives it, never a body. `milestones: false` (an excluded
  * project) leaves the milestone out: a title is a name. `text` decides whether the issue's title travels: the plugin passes its Content helper (masked, and nothing unless Content is on full);
  * without it, none does. #66: `mentions` are the issues its body names as `#N`, numbers alone, for every project (an excluded one too, as its own number travels); an
- * issue whose output has a body carries the key always, an empty list when it names none, and one with no body (the read asked again without `body`) has no such key: the server keeps what it had. Nothing when the output is not gh's list; an empty list is a read of no open issues. At most 500.
+ * issue whose output has a body carries the key always, an empty list when it names none, and one with no body (the read asked again without `body`) has no such key: the server keeps what it had.
+ * #69: `created_at` is when the issue was opened, in milliseconds, for every project; an issue gh gave no readable time for has none. Nothing when the output is not gh's list; an empty list is a read of no open issues. At most 500.
  */
 export function parseOpenIssues(stdout: string, milestones = true, text?: (s: string) => string | undefined): OpenIssue[] | undefined {
   let list: unknown;
@@ -971,7 +973,8 @@ export function parseOpenIssues(stdout: string, milestones = true, text?: (s: st
     const milestone = milestones && typeof i.milestone?.title === 'string' && i.milestone.title ? i.milestone.title.slice(0, 200) : undefined;
     const title = text && typeof i.title === 'string' && i.title ? text(i.title)?.slice(0, 200) : undefined;
     const mentions = mentionsOf(i.body, i.number);
-    issues.push({ number: i.number, ...(milestone ? { milestone } : {}), ...(title ? { title } : {}), ...(mentions ? { mentions } : {}) });
+    const opened = typeof i.createdAt === 'string' ? Date.parse(i.createdAt) : NaN;
+    issues.push({ number: i.number, ...(milestone ? { milestone } : {}), ...(title ? { title } : {}), ...(opened > 0 ? { created_at: opened } : {}), ...(mentions ? { mentions } : {}) });
     if (issues.length >= OPEN_ISSUES_MAX) break;
   }
   return issues;

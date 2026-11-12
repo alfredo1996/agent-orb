@@ -68,9 +68,9 @@ describe('the open-PR read, for cost', () => {
 });
 
 describe('the open issues\' milestones', () => {
-  it('asks gh for the open issues\' numbers, milestones, titles and (#66) bodies; and for the same without the bodies, when they are too much for one read', () => {
-    expect(openIssuesArgv).toEqual(['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title,body']);
-    expect(openIssuesBareArgv).toEqual(['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title']);
+  it('asks gh for the open issues\' numbers, milestones, titles, (#69) opening times and (#66) bodies; and for the same without the bodies, when they are too much for one read', () => {
+    expect(openIssuesArgv).toEqual(['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title,createdAt,body']);
+    expect(openIssuesBareArgv).toEqual(['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title,createdAt']);
   });
 
   const LIST = JSON.stringify([
@@ -94,6 +94,12 @@ describe('the open issues\' milestones', () => {
     const [a, b, c] = parseOpenIssues(long, true, (s) => s.toUpperCase())!;
     expect(a!.title).toBe('X'.repeat(200));
     expect([b, c]).toEqual([{ number: 2 }, { number: 3 }]);
+  });
+
+  it('#69: an issue\'s opening time travels as created_at in milliseconds, for an excluded project too; one gh gave none, or none that reads as a time, is still read without it', () => {
+    const list = JSON.stringify([{ number: 62, createdAt: '2026-11-10T11:53:28Z' }, { number: 63 }, { number: 64, createdAt: 'yesterday' }, { number: 65, createdAt: 1 }]);
+    expect(parseOpenIssues(list)).toEqual([{ number: 62, created_at: Date.parse('2026-11-10T11:53:28Z') }, { number: 63 }, { number: 64 }, { number: 65 }]);
+    expect(parseOpenIssues(list, false)![0]).toEqual({ number: 62, created_at: 1_794_311_608_000 });
   });
 
   it('an excluded project sends numbers only: a milestone\'s title is a name', () => {

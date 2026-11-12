@@ -241,9 +241,11 @@ function writeRows(db: Store, ev: Event[], source: Source) {
       for (const i of e.data.issues) {
         // #66: the issues its text mentions. A list (even an empty one: the body was read and names none, stored as null) replaces the row's; no key means the body was not read (the plugin asked
         // again without bodies, or is from before #66), and the row keeps what it had. A new row with none is null.
-        run(db, `INSERT INTO open_issues (project_id, number, milestone, title, gone_at, mentions) VALUES (:project, :number, :milestone, :title, NULL, :mentions)
-                 ON CONFLICT (project_id, number) DO UPDATE SET milestone = excluded.milestone, title = excluded.title, gone_at = NULL, mentions = CASE WHEN :has_mentions THEN excluded.mentions ELSE open_issues.mentions END`,
-        { project, number: i.number, milestone: i.milestone, title: i.title, mentions: i.mentions?.length ? JSON.stringify(i.mentions) : null, has_mentions: i.mentions ? 1 : 0 });
+        // #69: when it was opened, kept when a read lacks it (a plugin before #69), as a PR's created_at is.
+        run(db, `INSERT INTO open_issues (project_id, number, milestone, title, gone_at, mentions, created_at) VALUES (:project, :number, :milestone, :title, NULL, :mentions, :created_at)
+                 ON CONFLICT (project_id, number) DO UPDATE SET milestone = excluded.milestone, title = excluded.title, gone_at = NULL, mentions = CASE WHEN :has_mentions THEN excluded.mentions ELSE open_issues.mentions END,
+                   created_at = coalesce(excluded.created_at, open_issues.created_at)`,
+        { project, number: i.number, milestone: i.milestone, title: i.title, mentions: i.mentions?.length ? JSON.stringify(i.mentions) : null, has_mentions: i.mentions ? 1 : 0, created_at: i.created_at });
       }
       // A title travels only with Content on full: a read of issues that carries none (Content off, or an excluded project) clears the closed rows' titles too, as it just cleared the open ones'.
       // ponytail: a read of no issues at all says nothing either way (Content on full sends the same), so the issue that just closed keeps its title until a read of others carries none.
