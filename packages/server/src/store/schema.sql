@@ -123,7 +123,8 @@ CREATE TABLE IF NOT EXISTS finding_reports (project_id TEXT NOT NULL, ref TEXT N
 -- Null: it is in the last read. A later read that lists the issue again (reopened) clears it. ponytail: the closed rows are never pruned (a few a week); a DELETE of the old ones if a project ever closes thousands.
 -- mentions (#66) is the issues its text names as `#N`, a JSON array of numbers the plugin found on the machine (at most 20; the text itself is never sent): a read that carries the key sets it with the row (an empty list, the body read and naming none, is stored as null), and a read
 -- without the key (the body was not read: the plugin asked again without bodies, or is from before #66) leaves what the row had. A new row with none is null. GET /api/links draws the ones between two issues the board shows.
-CREATE TABLE IF NOT EXISTS open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, title TEXT, gone_at INTEGER, mentions TEXT, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
+-- created_at (#69) is when the issue was opened, as gh gives it; a read without it (a plugin before #69) leaves what the row had. Null: never read (an issue closed before #69, or only an older plugin read it).
+CREATE TABLE IF NOT EXISTS open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, title TEXT, gone_at INTEGER, mentions TEXT, created_at INTEGER, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS budgets (project TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, usd REAL NOT NULL, PRIMARY KEY (project, kind, key)) WITHOUT ROWID;
 -- A test run's result per project and commit, from a run on a clean tree (#34; 7 to 64 hex characters, matched against a PR's head by prefix): the latest wins.
 CREATE TABLE IF NOT EXISTS gates (project_id TEXT NOT NULL, commit_sha TEXT NOT NULL, result TEXT NOT NULL, ts INTEGER NOT NULL, PRIMARY KEY (project_id, commit_sha)) WITHOUT ROWID;

@@ -232,6 +232,14 @@ describe('GET /api/budget: a PR merged before any read saw it open (#63)', () =>
     expect(((await budget()).issues as IssueCost[]).map((i) => [i.number, i.usd])).toEqual([[409, 2]]);
   });
 
+  it('a PR that merged before the issue its head names was opened is not that issue\'s (#69)', async () => {
+    const DAY = 24 * 60 * MIN;
+    await send(start('s-1', 'dev'), spend('s-1', T0 + MIN, 2), link('s-1', T0 + 10 * MIN, 71), merged(T0 + 15 * MIN, [{ number: 71, merged_at: T0 + 10 * MIN, head: 'fix/62-host-check' }]),
+      read(T0 + 2 * DAY, [], [{ number: 62, milestone: 'v0.4.2', created_at: T0 + DAY }]));
+    expect(usd(await issue(62))).toBe(0); // listed, as an open issue is, with nothing spent
+    expect((await budget()).notOnIssue.usd).toBe(2);
+  });
+
   it('a PR with no issue whose head names none stays on no issue', async () => {
     await send(start('s-1', 'dev'), spend('s-1', T0 + MIN, 2), link('s-1', T0 + 10 * MIN, 57), merged(T0 + 15 * MIN, [{ number: 57, merged_at: T0 + 10 * MIN, head: 'chore/release-0.4.1' }]),
       spend('s-1', T0 + 20 * MIN, 3), link('s-1', T0 + 25 * MIN, 58)); // and a PR no read has given a head

@@ -200,6 +200,40 @@ describe('GET /api/board: the stage of each issue, from what the agents did', ()
   });
 });
 
+describe('GET /api/board: a merged PR whose branch names an issue opened after it merged (#69)', () => {
+  // A PR of an older numbering (a renumbered repository, or a branch such as `fix/404-page`): its branch names 62, its row has no issue, and it merged before issue #62 was opened.
+  // A session on the integration branch linked it. Measured on the real history: PR 71, head `fix/62-host-check`, merged 26 Oct; #62 opened 10 Nov.
+  const MERGED = Date.parse('2026-10-26T08:34:01Z');
+  const OPENED = Date.parse('2026-11-04T11:53:28Z');
+  const old = () => [start('s-old', 'dev', MERGED - 30 * MIN), write('s-old', MERGED - 20 * MIN), link('s-old', MERGED - 10 * MIN, 71),
+    merged(NOW0 - 5 * MIN, [{ number: 71, merged_at: MERGED, head: 'fix/62-host-check' }])];
+
+  it('the issue is Queued, with no PR and no session: the PR merged before the issue was opened', async () => {
+    await send(old(), read(NOW0 - MIN, [], [{ number: 62, milestone: M, created_at: OPENED }]));
+    expect(await row(62)).toMatchObject({ stage: 'queued', pr: null, sessionCount: 0 });
+  });
+
+  it('a later read with no opening time keeps the one stored', async () => {
+    await send(old(), read(NOW0 - 2 * MIN, [], [{ number: 62, milestone: M, created_at: OPENED }]), read(NOW0 - MIN, [], [{ number: 62, milestone: M }]));
+    expect(await row(62)).toMatchObject({ stage: 'queued', pr: null, sessionCount: 0 });
+  });
+
+  it('an issue opened before the PR merged has it as its own: Merged, with the session', async () => {
+    await send(old(), read(NOW0 - MIN, [], [{ number: 62, milestone: M, created_at: MERGED - DAY }]));
+    expect(await row(62)).toMatchObject({ stage: 'merged', pr: { number: 71, merged: true }, sessionCount: 1 });
+  });
+
+  it('an issue with no opening time (closed before it was read, or sent by an older plugin) reads as before: Merged', async () => {
+    await send(old(), read(NOW0 - MIN, [], [{ number: 62, milestone: M }]));
+    expect(await row(62)).toMatchObject({ stage: 'merged', pr: { number: 71, merged: true }, sessionCount: 1 });
+  });
+
+  it('the time is checked only for a PR reached by its branch: one whose read stored the issue keeps it', async () => {
+    await send(old(), read(MERGED - MIN, [pr(71, { head: 'fix/62-host-check', issue: 62 })]), read(NOW0 - MIN, [], [{ number: 62, milestone: M, created_at: OPENED }]));
+    expect(await row(62)).toMatchObject({ stage: 'merged', pr: { number: 71, merged: true }, sessionCount: 1 });
+  });
+});
+
 describe('GET /api/board: Merged, and what the store knows of it', () => {
   it('the store knows a merge from the merged list the plugin reads (project.prs): the issue is Merged, with no readiness to give', async () => {
     await send(start('s-403', 'fix/403-banner'), write('s-403', T0 + MIN), read(T0 + 5 * MIN, [pr(405, { head: 'fix/403-banner', issue: 403 })], issues(403)));

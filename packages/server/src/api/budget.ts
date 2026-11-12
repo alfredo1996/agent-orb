@@ -21,11 +21,20 @@ const Put = z.union([
 export type Link = { at: number; issue: number | null };
 
 /**
- * The PRs a session linked, by opening time: the PR's own `created_at` where the read gave one, else when the session first linked it. The board (#32) and the Map (#66) reach issues through the same list.
- * A PR's issue is the one the open-PR read stored, else the number its head names (#63): a PR merged before any read saw it open has only the merged list's head, as GET /api/board's PR map reads it.
+ * The issue a PR is for: the one the open-PR read stored, else (#63) the number its head names, which only the merged list gives, so a PR merged before any read saw it open still has one. #69: not
+ * when that issue was opened after the PR merged: the branch is of an older numbering (a renumbered repository) or named for something else (`fix/404-page`). An issue whose opening was never read
+ * (closed before #69, or read only by an older plugin) is taken at the branch's word. The cost windows, the board's PR map and GET /api/links all reach a PR's issue through this one rule.
  */
-export const sessionLinks = (store: Store, id: string): Link[] => all(store, `SELECT coalesce(r.created_at, sp.ts) AS at, r.issue AS issue, r.head AS head FROM session_prs sp JOIN pull_requests r ON r.id = sp.pr_id
-  WHERE sp.session_id = :id AND coalesce(r.created_at, sp.ts) IS NOT NULL ORDER BY at`, { id }).map((r) => ({ at: r.at, issue: r.issue ?? branchIssue(r.head) }));
+export function prIssue(issue: number | null, head: string | null, mergedAt: number | null, open: Map<number, OpenIssue>): number | null {
+  if (issue !== null) return issue;
+  const n = branchIssue(head);
+  const opened = n === null ? null : (open.get(n)?.openedAt ?? null);
+  return opened !== null && mergedAt !== null && opened > mergedAt ? null : n;
+}
+
+/** The PRs a session linked, by opening time: the PR's own `created_at` where the read gave one, else when the session first linked it. The board (#32) and the Map (#66) reach issues through the same list. */
+export const sessionLinks = (store: Store, id: string, open: Map<number, OpenIssue>): Link[] => all(store, `SELECT coalesce(r.created_at, sp.ts) AS at, r.issue AS issue, r.head AS head, r.merged_at AS mergedAt
+  FROM session_prs sp JOIN pull_requests r ON r.id = sp.pr_id WHERE sp.session_id = :id AND coalesce(r.created_at, sp.ts) IS NOT NULL ORDER BY at`, { id }).map((r) => ({ at: r.at, issue: prIssue(r.issue, r.head, r.mergedAt, open) }));
 
 /**
  * The issue a request belongs to in a session that is on no issue branch: the first PR the session opened at or after it (the PR's window runs from the session's previous PR up to
@@ -39,9 +48,9 @@ export function windowIssue(links: Link[], ts: number): number | null {
 
 /**
  * An issue as the last reads left it. `goneAt` is null while the plugin's read lists it as open, else when it left the list (closed, or past gh's limit of 200): its milestone and title are kept (#32).
- * `mentions` (#66) is the issues its text names, as the writer stored them: a JSON array of numbers, or null.
+ * `mentions` (#66) is the issues its text names, as the writer stored them: a JSON array of numbers, or null. `openedAt` (#69) is when it was opened, null when no read gave it.
  */
-export type OpenIssue = { milestone: string | null; title: string | null; goneAt: number | null; mentions: string | null };
+export type OpenIssue = { milestone: string | null; title: string | null; goneAt: number | null; mentions: string | null; openedAt: number | null };
 
 /**
  * The project's issues by number, as the plugin's reads of the open issues left them. Two project rows with the name (a repo seen from two machines, with no remote) may differ on one issue: the row
@@ -50,8 +59,10 @@ export type OpenIssue = { milestone: string | null; title: string | null; goneAt
  */
 export function openIssues(store: Store, project: string) {
   const issues = new Map<number, OpenIssue>();
-  for (const r of each(store, `SELECT o.number AS number, o.milestone AS milestone, o.title AS title, o.gone_at AS goneAt, o.mentions AS mentions FROM open_issues o JOIN projects p ON p.id = o.project_id
-    WHERE p.name = :project ORDER BY coalesce(p.prs_read_at, 0)`, { project })) issues.set(r.number, { milestone: r.milestone, title: r.title, goneAt: r.goneAt, mentions: r.mentions });
+  for (const r of each(store, `SELECT o.number AS number, o.milestone AS milestone, o.title AS title, o.gone_at AS goneAt, o.mentions AS mentions, o.created_at AS openedAt FROM open_issues o
+    JOIN projects p ON p.id = o.project_id WHERE p.name = :project ORDER BY coalesce(p.prs_read_at, 0)`, { project })) {
+    issues.set(r.number, { milestone: r.milestone, title: r.title, goneAt: r.goneAt, mentions: r.mentions, openedAt: r.openedAt });
+  }
   return issues;
 }
 
@@ -71,7 +82,7 @@ type Bucket = { whole: number; windows: number; partial: boolean };
  * ponytail: the branch is the one the session started on, so a session that moved to an issue branch later is split by its PRs instead of counted whole; a fix made after a PR opens
  * lands on the session's next PR, or on no issue. That is the known weak spot of time windows (#28).
  */
-export function issueCosts(store: Store, project: string, start: number, now: number) {
+export function issueCosts(store: Store, project: string, start: number, now: number, open: Map<number, OpenIssue>) {
   const sessions = all(store, `SELECT a.session_id AS id, s.branch AS branch, coalesce(sum(x.cost_usd), 0) AS usd, count(*) FILTER (WHERE x.cost_usd IS NULL) > 0 AS partial,
       coalesce(sum(x.cost_usd) FILTER (WHERE x.ts >= :start AND x.ts <= :now), 0) AS month,
       count(*) FILTER (WHERE x.cost_usd IS NULL AND x.ts >= :start AND x.ts <= :now) > 0 AS monthPartial,
@@ -94,7 +105,7 @@ export function issueCosts(store: Store, project: string, start: number, now: nu
       none.usd += s.month;
       none.partial ||= Boolean(s.monthPartial);
     } else {
-      const links = sessionLinks(store, s.id);
+      const links = sessionLinks(store, s.id, open);
       const by = new Map<number | null, { usd: number; partial: boolean; month: number; monthPartial: boolean }>();
       // nothing in this loop runs `each`'s own SQL again: its statement is busy until the loop ends
       for (const x of each(store, 'SELECT x.ts AS ts, x.cost_usd AS usd FROM api_requests x JOIN turns t ON t.id = x.turn_id JOIN agents a ON a.id = t.agent_id WHERE a.session_id = :id', { id: s.id })) {
@@ -128,12 +139,13 @@ export function budget(app: FastifyInstance, { store, now = Date.now }: { store:
     const at = now();
     const month = dayOf(tz, at).slice(0, 7); // as the goal reads it: from midnight on the month's first day in the viewer's zone, to now
     const [start] = monthBounds(tz, Number(month.slice(0, 4)), Number(month.slice(5, 7)));
-    const { issues, none } = issueCosts(store, project, start, at);
+    const open = openIssues(store, project);
+    const { issues, none } = issueCosts(store, project, start, at, open);
 
     // A closed issue keeps its milestone (#32), so what it cost is still held to the milestone's default; but only an open one is listed with no spend, and only an open one's milestone is offered.
     const milestoneOf = new Map<number, string>();
     const openNames = new Set<string>();
-    for (const [number, o] of openIssues(store, project)) {
+    for (const [number, o] of open) {
       if (o.milestone !== null) milestoneOf.set(number, o.milestone);
       if (o.goneAt !== null) continue;
       if (o.milestone !== null) openNames.add(o.milestone);

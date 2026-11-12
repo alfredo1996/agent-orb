@@ -215,6 +215,7 @@ export const Event = z.discriminatedUnion('kind', [
 // travels). `issues` is the open issues' numbers and their milestone's title (none for an excluded project): absent, a read says nothing about them. #32: an issue's own `title` rides
 // with them only with Content on full (the board names its rows with it); with Content off a read carries none, and the server drops the one it held.
 // #66 (the Map): an issue's `mentions` are the issues its text names as `#N`, found on the machine: the numbers travel, for every project, and the text never does. At most 20. Absent: the body was not read, and the server keeps what it had; an empty list: it was read and names none.
+// #69: an issue's `created_at` is when it was opened. Absent (a plugin before #69): the server keeps what it had.
   Base.extend({ kind: z.literal('project.open_prs'), data: z.object({
     prs: z.array(z.object({
       number: z.number().int().positive(),
@@ -229,7 +230,7 @@ export const Event = z.discriminatedUnion('kind', [
       bots: z.array(z.object({ author: id.max(100), at: z.number().int().positive() })).max(50),
     })).max(100),
     issues: z.array(z.object({ number: z.number().int().positive(), milestone: id.max(200).optional(), title: z.string().min(1).transform((s) => s.slice(0, 200)).optional(),
-      mentions: z.array(z.number().int().positive()).max(20).optional() })).max(500).optional(),
+      created_at: z.number().int().positive().optional(), mentions: z.array(z.number().int().positive()).max(20).optional() })).max(500).optional(),
   }) }),
   // v0.4 slice 3 (#29, Factory): what runs on the Mac, about the host and not the session (the sampling session's project and id ride along as on any event). Free and total memory in bytes,
   // Docker's state (`absent`: no docker binary; `stopped`: the daemon does not answer), and the running containers: a name, when it was created, its state and health, its memory in bytes

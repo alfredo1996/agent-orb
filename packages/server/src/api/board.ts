@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ContentStore } from '../content-store.ts';
 import { each, get, type Store } from '../store/store.ts';
-import { openIssues, sessionLinks, windowIssue, type Link } from './budget.ts';
+import { openIssues, prIssue, sessionLinks, windowIssue, type Link } from './budget.ts';
 import { openPrs } from './factory.ts';
 
 // v0.4 slice 6 (#32, Factory; PROJECT.md §15, 2026-11-03): each issue of a milestone, followed from queued to merged on one board.
@@ -60,7 +60,7 @@ export function reachOf(store: Store, content: ContentStore, project: string, ch
     FROM sessions s JOIN projects p ON p.id = s.project_id WHERE p.name = :project`, { project })) {
     if (s.content && s.at >= modeAt) (mode = s.content), (modeAt = s.at);
     const own = branchIssue(s.branch);
-    const links = own === null && s.links ? sessionLinks(store, s.id) : [];
+    const links = own === null && s.links ? sessionLinks(store, s.id, open) : [];
     const issues = new Set<number>();
     if (own !== null) issues.add(own);
     else for (const l of links) if (l.issue !== null) issues.add(l.issue);
@@ -79,10 +79,10 @@ export function reachOf(store: Store, content: ContentStore, project: string, ch
   const milestone = chosenParam ?? [...counts].toSorted(([an, a], [bn, b]) => b.touched - a.touched || b.open - a.open || (an < bn ? -1 : 1))[0]?.[0] ?? null;
 
   // The PRs the project has been seen to have for an issue: the number the open-PR read gave, else the number in a merged PR's branch (the plugin reads a branch first too, and a PR merged
-  // before any read saw it open has no other). The open ones with their verdicts come from slice 1.
+  // before any read saw it open has no other), unless that issue was opened after the PR merged (#69; prIssue). The open ones with their verdicts come from slice 1.
   const prsOf = new Map<number, PrRow[]>();
   for (const r of each(store, PRS_OF, { project })) {
-    const issue = r.issue ?? branchIssue(r.head);
+    const issue = prIssue(r.issue, r.head, r.mergedAt, open);
     if (issue !== null) prsOf.set(issue, [...(prsOf.get(issue) ?? []), { number: r.number, head: r.head, mergedAt: r.mergedAt }]);
   }
   const openOf = new Map<number, ReturnType<typeof openPrs>['prs']>();
