@@ -38,6 +38,9 @@ describe('officeLayout', () => {
     expect(rooms.map((r: any) => [r.project, r.seats.length])).toEqual([['agent-orb', 3], ['mobile-app', 1]]);
     const [lead, ...rest] = rooms[0].seats;
     expect(lead).toMatchObject({ lead: true, model: 'opus', label: 'main · orchestrator' });
+    // #73: Fable is its own family, Mythos with it
+    const [f] = layout([s('s3', 'fabled', [agent({ model: 'claude-fable-5-2' }), agent({ id: 'm', depth: 1, parent: 'main', model: 'claude-mythos-5-1' })])], 0);
+    expect(f.seats.map((x: any) => x.model)).toEqual(['fable', 'fable']);
     for (const seat of rest) expect(seat.y).toBeGreaterThan(lead.y);
   });
 

@@ -8,6 +8,11 @@ describe('costUsd', () => {
     expect(costUsd('claude-opus-5-5', { input: 1000, output: 2000, cache_read: 10_000, cache_creation: 4000 })).toBeCloseTo(0.066, 12);
   });
 
+  it('#71: prices Fable 5.2 and Mythos 5.2 ($8 in, $40 out, $0.20 read, $10 write)', () => {
+    // 1000*8 + 2000*40 + 10000*0.2 + 4000*10 = 130,000 µ$
+    for (const m of ['claude-fable-5-2', 'claude-mythos-5-2']) expect(costUsd(m, { input: 1000, output: 2000, cache_read: 10_000, cache_creation: 4000 })).toBeCloseTo(0.13, 12);
+  });
+
   it('is null for an unknown model', () => {
     expect(costUsd('claude-opus-9', { input: 1, output: 1, cache_read: 0, cache_creation: 0 })).toBeNull();
     expect(costUsd('gpt-5', { input: 1, output: 1, cache_read: 0, cache_creation: 0 })).toBeNull();

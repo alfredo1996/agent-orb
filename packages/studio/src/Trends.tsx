@@ -112,7 +112,7 @@ function TrendChart({ series, unit, split, onSplit, marks, changes }: {
     if (!listed(changes, all).shown.some((c) => c.id === id)) setAll(true); // an older change is behind "Show All"
   };
   const parts = PARTS[split];
-  const shown = parts.filter((p) => p.key !== 'other' || series.some((b) => b.other > 0));
+  const shown = parts.filter((p) => (p.key !== 'other' && p.key !== 'fable') || series.some((b) => b[p.key] > 0)); // Fable and Other only in a range that has them
   const totals = series.map((b) => totalOf(b, split));
   const labels = series.map((b, i) => money(totals[i]!, b.costPartial));
   const star = busiestOf(totals);

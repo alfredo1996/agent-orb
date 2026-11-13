@@ -237,7 +237,7 @@ export function Lanes({ data, now }: { data: LaneData; now: number }) {
   const t0 = data.session.started_at;
   const t1 = Math.max(t0 + 10_000, data.session.ended_at ?? 0, data.until ?? 0, ...ends);
   const pct = (ts: number) => Math.min(100, Math.max(0, ((ts - t0) / (t1 - t0)) * 100));
-  const fam = (m: string | null) => /opus|sonnet|haiku/.exec(m ?? '')?.[0] ?? 'other';
+  const fam = (m: string | null) => /opus|sonnet|haiku|fable|mythos/.exec(m ?? '')?.[0]?.replace('mythos', 'fable') ?? 'other'; // #73: Mythos is Fable's colour
   const minMs = (t1 - t0) / 1000; // a wait narrower than about a pixel earns no bar of its own, and does not cut the turn
   // Five ticks, none on the right edge, so a label never leaves the card; a phone shows every other one.
   const ticks = Array.from({ length: 5 }, (_, i) => t0 + ((t1 - t0) * (i + 1)) / 6);
@@ -275,7 +275,7 @@ export function Lanes({ data, now }: { data: LaneData; now: number }) {
         })}
         <div className="ax" aria-hidden="true">{ticks.map((t, i) => <span key={t} className={i % 2 ? 'skip' : undefined} style={{ left: `${pct(t)}%` }}>{clock(t)}</span>)}</div>
       </div>
-      <div className="legend"><span className="model opus">Opus</span><span className="model sonnet">Sonnet</span><span className="model haiku">Haiku</span><span className="model stalled">stalled</span></div>
+      <div className="legend"><span className="model opus">Opus</span><span className="model sonnet">Sonnet</span><span className="model haiku">Haiku</span><span className="model fable">Fable</span><span className="model stalled">stalled</span></div>
     </section>
   );
 }

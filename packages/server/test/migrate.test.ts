@@ -47,6 +47,38 @@ describe('opening a history file made before #28', () => {
     db.close();
   });
 
+  it('#71: a request stored with no cost, on a model the price table now knows, is priced when the file opens; the rest are left as they were', () => {
+    const path = join(dir, 'unpriced.db');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE api_requests (id TEXT PRIMARY KEY, turn_id TEXT NOT NULL, ts INTEGER NOT NULL, model TEXT NOT NULL,
+        input INTEGER, output INTEGER, cache_read INTEGER, cache_creation INTEGER, cost_usd REAL) WITHOUT ROWID;
+      INSERT INTO api_requests VALUES ('r-fable', 't', 1, 'claude-fable-5-2', 1000, 2000, 10000, 4000, NULL);
+      INSERT INTO api_requests VALUES ('r-new', 't', 2, 'claude-opus-9-9', 1000, 2000, 10000, 4000, NULL);
+      INSERT INTO api_requests VALUES ('r-priced', 't', 3, 'claude-opus-5-5', 1000, 2000, 10000, 4000, 0.5);`);
+    old.close();
+    const db = openStore(path);
+    const cost = (id: string) => get(db, 'SELECT cost_usd FROM api_requests WHERE id = :id', { id })!.cost_usd as number | null;
+    expect(cost('r-fable')).toBeCloseTo(0.13, 12); // 1000*8 + 2000*40 + 10000*0.2 + 4000*10 µ$, as costUsd prices it
+    expect(cost('r-new')).toBeNull(); // still no price for it
+    expect(cost('r-priced')).toBe(0.5); // a stored price is never worked out again
+    // every open reads the unpriced rows through their own index, not the whole table
+    const plan = all(db, 'EXPLAIN QUERY PLAN SELECT id, model, input, output, cache_read, cache_creation FROM api_requests WHERE cost_usd IS NULL').map((r) => r.detail as string);
+    expect(plan.join(' ')).toContain('USING INDEX requests_unpriced');
+    db.close();
+  });
+
+  it('#66: an open_issues table made by #32 has no mentions; opening takes the column and keeps its rows', () => {
+    const path = join(dir, 'before-66.db');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE open_issues (project_id TEXT NOT NULL, number INTEGER NOT NULL, milestone TEXT, title TEXT, gone_at INTEGER, PRIMARY KEY (project_id, number)) WITHOUT ROWID;
+      INSERT INTO open_issues (project_id, number, milestone, title) VALUES ('p', 409, 'v0.4 Factory', 'Retry after an expired token');`);
+    old.close();
+    const db = openStore(path);
+    expect({ ...get(db, 'SELECT number, milestone, title, gone_at, mentions FROM open_issues') }).toEqual({ number: 409, milestone: 'v0.4 Factory', title: 'Retry after an expired token', gone_at: null, mentions: null });
+    db.close();
+    openStore(path).close(); // and opens again
+  });
+
   it('#32: a finding_reports table made by #27 has no reviewed_at; opening takes the column and keeps its rows', () => {
     const path = join(dir, 'before-32-reports.db');
     const old = new DatabaseSync(path);

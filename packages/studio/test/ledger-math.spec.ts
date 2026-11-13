@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bucketLabel, busiest, busiestOf, dayKeys, families, fillDays, moveBar, niceMax, placeTip, rangeOf, roundedTop, stackParts, stackSegments, tabStop } from '../src/ledger-math.ts';
+import { bucketLabel, busiest, busiestOf, dayKeys, families, fillDays, moveBar, niceMax, placeTip, rangeOf, roundedTop, stackParts, stackSegments, tabStop, STACK } from '../src/ledger-math.ts';
 
 // Local dates: the test runs in the machine's zone, like the studio in the viewer's.
 const at = (y: number, m: number, d: number, h = 0) => new Date(y, m - 1, d, h).getTime();
@@ -24,7 +24,12 @@ describe('Ledger helpers', () => {
 
   it('groups models by family for the stacked bars; anything else is "other"', () => {
     expect(families({ 'claude-opus-5-5': 3, 'claude-opus-4-1': 1, 'claude-sonnet-5-5[1m]': 2, 'claude-haiku-5-5': 4, 'claude-unknown-9': 9 }))
-      .toEqual({ opus: 4, sonnet: 2, haiku: 4, other: 9 });
+      .toEqual({ opus: 4, sonnet: 2, haiku: 4, fable: 0, other: 9 });
+  });
+
+  it('#73: Fable is a family of its own, Mythos in it, stacked above Opus', () => {
+    expect(families({ 'claude-fable-5-2': 5, 'claude-fable-5-1[1m]': 6, 'claude-mythos-5-1': 7, 'claude-opus-5-5': 1 })).toEqual({ opus: 1, sonnet: 0, haiku: 0, fable: 18, other: 0 });
+    expect(STACK).toEqual(['haiku', 'sonnet', 'opus', 'fable', 'other']);
   });
 
   it('rounds the axis up to 1, 2 or 5 times a power of ten', () => {
@@ -49,7 +54,7 @@ describe('Ledger helpers', () => {
 
   describe('a bar as stacked segments', () => {
     const y = (v: number) => 100 - v * 10; // 10 px per unit, the baseline at 100
-    const f = (haiku: number, sonnet: number, opus: number, other = 0) => ({ haiku, sonnet, opus, other });
+    const f = (haiku: number, sonnet: number, opus: number, other = 0, fable = 0) => ({ haiku, sonnet, opus, fable, other });
 
     it('stacks bottom to top, leaves out empty families, and marks the last as the top', () => {
       const s = stackSegments(f(2, 0, 3), y);

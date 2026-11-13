@@ -255,3 +255,16 @@ export function filesTouched(tool: string, input: Record<string, unknown>, root:
   if (!mode || typeof path !== 'string' || !path.startsWith(`${root}/`)) return [];
   return [{ path: path.slice(root.length + 1), mode }];
 }
+
+/**
+ * The files that say nothing about what a change is: lockfiles, images, build output, minified files, source maps and generated files, judged by the path alone. The plugin leaves them out
+ * of a PR's size (#103) and the server out of the links between issues (#66): two issues that both rewrote the lockfile are not tied by it. packages/mod/hooks/core.ts has the list
+ * and its limits; this is a copy, since the plugin imports nothing from shared, and packages/mod/test/contract.spec.ts holds the two equal.
+ */
+export const UNCOUNTED = new RegExp([
+  '(^|/)(dist|build|coverage|__generated__)/',
+  '\\.(png|jpe?g|gif|webp|avif|ico|bmp|tiff?|heic|svg|map|snap)$',
+  '\\.min\\.[^/]+$',
+  '\\.generated\\.[^/]*$',
+  '(^|/)([^/]*\\.lock|pnpm-lock\\.yaml|package-lock\\.json|npm-shrinkwrap\\.json|bun\\.lockb|go\\.sum|packages\\.lock\\.json|gradle\\.lockfile)$',
+].join('|'), 'i');

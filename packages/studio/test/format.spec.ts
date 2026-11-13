@@ -35,6 +35,12 @@ describe('Live view formats (as in design/live.html)', () => {
     expect(modelLabel('claude-opus-5-5')).toEqual({ text: 'Opus 5.5', tone: 'opus' });
     expect(modelLabel('claude-haiku-5-5-20260901')).toEqual({ text: 'Haiku 5.5', tone: 'haiku' });
     expect(modelLabel('claude-sonnet-5-5[1m]')).toEqual({ text: 'Sonnet 5.5', tone: 'sonnet' });
+    // #71: Fable and Mythos by name, a one-number id too, and a date after it is not a minor version; #73: in the Fable colour, Mythos with it
+    expect(modelLabel('claude-fable-5-2')).toEqual({ text: 'Fable 5.2', tone: 'fable' });
+    expect(modelLabel('claude-mythos-5-1[1m]')).toEqual({ text: 'Mythos 5.1', tone: 'fable' });
+    expect(modelLabel('claude-fable-5')).toEqual({ text: 'Fable 5', tone: 'fable' });
+    expect(modelLabel('claude-opus-5')).toEqual({ text: 'Opus 5', tone: 'opus' });
+    expect(modelLabel('claude-opus-5-20260101')).toEqual({ text: 'Opus 5', tone: 'opus' });
     expect(modelLabel('gpt-x')).toEqual({ text: 'gpt-x', tone: '' });
     expect(modelLabel(undefined)).toEqual({ text: '—', tone: '' });
   });

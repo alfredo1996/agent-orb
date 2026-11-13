@@ -50,6 +50,7 @@ const built: Ev[] = [
   // v0.4 slice 1 (#27, Factory): findings with Content off (no title, no reason), a gate report, and an open-PR read
   build.findingsReport(ctx, sub, 'fix/409-token-retry', { findings: [{ id: 'F12', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open' }], dropped: 1 }),
   build.gateReport(ctx, sub, { result: 'pass', commit: 'a1b2c3d' }),
+  build.projectOpenPrs(ctx, [], [{ number: 409, milestone: 'v0.4 Factory', title: 'Retry after an expired token', created_at: 1_792_300_000_000, mentions: [410] }, { number: 410 }]),
   build.projectOpenPrs(ctx, [{ number: 416, head: 'fix/409-token-retry', head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: 1_792_400_000_000, checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: 1_792_400_100_000 }] }]),
   // v0.4 slice 3 (#29, Factory): the machine, with a compose container, a Testcontainers one and an excluded project's, and a Mac with no Docker
   build.machineSample(ctx, { mem_free: 6_200_000_000, mem_total: 36_000_000_000, docker: 'ok', containers: [
@@ -108,6 +109,14 @@ describe('roles (issue #8)', () => {
   it('the mod accepts exactly the server\'s roles, so an orb-role the server takes is never dropped here', () => {
     expect([...MOD_ROLES].sort()).toEqual([...ROLES].sort());
     expect(roleFromFrontmatter('---\norb-role: generalist\n---\n')).toBe('generalist');
+  });
+});
+
+describe('the paths left out of a PR\'s size (v0.5 slice 1, #66)', () => {
+  it('the plugin and shared hold one skip list, so the Map links no file a PR\'s size leaves out', () => {
+    expect(mod.UNCOUNTED.source).toBe(shared.UNCOUNTED.source);
+    expect(mod.UNCOUNTED.flags).toBe(shared.UNCOUNTED.flags);
+    expect(['pnpm-lock.yaml', 'apps/web/dist/app.js', 'icons/menu.svg', 'src/a.ts', 'PROJECT.md'].map((p) => shared.UNCOUNTED.test(p))).toEqual([true, true, true, false, false]);
   });
 });
 

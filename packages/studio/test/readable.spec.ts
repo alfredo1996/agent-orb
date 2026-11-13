@@ -198,7 +198,7 @@ describe('an ⓘ opens its explanation in place', () => {
 
 // ── Trends ───────────────────────────────────────────────────────────────────
 
-const bucket = (k: string, o: Partial<TBucket>): TBucket => ({ bucket: k, main: 0, typed: 0, generic: 0, opus: 0, sonnet: 0, haiku: 0, other: 0, tokens: 0, cacheRead: 0, inputSide: 0, activeDays: 0, prompts: 0, costPartial: false, ...o });
+const bucket = (k: string, o: Partial<TBucket>): TBucket => ({ bucket: k, main: 0, typed: 0, generic: 0, opus: 0, fable: 0, sonnet: 0, haiku: 0, other: 0, tokens: 0, cacheRead: 0, inputSide: 0, activeDays: 0, prompts: 0, costPartial: false, ...o });
 const change = (day: string, ts: number, subject: string, o: Partial<Change> = {}): Change => ({
   id: `docs-site:${day}`, day, ts, commits: [{ sha: `${day.slice(-2)}c4d1e90123`, ts, subject, files: ['.claude/skills/code/SKILL.md'] }], seen: [], files: [], before: null, after: null, ...o,
 });

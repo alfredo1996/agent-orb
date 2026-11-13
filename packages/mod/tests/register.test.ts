@@ -57,7 +57,8 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
     // v0.4 slice 1 (#27): `gh pr list --state open ...` answers `gh.open`, and is recorded in `openCalls` (not `calls`, which is the merged list's)
     open: '', openCalls: [] as { argv: readonly string[]; cwd?: string }[],
     // v0.4 slice 2 (#28): `gh issue list --state open ...` answers `gh.issues` (empty: gh printed nothing usable) and is recorded in `issueCalls`
-    issues: '', issueCalls: [] as { argv: readonly string[]; cwd?: string }[] }
+    // #66: `issuesCut` makes the read that asks for bodies come back cut short, as one past 4 MiB does (half of `gh.issues`, marked truncated); the read without bodies answers whole
+    issues: '', issuesCut: false, issueCalls: [] as { argv: readonly string[]; cwd?: string }[] }
   // #107: `uname -s` names the platform and `scutil --get LocalHostName` the Mac's own name; `hostname -s` ('mbp') is the network's. Linux by default,
   // so a test that wants a Mac sets `os` before the session starts. `scutilExit` non-zero makes scutil fail as it does when no LocalHostName is set.
   const machine = { os: 'Linux', localHostName: 'Alfredos-MacBook-Pro-4', scutilExit: 0, calls: [] as string[][] }
@@ -104,7 +105,10 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
       ;(issue ? gh.issueCalls : open ? gh.openCalls : gh.calls).push({ argv: e.argv, cwd: e.init?.cwd })
       if (gh.hang) return new Promise(() => {})
       if (gh.missing) return { deny: 'spawn gh ENOENT' }
-      return { value: { exitCode: !issue && !open && gh.mergedExit !== undefined ? gh.mergedExit : gh.exitCode, stdout: issue ? gh.issues : open ? gh.open : gh.out, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+      const bodies = String(e.argv.at(-1)).includes('body') // gh prints only the fields `--json` names: a read that does not ask for bodies gets none
+      const cut = issue && gh.issuesCut && bodies
+      const listed = issue && !bodies ? withoutBodies(gh.issues) : gh.issues
+      return { value: { exitCode: !issue && !open && gh.mergedExit !== undefined ? gh.mergedExit : gh.exitCode, stdout: cut ? gh.issues.slice(0, gh.issues.length / 2) : issue ? listed : open ? gh.open : gh.out, stderr: '', isStdoutTruncated: cut, isStderrTruncated: false } }
     }
     const isLog = e.argv[0] === 'git' && e.argv[3] === 'log'
     if (isLog) git.calls.push(e.argv)
@@ -193,6 +197,15 @@ const boot = async ($: any) => {
   await $.turn.start({ text: 'go', turnId: 't-1' })
 }
 const opts = { options: { token: 'tok', stallMinutes: 15 } }
+/** gh's list as it prints it when `--json` names no `body`; what is not a list is left as it is. */
+function withoutBodies(out: string) {
+  try {
+    const list = JSON.parse(out)
+    return Array.isArray(list) ? JSON.stringify(list.map(({ body: _, ...i }: Record<string, unknown>) => i)) : out
+  } catch {
+    return out
+  }
+}
 
 test('a model request becomes a turn.step event with all four token counts', opts, async ($: any, on: any) => {
   const w = world(on)
@@ -1677,7 +1690,7 @@ const OPEN_LIST = JSON.stringify([{
 }])
 const openSent = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'project.open_prs')
 const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']
-const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title']
+const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title,createdAt,body']
 
 test('v0.4 slice 1: the open PRs are read in the checkout at session start and every 5 minutes after, and no comment text, title or commit message leaves', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
   const w = world(on)
@@ -1734,7 +1747,7 @@ test('v0.4 slice 2: the open issues\' milestones travel with the open PRs, and a
   await w.clock.advance(2_000)
   expect(w.gh.issueCalls).toEqual([{ argv: ISSUES_ARGV, cwd: '/repo' }])
   expect(w.gh.openCalls).toHaveLength(1) // the issue read is no second PR read
-  expect(openSent(w).map((e) => e.data)).toEqual([{ prs: [expect.objectContaining({ number: 416, created_at: Date.parse('2026-11-01T14:10:00Z'), issue: 409 })], issues: [{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }] }])
+  expect(openSent(w).map((e) => e.data)).toEqual([{ prs: [expect.objectContaining({ number: 416, created_at: Date.parse('2026-11-01T14:10:00Z'), issue: 409 })], issues: [{ number: 409, milestone: 'v0.4 Factory', mentions: [] }, { number: 410 }] }])
   expect(JSON.stringify(w.sent())).not.toMatch(/Vault key|Closes|private text|Retry after an expired/)
 })
 
@@ -1749,7 +1762,32 @@ test('v0.4 slice 2: a gh issue list that fails still sends the PRs, with no issu
   w.gh.issues = ISSUE_LIST
   await w.clock.advance(5 * MIN + 2_000)
   await w.clock.advance(2_000)
-  expect(openSent(w).map((e) => e.data.issues)).toEqual([undefined, [{ number: 409 }, { number: 410 }]])
+  expect(openSent(w).map((e) => e.data.issues)).toEqual([undefined, [{ number: 409, mentions: [] }, { number: 410 }]])
+})
+
+// v0.5 slice 1 (#66, the Map): an issue's body is read for the issues it mentions, and only their numbers leave, for an excluded project too.
+const MENTION_LIST = JSON.stringify([{ number: 409, title: 'Retry after an expired token', body: 'Vault key plan, after #412 and o/r#7.\n\nSee #412 again, and #409.', milestone: { title: 'v0.4 Factory' } }, { number: 412, body: 'no mention here', milestone: null }])
+
+test('v0.5 slice 1: the issues an issue mentions travel as numbers, and nothing of its body does; an excluded project sends them too', { options: { token: 'tok', excludeProjects: 'o/r' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = MENTION_LIST
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.issueCalls).toEqual([{ argv: ISSUES_ARGV, cwd: '/repo' }])
+  expect(openSent(w).map((e) => e.data.issues)).toEqual([[{ number: 409, mentions: [412] }, { number: 412, mentions: [] }]])
+  expect(JSON.stringify(w.sent())).not.toMatch(/Vault key|See #|no mention here|Retry after/)
+})
+
+test('v0.5 slice 1: bodies too long for one read (gh\'s answer cut at 4 MiB) are asked for again without them: the milestones still arrive, with no mentions', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = BODY_LIST
+  w.gh.issues = MENTION_LIST
+  w.gh.issuesCut = true
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.issueCalls.map((c) => c.argv.at(-1))).toEqual(['number,milestone,title,createdAt,body', 'number,milestone,title,createdAt'])
+  expect(openSent(w).map((e) => e.data.issues)).toEqual([[{ number: 409, milestone: 'v0.4 Factory' }, { number: 412 }]])
 })
 
 // v0.4 slice 6 (#32): an issue's title names a row of the board, so it leaves only with Content on full, masked; an excluded project sends numbers only.
@@ -1772,7 +1810,7 @@ test('v0.4 slice 6: with Content off, or in an excluded project, no issue title 
   w.gh.issues = ISSUE_LIST
   await boot($)
   await w.clock.advance(2_000)
-  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409, milestone: 'v0.4 Factory' }, { number: 410 }])
+  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409, milestone: 'v0.4 Factory', mentions: [] }, { number: 410 }])
 })
 
 test('v0.4 slice 6: an excluded project sends issue numbers alone, whatever Content is set to', { options: { token: 'tok', content: 'full', excludeProjects: 'o/r' }, timeoutMs: 20_000 }, async ($: any, on: any) => {
@@ -1781,7 +1819,7 @@ test('v0.4 slice 6: an excluded project sends issue numbers alone, whatever Cont
   w.gh.issues = ISSUE_LIST
   await boot($)
   await w.clock.advance(2_000)
-  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409 }, { number: 410 }])
+  expect(openSent(w)[0]!.data.issues).toEqual([{ number: 409, mentions: [] }, { number: 410 }])
   expect(JSON.stringify(w.sent())).not.toMatch(/Retry after|v0.4 Factory/)
 })
 
@@ -1806,6 +1844,43 @@ test('v0.4 slice 6: when a PR leaves the open list the merged PRs are read at on
   expect(sentKinds(w)).toEqual(['project.open_prs', 'project.open_prs', 'project.prs', 'project.open_prs'])
   expect(prsSent(w)[0]!.data.prs.map((p: any) => p.number)).toEqual([416])
   expect(openSent(w)[2]!.data.prs).toEqual([])
+})
+
+// #62: a PR the session opened and that merged before any read saw it open was never in a read's list, so nothing was missing and the merged list waited for the next session start.
+// The session sent its link, and that is enough: the next read treats it as a PR the last read held.
+const MERGED_417 = JSON.stringify([{ additions: 3, deletions: 0, headRefName: 'fix/411-banner', mergedAt: '2026-11-05T09:01:00Z', number: 417, title: 'Show the banner', files: [{ path: 'b.ts', additions: 3, deletions: 0 }] }])
+
+test('#62: a PR the session linked that merged before the next read is read for at that read, once, and sent before the open list', { ...opts, timeoutMs: 40_000 }, async ($: any, on: any) => {
+  printing(on, { toolu_1: { text: `Creating pull request for fix/411-banner into dev in o/r\n\n${PR_URL(417)}\n` } })
+  const w = world(on)
+  w.gh.open = '[]'
+  await boot($)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(1) // the merged list at session start
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_1', command: 'gh pr create' }) // opened, and merged seconds later
+  w.gh.out = MERGED_417
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(2)
+  expect(sentKinds(w)).toEqual(['project.open_prs', 'project.prs', 'project.open_prs'])
+  expect(prsSent(w)[0]!.data.prs.map((p: any) => p.number)).toEqual([417])
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(2) // once: the read after it misses nothing
+})
+
+test('#62: a PR the session linked that is still open at the next read is found open: no read of the merged list', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
+  printing(on, { toolu_1: { text: PR_URL(416) } })
+  const w = world(on)
+  w.gh.open = '[]'
+  await boot($)
+  await w.clock.advance(2_000)
+  await $.tool.call({ tool: 'Bash', tool_use_id: 'toolu_1', command: 'gh pr create' })
+  w.gh.open = OPEN_LIST // PR 416, open
+  await w.clock.advance(5 * MIN + 2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.calls).toHaveLength(1)
+  expect(sentKinds(w)).toEqual(['project.open_prs', 'project.open_prs'])
 })
 
 test('v0.4 slice 6: a PR that left the list without merging (closed) is read for, finds nothing, and the open list is sent all the same', { ...opts, timeoutMs: 30_000 }, async ($: any, on: any) => {
