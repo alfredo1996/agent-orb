@@ -1215,7 +1215,7 @@ export function statusText(t: Tracker, ctxPercent: number | undefined, now: numb
 
 // ── Event builders: one per §5 kind the mod sends; the Vitest contract test runs each through the shared schema ──
 
-export const VERSION = '0.4.1';
+export const VERSION = '0.4.2';
 // The server's ROLES (packages/shared), kept here so the plugin needs no import; a contract test keeps the two equal.
 export const MOD_ROLES = ['orchestrator', 'developer', 'researcher', 'reviewer', 'skeptic', 'tester', 'planner', 'writer', 'ops', 'consultant', 'generalist'] as const;
 export type Role = (typeof MOD_ROLES)[number];
