@@ -53,7 +53,8 @@ describe('createClaude', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]!.url).toBe('/v1/messages/count_tokens');
     expect(seen[0]!.body).toMatchObject({ model: 'claude-opus-5-5', system: 'sys', messages: [{ role: 'user', content: 'hello' }], output_config: { format: { type: 'json_schema', schema: REPORT_SCHEMA } } });
-    expect(seen[0]!.headers['x-api-key']).toBe(KEY);
+    expect(seen[0]!.headers['authorization']).toBe(`Bearer ${KEY}`);
+    expect(seen[0]!.headers['anthropic-version']).toBe('2026-10-21');
   });
 
   it('run() joins the text blocks (not the thinking) and maps model, stop and usage', async () => {
@@ -61,7 +62,7 @@ describe('createClaude', () => {
     expect(await createClaude(KEY).run('claude-sonnet-5-5', 'sys', 'hello')).toEqual({
       text: '{"a":1}', model: 'claude-opus-5-5', stop: 'end_turn', usage: { input: 11, output: 22, cache_read: 33, cache_creation: 44 },
     });
-    expect(seen[0]!.url).toBe('/v1/messages?beta=true');
+    expect(seen[0]!.url).toBe('/v1/messages');
     expect(seen[0]!.body).toMatchObject({
       model: 'claude-sonnet-5-5', max_tokens: MAX_OUTPUT, system: 'sys', messages: [{ role: 'user', content: 'hello' }],
       thinking: { type: 'adaptive' }, output_config: { format: { type: 'json_schema', schema: REPORT_SCHEMA } },
