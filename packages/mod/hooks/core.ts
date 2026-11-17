@@ -900,6 +900,12 @@ export function issueOf(head: unknown, body: unknown): number | undefined {
 const BOTS = new Set(['coderabbitai', 'sonarqubecloud', 'sonarcloud', 'github-actions', 'codecov', 'copilot-pull-request-reviewer', 'dependabot', 'renovate',
   'gemini-code-assist', 'greptile-apps', 'chatgpt-codex-connector']);
 export const isBot = (login: string) => /(?:\[bot\]|[-_]bot)$/i.test(login) || BOTS.has(login.toLowerCase());
+/**
+ * CodeRabbit's "review skipped" notice (#94): posted on every push to a repository it does not review (fewer than 10 stars), it carries no finding for a fixer, so no findings
+ * report ever follows it and condition 3 would hold the PR for good. It is no bot comment to read. The body is looked at for CodeRabbit's own marker only, and never kept.
+ */
+const skipNotice = (c: Record<string, any>) =>
+  typeof c?.author?.login === 'string' && c.author.login.toLowerCase() === 'coderabbitai' && typeof c.body === 'string' && c.body.includes('skip review by coderabbit.ai');
 
 const checkOf = (c: Record<string, unknown>): Check | undefined => {
   const name = typeof c.name === 'string' && c.name ? c.name : typeof c.context === 'string' && c.context ? c.context : undefined;
@@ -938,6 +944,7 @@ export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined
     const checks = (Array.isArray(p.statusCheckRollup) ? p.statusCheckRollup as Record<string, unknown>[] : []).map(checkOf).filter((c): c is Check => c !== undefined).slice(0, 200);
     const bots = new Map<string, number>();
     for (const c of [...(Array.isArray(p.comments) ? p.comments : []), ...(Array.isArray(p.reviews) ? p.reviews : [])] as Record<string, any>[]) {
+      if (skipNotice(c)) continue;
       const login = c?.author?.login;
       const t = at(c?.createdAt ?? c?.submittedAt);
       if (typeof login === 'string' && login && login.length <= 100 && isBot(login) && t > 0 && t > (bots.get(login) ?? 0)) bots.set(login, t);
