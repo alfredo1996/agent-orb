@@ -4,7 +4,7 @@ See what your Claude Code agents are doing right now, what they cost, and how a 
 
 > agent-orb is an independent project. It is not affiliated with, endorsed by or supported by Anthropic. Claude and Claude Code are trademarks of Anthropic.
 
-![A real session: Live shows the main agent and its Explore subagent at work, the Office animates them, then the Pipeline and the Ledger](docs/img/demo.gif)
+![A real session, recorded in v0.1: Live shows the main agent and its Explore subagent at work, the Office (since removed) animates them, then the Pipeline and the Ledger](docs/img/demo.gif)
 
 ## What you get
 
@@ -20,12 +20,11 @@ See what your Claude Code agents are doing right now, what they cost, and how a 
 - **A board of the milestone's issues.** The Factory page follows each issue of one milestone, and any issue a session reached this week outside it, from Queued to Merged: Queued when no session reached it and it has no open PR, Building once one did, Reviewing when a reviewer's findings report reached its PR or branch, Fixing when a file was written after that review, Gate when a test run on the PR's head came after both, Ready when the merge check holds, Merged when its PR merged (an issue that closes with its merge stays on its milestone, as Merged). Each row shows whether its PR is ready, what it cost against its budget (the estimate the Needs you rows and the PR's sheet show too), and its sessions, each with a link to Live. Claude Code's agent view lists background sessions; the board marks none as one and shows the state of none, and its footer says where to answer a background session.
 - **Pipeline.** Who delegates to whom, by role, with edges as thick as the tokens they carry. You can correct a role in place.
 - **Skill graph.** What each skill says it can call and what it actually called, how often each skill runs and how it was started, and what the skills you never use cost just by being listed.
-- **Office.** A pixel-art room per project, with a bot per agent: typing, reading, thinking, delegating, waiting, stalled.
 - **Analysis with Claude (optional).** Claude reads a project's week and reports where the tokens go and what to change. It uses your own API key, it never runs by itself, and a monthly cap stops it.
 
-| Pipeline | Skill graph | Office |
-|---|---|---|
-| ![Pipeline by role](docs/img/pipeline-after-fix.jpg) | ![Skill graph](docs/img/skills-desktop.jpg) | ![Office](docs/img/office-desktop.jpg) |
+| Pipeline | Skill graph |
+|---|---|
+| ![Pipeline by role](docs/img/pipeline-after-fix.jpg) | ![Skill graph](docs/img/skills-desktop.jpg) |
 
 ## Requirements
 

@@ -493,6 +493,8 @@ One React app served by the server. Every view is mocked up (desktop and phone) 
 - Skills scope (a Roles | Skills switch, same project picker): every skill the project's sessions list (project, user, plugin, built-in, tagged by origin) and the agent types they dispatch. Dashed edges are what a skill's text says it can call; solid edges are what it did call, as thick as the times or tokens. A skill that never ran shows its listing tokens per session.
 
 ### 8.4 Office (pixel art)
+> Removed in v0.4.4 (#89, the owner's decision of 2026-11-17, below): Factory covers what it showed. What follows is the record of what it was.
+
 - One floor (v0.1 is one user), one room per project. A floor per person or host comes with teams.
 - Each agent is a Kenney CC0 bot at a desk. States: `typing` (Edit/Write/Bash), `reading` (Read/Grep/Glob), `browsing` (Web*), `thinking` (between tool calls, a "…" bubble, never the thinking text), `delegating` (walks to the child's desk and back), `waiting` (amber bubble), `stalled` (red bubble), `done` (green check, leaves), `error`.
 - The main agent has the big desk; subagents sit near their parent; the office grows with spawns.
@@ -818,6 +820,9 @@ This supersedes the v0.4 "Explain" of the 2026-10-25 split: Explain is v0.5 and 
 - Four slices, one issue and one PR each: the links and the Map; the issue page; Home; Since you last looked.
 
 This puts Follow ahead of Explain: Explain is v0.6 and Share v0.7.
+
+### Decision (owner, 2026-11-17, in chat): the Office is removed
+"We can remove the Office part, useless now that we have the Factory" (#89). The page, its route and its menu link are gone, and an old `#/office` link opens Live. Nothing was stored for it. `design/office.html` stays as the design record.
 
 Earlier (v1.0): TypeScript everywhere, Fastify server; Neo4j Community + APOC with the server as its only client (replaced by SQLite on 2026-10-26, above); cost computed server-side from `pricing.json`.
 
