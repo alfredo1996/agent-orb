@@ -5,7 +5,6 @@ import { Connection, ProjectContext } from './kit.tsx';
 import { Ledger } from './Ledger.tsx';
 import { Live, type Session } from './Live.tsx';
 import { lastEventOf, shown } from './live-cards.ts';
-import { Office } from './Office.tsx';
 import { Pipeline } from './Pipeline.tsx';
 import { choiceQuery, choose, readChoice, readSession } from './project-choice.ts';
 
@@ -33,7 +32,7 @@ function useStream() {
   return { sessions, isOpen };
 }
 
-const ROUTES = { '#/ledger': 'ledger', '#/pipeline': 'pipeline', '#/factory': 'factory', '#/office': 'office', '#/analysis': 'analysis' } as const;
+const ROUTES = { '#/ledger': 'ledger', '#/pipeline': 'pipeline', '#/factory': 'factory', '#/analysis': 'analysis' } as const;
 type View = 'live' | (typeof ROUTES)[keyof typeof ROUTES];
 
 /**
@@ -116,7 +115,6 @@ export function App() {
           <a href="#/ledger" aria-current={view === 'ledger' ? 'page' : undefined}>Ledger</a>
           <a href="#/pipeline" aria-current={view === 'pipeline' ? 'page' : undefined}>Pipeline</a>
           <a href="#/factory" aria-current={view === 'factory' ? 'page' : undefined}>Factory</a>
-          <a href="#/office" aria-current={view === 'office' ? 'page' : undefined}>Office</a>
           <a href="#/analysis" aria-current={view === 'analysis' ? 'page' : undefined}>Analysis</a>
         </nav>
         <Connection isOpen={isOpen} lastEvent={lastEvent} now={now} host={location.host} />
@@ -124,7 +122,7 @@ export function App() {
       </header>
 
       <ProjectContext.Provider value={{ projects, choice, pick }}>
-        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} live={new Set(list.map((s) => s.id))} sessions={list} /> : view === 'office' ? <Office sessions={running} all={sessions} now={now} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} />}
+        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} live={new Set(list.map((s) => s.id))} sessions={list} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} />}
       </ProjectContext.Provider>
     </div>
   );

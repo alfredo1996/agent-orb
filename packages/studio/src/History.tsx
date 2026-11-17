@@ -5,7 +5,7 @@ import { groupRuns, prettyInput, splitRedacted, type Run } from './history-forma
 import { agentName, claimReason, type ClaimView } from './live-cards.ts';
 
 // One agent's history (design/pages.html, §15): what it did, what failed and its tasks, from GET /api/history, refreshed
-// while it is open. A drawer on the right of the window, a bottom sheet on a phone; Live and the Office draw it over the page with a scrim.
+// while it is open. A drawer on the right of the window, a bottom sheet on a phone; Live draws it over the page with a scrim.
 
 export type Item =
   | { kind: 'task'; ts: number; text?: string; length?: number }

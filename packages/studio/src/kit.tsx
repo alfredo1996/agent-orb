@@ -67,13 +67,6 @@ export function Connection({ isOpen, lastEvent, now, host }: { isOpen: boolean; 
   );
 }
 
-export type Tone = 'working' | 'waiting' | 'model' | 'stalled' | 'claim' | 'done' | 'data';
-
-/** A count per state, each with its word: the dot carries the colour, never alone. */
-export function Tally({ items }: { items: [Tone, string][] }) {
-  return <span className="tally">{items.map(([tone, text], i) => <span key={i} className={`t-${tone}`}>{text}</span>)}</span>;
-}
-
 /**
  * For a panel that opens under a chart: on a phone it lands below the fold, so a tap looks dead. Put the ref on the panel;
  * it is brought up on mount unless all of it is already on screen (key the panel by what it shows, so another pick remounts it).
