@@ -155,8 +155,9 @@ describe('the Skills scope', () => {
     expect(html).toContain('Listed but never ran');
   });
 
-  it('before the fetch answers, the scope draws nothing', () => {
-    expect(renderToStaticMarkup(createElement(Skills, { query: 'p=x', now: NOW }))).toBe('');
+  it('before the fetch answers, the scope says it is reading (#88); with no query yet it draws nothing', () => {
+    expect(read(renderToStaticMarkup(createElement(Skills, { query: 'p=x', now: NOW })))).toBe('Reading which skills ran…');
+    expect(renderToStaticMarkup(createElement(Skills, { now: NOW }))).toBe('');
   });
 });
 

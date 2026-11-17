@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useBars } from './bars.ts';
 import { duration, modelLabel, plural, tokens, usd } from './format.ts';
-import { Figures, PageHeader, PeriodSelect, ProjectSelect, Reading, Seg, useProject } from './kit.tsx';
+import { Figures, Loading, PageHeader, PeriodSelect, ProjectSelect, Reading, Seg, useProject } from './kit.tsx';
 import { bucketLabel, busiest, FAILED_USUAL, families, fillDays, niceMax, rangeOf, roundedTop, stackSegments, type Bucket, type Family, type Unit } from './ledger-math.ts';
 import { totalsFigures, totalsReading, type Range, type Sums, type Totals as TotalsData } from './totals-math.ts';
 import { Trends } from './Trends.tsx';
@@ -21,6 +21,7 @@ export type Data = {
 };
 
 const REFRESH_MS = 60_000;
+const RANGE_TEXT: Record<Range, string> = { today: 'today', '7d': 'the last 7 days', '30d': 'the last 30 days' };
 const pct = (n: number | null, digits = 1) => (n === null ? '—' : `${(n * 100).toFixed(digits)}%`);
 const cost = (s: Sums) => (s.cost === null ? '—' : usd(s.cost, s.costPartial));
 // ponytail: fixed thresholds for the amber/red hints; make them settings if they turn out wrong for someone.
@@ -46,6 +47,9 @@ function Totals({ views, hidden }: { views: ReactNode; hidden: boolean }) {
   const [data, setData] = useState<Data>();
   const [error, setError] = useState<string>();
   const [span, setSpan] = useState({ from: 0, to: 0 });
+  // What shows is what was read for the range, unit and project picked (#88): a period just picked never wears the last one's numbers under its own name.
+  const key = `${range}|${unit}|${project}`;
+  const [loadedFor, setLoadedFor] = useState<string>();
 
   useEffect(() => {
     if (hidden) return;
@@ -60,6 +64,7 @@ function Totals({ views, hidden }: { views: ReactNode; hidden: boolean }) {
         const body = (await res.json()) as Data;
         if (!live) return;
         setData(body);
+        setLoadedFor(`${range}|${unit}|${project}`);
         setSpan(r);
         setError(undefined);
       } catch (e) {
@@ -74,16 +79,18 @@ function Totals({ views, hidden }: { views: ReactNode; hidden: boolean }) {
     };
   }, [range, unit, project, hidden]);
 
-  const t = data?.totals;
+  const fresh = loadedFor === key ? data : undefined;
+  const t = fresh?.totals;
   return (
     <main className="ledger" hidden={hidden}>
       <PageHeader title="Ledger" sub="What your agents used, and what it would cost" views={views} project={<ProjectSelect one={false} />}
         period={<PeriodSelect value={range} onChange={setRange} options={[['today', 'Today'], ['7d', 'Last 7 days'], ['30d', 'Last 30 days']]} />} />
 
       {error && <div className="empty"><b>The Ledger could not load.</b><span>{error}</span></div>}
+      {!error && !fresh && <Loading>Reading {RANGE_TEXT[range]} for {project || 'all projects'}…</Loading>}
       {t && t.tokens === 0 && <div className="empty"><b>No requests in this period.</b><span>Pick a longer range, or run Claude Code with the agent-orb plugin.</span></div>}
 
-      {t && t.tokens > 0 && data && <TotalsBody data={data} range={range} unit={unit} onUnit={setUnit} span={span} />}
+      {t && t.tokens > 0 && fresh && <TotalsBody data={fresh} range={range} unit={unit} onUnit={setUnit} span={span} />}
     </main>
   );
 }

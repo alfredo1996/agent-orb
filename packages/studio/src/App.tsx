@@ -15,6 +15,7 @@ const SHOW_ENDED_MS = 10 * 60_000;
 function useStream() {
   const [sessions, setSessions] = useState<Record<string, Session>>({});
   const [isOpen, setIsOpen] = useState(false);
+  const [ready, setReady] = useState(false); // the first snapshot came: before it, an empty list means not yet, not nothing (#88)
   useEffect(() => {
     const source = new EventSource('/stream'); // reconnects by itself
     source.onopen = () => setIsOpen(true);
@@ -22,6 +23,7 @@ function useStream() {
     source.addEventListener('snapshot', (m) => {
       const { sessions: list } = JSON.parse(m.data) as { sessions: Session[] };
       setSessions(Object.fromEntries(list.map((s) => [s.id, s])));
+      setReady(true);
     });
     source.addEventListener('session', (m) => {
       const s = JSON.parse(m.data) as Session;
@@ -29,7 +31,7 @@ function useStream() {
     });
     return () => source.close();
   }, []);
-  return { sessions, isOpen };
+  return { sessions, isOpen, ready };
 }
 
 const ROUTES = { '#/ledger': 'ledger', '#/pipeline': 'pipeline', '#/factory': 'factory', '#/analysis': 'analysis' } as const;
@@ -86,7 +88,7 @@ function useNow(ms = 1000) {
 }
 
 export function App() {
-  const { sessions, isOpen } = useStream();
+  const { sessions, isOpen, ready } = useStream();
   const now = useNow();
   const { view, hash, choice, pick } = useRoute();
   const projects = useProjectList(view);
@@ -122,7 +124,7 @@ export function App() {
       </header>
 
       <ProjectContext.Provider value={{ projects, choice, pick }}>
-        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} live={new Set(list.map((s) => s.id))} sessions={list} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} />}
+        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} live={new Set(list.map((s) => s.id))} sessions={list} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} ready={ready} />}
       </ProjectContext.Provider>
     </div>
   );

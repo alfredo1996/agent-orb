@@ -211,6 +211,11 @@ tr:last-child td { border-bottom: 0; }
 .pulse.dropped { background: var(--wait-line); box-shadow: 0 0 0 3px var(--wait-bg); }
 .empty { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; color: var(--muted); font-size: 14px; display: grid; gap: 6px; }
 .empty b { color: var(--text); font-weight: 600; }
+/* A view's wait (#88): the words say what is being read; the ring turns only where motion is welcome. Inside a card or the drawer it drops the box. */
+.loading { display: flex; align-items: center; gap: 10px; }
+.card .loading, .dbody .loading { border: 0; background: none; border-radius: 0; }
+.spin { width: 16px; height: 16px; flex: none; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) { .spin { animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } } }
 
 /* Ledger (design/pages.html), scoped so its names stay apart from the Live view's */
 main { grid-template-columns: minmax(0, 1fr); } /* one column, never wider than the screen */

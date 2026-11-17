@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { plural } from './format.ts';
-import { Explain, Figures, PageHeader, PeriodSelect, ProjectSelect, Reading, useProject, withCode } from './kit.tsx';
+import { Explain, Figures, Loading, PageHeader, PeriodSelect, ProjectSelect, Reading, useProject, withCode } from './kit.tsx';
 import { claimsStat, figures, foldedLine, foldRepeats, kindRows, patternsReading, repeatCount, repeatText, type PatternsData } from './patterns-math.ts';
 
 // The Analysis page's first view (v0.3 slice 3, #45), drawn as approved in design/v0.3-worth-truth.html, from GET /api/patterns: what keeps failing
@@ -45,7 +45,7 @@ export function Patterns({ views, hidden }: { views: ReactNode; hidden: boolean 
 /** What the page shows for one project: the error, the wait, a project with no failures, or the reading, the figures and the two lists. */
 export function PatternsBody({ project, data, error }: { project: string; data?: PatternsData; error?: string }) {
   if (error) return <div className="empty"><b>Patterns could not load.</b><span>{error}</span></div>;
-  if (!data) return <div className="empty" role="status"><b>Reading the failures…</b></div>;
+  if (!data) return <Loading>Reading the failures…</Loading>;
   if (!data.failed) {
     return (
       <>
