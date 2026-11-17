@@ -165,6 +165,23 @@ describe('the open-PR read', () => {
     expect(sent).not.toContain('MERGEABLE"'); // UNSTABLE is what travels
   });
 
+  it('a CodeRabbit "review skipped" notice is no review (#94): it is kept as no bot comment, while a real CodeRabbit comment or review still is', () => {
+    // CodeRabbit posts this on every push to a repository it does not review; its body is read for the marker only, as a comment's text never travels.
+    const SKIP = '<!-- This is an auto-generated comment: skip review by coderabbit.ai -->\n\n> [!IMPORTANT]\n> ## Review skipped\n>\n> This repository does not receive automatic reviews because it has fewer than 10 stars.';
+    const bots = (comments: object[], reviews: object[] = []) =>
+      parseOpenPrs(JSON.stringify([{ number: 7, headRefOid: HEAD, mergeStateStatus: 'CLEAN', statusCheckRollup: [], comments, reviews, commits: [] }]))![0]!.bots;
+    const by = (login: string, body: string, at: string) => ({ author: { login }, body, createdAt: at });
+    expect(bots([by('coderabbitai', SKIP, '2026-11-17T10:00:00Z')])).toEqual([]);
+    // an earlier real comment keeps its own time: the notice after it does not move it
+    expect(bots([by('coderabbitai', 'Actionable comments posted: 2', '2026-11-17T09:00:00Z'), by('coderabbitai', SKIP, '2026-11-17T10:00:00Z')]))
+      .toEqual([{ author: 'coderabbitai', at: Date.parse('2026-11-17T09:00:00Z') }]);
+    // a review after the notice counts, as any review does
+    expect(bots([by('coderabbitai', SKIP, '2026-11-17T10:00:00Z')], [{ author: { login: 'coderabbitai' }, body: 'Actionable comments posted: 1', state: 'COMMENTED', submittedAt: '2026-11-17T11:00:00Z' }]))
+      .toEqual([{ author: 'coderabbitai', at: Date.parse('2026-11-17T11:00:00Z') }]);
+    // only CodeRabbit's own notice: another bot quoting it is still a bot comment
+    expect(bots([by('github-actions', SKIP, '2026-11-17T10:00:00Z')])).toEqual([{ author: 'github-actions', at: Date.parse('2026-11-17T10:00:00Z') }]);
+  });
+
   it('a read fits one request: at most 250,000 characters of JSON, the PRs past it left out (gh lists the newest first)', () => {
     const many = Array.from({ length: 40 }, (_, i) => ({
       number: 1000 - i, headRefName: `feat/${'b'.repeat(190)}`, headRefOid: 'a'.repeat(40), mergeStateStatus: 'CLEAN', comments: [], reviews: [], commits: [],
