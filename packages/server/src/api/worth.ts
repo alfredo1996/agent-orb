@@ -62,6 +62,8 @@ const NOT_RELEASE = `NOT coalesce(pr.head, '') GLOB 'release/*' AND NOT coalesce
  * is in the slice its ts falls in; an agent, where it started (the main agent, with the session, so in the first). A link with no time (made before #103) owns the whole
  * session, as every link did; a link to a PR the list never showed still bounds the slices (it is in `links`, not in the rows). Two PRs named at one instant: the lower
  * number takes the slice, the other's is empty.
+ * Only the slices of the month's PRs are costed (#87): a project whose long sessions linked hundreds of PRs paid for every one of them, 22 s on real history. `links`
+ * stays over all of them, so a PR merged in another month still ends the slice that follows it.
  * ponytail: an agent counts once, in the slice it starts in, so a PR whose slice holds no new agent shows 0 agents though the main agent worked on it; and a PR named by
  * a session only to merge or review it still takes a slice. Count the agents with a request in the slice if that is ever wanted.
  */
@@ -74,7 +76,9 @@ const SHARES = `WITH links AS (
       sum((SELECT count(*) FROM agents a WHERE a.session_id = sl.session AND coalesce(a.started_at, 0) > sl.lo AND coalesce(a.started_at, 0) <= sl.hi)) AS agents,
       sum((SELECT coalesce(sum(x.cost_usd), 0) FROM agents a JOIN turns t ON t.agent_id = a.id JOIN api_requests x ON x.turn_id = t.id
            WHERE a.session_id = sl.session AND x.ts > sl.lo AND x.ts <= sl.hi)) AS cost
-    FROM slices sl GROUP BY sl.pr)`;
+    FROM slices sl WHERE sl.pr IN (SELECT pr.id FROM pull_requests pr WHERE pr.project_id IN (SELECT id FROM projects WHERE name = :project)
+      AND pr.merged_at >= :start AND pr.merged_at < :end)
+    GROUP BY sl.pr)`;
 
 const OWNED = 'JOIN turns t ON t.id = x.turn_id JOIN agents a ON a.id = t.agent_id JOIN sessions s ON s.id = a.session_id JOIN projects p ON p.id = s.project_id';
 

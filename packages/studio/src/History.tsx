@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKey } from 'rea
 import { createPortal } from 'react-dom';
 import { duration, modelLabel, stateLabel, tokens, usd } from './format.ts';
 import { groupRuns, prettyInput, splitRedacted, type Run } from './history-format.ts';
+import { Loading } from './kit.tsx';
 import { agentName, claimReason, type ClaimView } from './live-cards.ts';
 
 // One agent's history (design/pages.html, §15): what it did, what failed and its tasks, from GET /api/history, refreshed
-// while it is open. A drawer on the right of the window, a bottom sheet on a phone; Live and the Office draw it over the page with a scrim.
+// while it is open. A drawer on the right of the window, a bottom sheet on a phone; Live draws it over the page with a scrim.
 
 export type Item =
   | { kind: 'task'; ts: number; text?: string; length?: number }
@@ -178,6 +179,7 @@ export function History({ picked, project, live, label, now, sheet, onClose }: {
       </div>
       <div className="dbody" id="hpanel" role="tabpanel" aria-labelledby={`htab-${tab}`}>
         {error && <p className="dnote">{error}</p>}
+        {!data && !error && <Loading>Reading what this agent did…</Loading>}
         {data?.content === 'off' && (
           <div className="note">
             <b>Content is off.</b>

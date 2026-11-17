@@ -5,7 +5,6 @@ import { Connection, ProjectContext } from './kit.tsx';
 import { Ledger } from './Ledger.tsx';
 import { Live, type Session } from './Live.tsx';
 import { lastEventOf, shown } from './live-cards.ts';
-import { Office } from './Office.tsx';
 import { Pipeline } from './Pipeline.tsx';
 import { choiceQuery, choose, readChoice, readSession } from './project-choice.ts';
 
@@ -16,6 +15,7 @@ const SHOW_ENDED_MS = 10 * 60_000;
 function useStream() {
   const [sessions, setSessions] = useState<Record<string, Session>>({});
   const [isOpen, setIsOpen] = useState(false);
+  const [ready, setReady] = useState(false); // the first snapshot came: before it, an empty list means not yet, not nothing (#88)
   useEffect(() => {
     const source = new EventSource('/stream'); // reconnects by itself
     source.onopen = () => setIsOpen(true);
@@ -23,6 +23,7 @@ function useStream() {
     source.addEventListener('snapshot', (m) => {
       const { sessions: list } = JSON.parse(m.data) as { sessions: Session[] };
       setSessions(Object.fromEntries(list.map((s) => [s.id, s])));
+      setReady(true);
     });
     source.addEventListener('session', (m) => {
       const s = JSON.parse(m.data) as Session;
@@ -30,10 +31,10 @@ function useStream() {
     });
     return () => source.close();
   }, []);
-  return { sessions, isOpen };
+  return { sessions, isOpen, ready };
 }
 
-const ROUTES = { '#/ledger': 'ledger', '#/pipeline': 'pipeline', '#/factory': 'factory', '#/office': 'office', '#/analysis': 'analysis' } as const;
+const ROUTES = { '#/ledger': 'ledger', '#/pipeline': 'pipeline', '#/factory': 'factory', '#/analysis': 'analysis' } as const;
 type View = 'live' | (typeof ROUTES)[keyof typeof ROUTES];
 
 /**
@@ -87,7 +88,7 @@ function useNow(ms = 1000) {
 }
 
 export function App() {
-  const { sessions, isOpen } = useStream();
+  const { sessions, isOpen, ready } = useStream();
   const now = useNow();
   const { view, hash, choice, pick } = useRoute();
   const projects = useProjectList(view);
@@ -116,7 +117,6 @@ export function App() {
           <a href="#/ledger" aria-current={view === 'ledger' ? 'page' : undefined}>Ledger</a>
           <a href="#/pipeline" aria-current={view === 'pipeline' ? 'page' : undefined}>Pipeline</a>
           <a href="#/factory" aria-current={view === 'factory' ? 'page' : undefined}>Factory</a>
-          <a href="#/office" aria-current={view === 'office' ? 'page' : undefined}>Office</a>
           <a href="#/analysis" aria-current={view === 'analysis' ? 'page' : undefined}>Analysis</a>
         </nav>
         <Connection isOpen={isOpen} lastEvent={lastEvent} now={now} host={location.host} />
@@ -124,7 +124,7 @@ export function App() {
       </header>
 
       <ProjectContext.Provider value={{ projects, choice, pick }}>
-        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} live={new Set(list.map((s) => s.id))} sessions={list} /> : view === 'office' ? <Office sessions={running} all={sessions} now={now} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} />}
+        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} live={new Set(list.map((s) => s.id))} sessions={list} /> : view === 'analysis' ? <Analysis /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} ready={ready} />}
       </ProjectContext.Provider>
     </div>
   );

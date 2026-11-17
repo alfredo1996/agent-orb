@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ago, contextMeter, duration, modelLabel, plural, readTokens, stateLabel, usd } from './format.ts';
 import { rowKey, useHistory, type Open, type Picked } from './History.tsx';
-import { Explain, PageHeader } from './kit.tsx';
+import { Explain, Loading, PageHeader } from './kit.tsx';
 import { agentName, liveSentence, loadStops, needKey, needs, pricierSub, progress, rowState, runFor, saveStops, sentence, skillHow, startedLabel, stopClick, stopKey, stopMode, tree, type CardAgent, type Need, type StopMode } from './live-cards.ts';
 
 // The Live view (PROJECT.md §8.1), drawn as approved in design/pages.html (the v3 rows, §15), fed by /stream.
@@ -36,7 +36,7 @@ function useWantedSession(list: Session[], wanted: string | null) {
   useEffect(() => focusWanted(want, list.length, document, matchMedia('(prefers-reduced-motion: reduce)').matches), [list]);
 }
 
-export function Live({ list, all, now, wanted = null }: { list: Session[]; all: Record<string, Session>; now: number; wanted?: string | null }) {
+export function Live({ list, all, now, wanted = null, ready = true }: { list: Session[]; all: Record<string, Session>; now: number; wanted?: string | null; ready?: boolean }) {
   const { picked, open, drawer } = useHistory(all, now);
   useWantedSession(list, wanted);
   return (
@@ -45,7 +45,8 @@ export function Live({ list, all, now, wanted = null }: { list: Session[]; all: 
 
       <NeedsYou list={list} now={now} onOpen={open} />
 
-      {!list.length && (
+      {!list.length && !ready && <Loading>Connecting to the server…</Loading>}
+      {!list.length && ready && (
         <div className="empty">
           <b>Nothing to show yet.</b>
           <span>Start Claude Code with the agent-orb plugin: its agents appear here within a couple of seconds.</span>

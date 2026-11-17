@@ -24,15 +24,15 @@ afterEach(() => {
 });
 
 describe('the studio frame', () => {
-  it('the top bar links the six views in order and the brand', () => {
+  it('the top bar links the five views in order and the brand', () => {
     const html = at('');
     expect(html).toContain('<div class="brand"><span class="orb" aria-hidden="true"></span>agent-orb</div>');
-    expect([...html.matchAll(/<a href="([^"]*)"/g)].map((m) => m[1])).toEqual(['#/', '#/ledger', '#/pipeline', '#/factory', '#/office', '#/analysis']);
-    expect(read(html.match(/<nav.*<\/nav>/s)![0])).toBe('Live Ledger Pipeline Factory Office Analysis');
+    expect([...html.matchAll(/<a href="([^"]*)"/g)].map((m) => m[1])).toEqual(['#/', '#/ledger', '#/pipeline', '#/factory', '#/analysis']);
+    expect(read(html.match(/<nav.*<\/nav>/s)![0])).toBe('Live Ledger Pipeline Factory Analysis');
   });
 
   it.each([
-    ['', 'Live', 'live'], ['#/ledger', 'Ledger', 'ledger'], ['#/pipeline', 'Pipeline', 'pipeline'], ['#/factory', 'Factory', 'factory'], ['#/office', 'Office', 'office'], ['#/analysis', 'Analysis', 'patterns'],
+    ['', 'Live', 'live'], ['#/ledger', 'Ledger', 'ledger'], ['#/pipeline', 'Pipeline', 'pipeline'], ['#/factory', 'Factory', 'factory'], ['#/analysis', 'Analysis', 'patterns'],
   ])('at %j the current page is %s, and only it, and its view is the one drawn', (hash, name, main) => {
     const html = at(hash);
     const current = [...html.matchAll(/<a href="[^"]*" aria-current="page">(.*?)<\/a>/g)].map((m) => m[1]);
@@ -65,7 +65,10 @@ describe('the studio frame', () => {
     expect(html).not.toContain('New analysis');
   });
 
-  it('the Office shows its empty floor', () => {
-    expect(read(at('#/office'))).toContain('The floor is empty.');
+  it('the Office is gone (#89): an old #/office link opens Live, as any unknown route does', () => {
+    const html = at('#/office');
+    expect([...html.matchAll(/<a href="[^"]*" aria-current="page">(.*?)<\/a>/g)].map((m) => m[1])).toEqual(['Live']);
+    expect(html).toContain('<main class="live"');
+    expect(read(html)).not.toContain('The floor is empty.');
   });
 });

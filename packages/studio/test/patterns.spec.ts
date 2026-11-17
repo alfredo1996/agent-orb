@@ -292,7 +292,7 @@ describe('the Analysis switch', () => {
     for (const part of [
       'Analysis Claude reads a week and suggests what to change', 'Last 7 days Last 30 days One session',
       'New analysis nothing is sent until you confirm', 'Model', 'Estimate', 'Monthly cap', 'every run is a line in the Ledger',
-      'Reports 0 so far', 'No analysis yet. The first one appears here once you confirm it.', 'When an analysis runs',
+      'Reports 0 so far', 'Reading past reports…', 'When an analysis runs',
     ]) expect(text).toContain(part);
   });
 

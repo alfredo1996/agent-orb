@@ -765,6 +765,19 @@ describe('GET /api/worth: a PR\'s share of a session', () => {
     expect(n).toMatchObject({ sessions: 1, agents: 2 });
   });
 
+  it('a PR merged before the month still ends the slice of the next one (#87): only the month\'s PRs are costed, but every link bounds them', async () => {
+    write([
+      ev(P, 'sp-x7', iso('2026-10-26T10:00:00Z'), 'project.prs', { prs: [pr(38, 'feat: 38', '2026-09-15T10:00:00Z', 10, 1, undefined, [10, 1]), pr(39, 'feat: 39', '2026-10-20T10:00:00Z', 10, 1, undefined, [10, 1])] }),
+      start(P, 'sp-7', day('09:00')), turnBy('sp-7', day('09:30'), SONNET, u(0, 11_000)), link(P, 'sp-7', 38, day('10:00')),
+      turnBy('sp-7', day('10:30'), SONNET, u(0, 13_000)), link(P, 'sp-7', 39, day('11:00')),
+    ]);
+    const body = await rows(P);
+    expect(body.prs.map((x: any) => x.number)).not.toContain(38); // September's
+    const n = rowOf(body, 39);
+    close(n.cost, c(SONNET, u(0, 13_000))); // not the 11,000 at 09:30, which is PR 38's slice
+    expect(n).toMatchObject({ sessions: 1, agents: 0 }); // the main agent started in PR 38's slice
+  });
+
   it('another project\'s session with a link of the same PR number is not in the window: slices are per session', async () => {
     // mobile-app's g-1 and splitter's sessions never meet: PR 31 here has no mobile-app cost
     expect(rowOf((await rome()).body, 31)).toBeUndefined();
