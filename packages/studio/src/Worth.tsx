@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
-import { Explain, Figure, PageHeader, ProjectSelect, Reading, Seg, useProject } from './kit.tsx';
+import { Explain, Figure, Loading, PageHeader, ProjectSelect, Reading, Seg, useProject } from './kit.tsx';
 import { monthName } from './trends-math.ts';
 import {
   CUT_NAMES, cutText, firstRows, hours, monthKey, monthLong, monthTitle, parseCut, parseHours, parsePlan, parseRate, parseSizesForm, prsHint, SIZE_NAMES, stepMonth,
@@ -99,6 +99,7 @@ export function Worth({ views, hidden }: { views: ReactNode; hidden: boolean }) 
 
       {error && <div className="empty"><b>Worth could not load.</b><span>{error}</span></div>}
       {projects?.length === 0 && <div className="empty"><b>Nothing recorded yet.</b><span>Worth starts when a session runs with the agent-orb plugin.</span></div>}
+      {!error && !data && projects?.length !== 0 && <Loading>{project ? `Reading the PRs merged in ${monthLong(month)} for ${project}…` : 'Reading your projects…'}</Loading>}
 
       {data && (
         <>

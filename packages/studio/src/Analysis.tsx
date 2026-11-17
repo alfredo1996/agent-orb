@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { modelOption } from './analysis-format.ts';
 import { tokens, usd } from './format.ts';
-import { Explain, PageHeader, PeriodSelect, ProjectSelect, Seg, useProject, useReveal } from './kit.tsx';
+import { Explain, Loading, PageHeader, PeriodSelect, ProjectSelect, Seg, useProject, useReveal } from './kit.tsx';
 import { rangeOf } from './ledger-math.ts';
 import { Patterns } from './Patterns.tsx';
 
@@ -194,7 +194,8 @@ function Reports({ views, hidden }: { views: ReactNode; hidden: boolean }) {
 
         <section className="card" aria-label="Reports">
           <h2>Reports <span className="hint">{info?.reports.length ?? 0} so far</span></h2>
-          {!info?.reports.length && <p className="empty2">No analysis yet. The first one appears here once you confirm it.</p>}
+          {!info && !error && <Loading>Reading past reports…</Loading>}
+          {info && !info.reports.length && <p className="empty2">No analysis yet. The first one appears here once you confirm it.</p>}
           <ul className="reports">
             {info?.reports.map((r) => (
               <li key={r.id}>

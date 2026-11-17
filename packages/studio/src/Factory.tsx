@@ -4,7 +4,7 @@ import { askFor, boardFor, linksFor, linksQuery, pinAfter, type Pin } from './bo
 import { MapBand, mapReading, type LinksData } from './FactoryMap.tsx';
 import { usd } from './format.ts';
 import { trapTab, usePhone } from './History.tsx';
-import { PageHeader, ProjectSelect, Reading, Seg, useProject, type Said } from './kit.tsx';
+import { Loading, PageHeader, ProjectSelect, Reading, Seg, useProject, type Said } from './kit.tsx';
 import type { Session } from './Live.tsx';
 
 // Factory (v0.4 slice 1, #27), drawn as approved in design/v0.4-factory.html, the Factory and Findings boards, from GET /api/factory: each open PR with the first
@@ -642,17 +642,21 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
         period={<MilestoneSelect milestones={last?.milestones ?? []} value={milestone ?? last?.milestone ?? null} onChange={(m) => setChosen({ project, milestone: m })} />} />
       {error && <div className="empty"><b>Factory could not load.</b><span>{error}</span></div>}
       {projects?.length === 0 && <div className="empty"><b>Nothing recorded yet.</b><span>Factory starts when a session runs with the agent-orb plugin.</span></div>}
+      {!project && !projects && <Loading>Reading your projects…</Loading>}
       {view === 'map' && (
         <>
+          {project && !boarded && !boardError && <Loading>Reading the Map for {project}…</Loading>}
           {boardError && !boarded && <div className="empty"><b>The Map could not load.</b><span>The board could not be read: {boardError}</span></div>}
           {boarded && linked && <Reading said={mapReading(boarded, linked.links)} by="Counted from the links below. No model writes this." />}
           {boarded && <MapBand board={boarded} links={linked} error={linksError} boardError={boardError} sessions={sessions} picked={pressed} onPick={setPressed} phone={phone} />}
         </>
       )}
+      {view === 'board' && project && !shown && !error && <Loading>Reading {project}'s PRs and board…</Loading>}
       {view === 'board' && shown && (
         <>
           <Reading said={factoryReading(shown)} />
           <NeedsYou prs={shown.prs} costs={costs} left={leftRunning(machine)} now={now} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />
+          {!boarded && !boardError && <Loading>Reading the board…</Loading>}
           {(boarded || boardError) && <BoardBand data={boarded} error={boardError} live={live} openable={new Set(shown.prs.map((p) => p.number))} cost={costs} notOnIssue={costed?.notOnIssue} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />}
           {costed && <BudgetCard data={costed} onSave={save} />}
         </>

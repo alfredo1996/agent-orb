@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ago, tokens, usd } from './format.ts';
-import { Explain, useReveal } from './kit.tsx';
+import { Explain, Loading, useReveal } from './kit.tsx';
 import { byDay, calledText, layoutSkills, nodeLine, routeEdges, SKILL_NODE } from './skills-layout.ts';
 
 // The Pipeline's Skills scope (PROJECT.md §8.3, §15), drawn as approved in design/pages.html (skills()), from /api/skills.
@@ -25,7 +25,7 @@ const slash = (n: Node | Usage) => ('kind' in n && n.kind === 'agent' ? n.name :
 const Chip = ({ source, agent }: { source?: string; agent?: boolean }) => <span className={`og-chip ${agent ? 'builtin' : origin(source)[1]}`}>{agent ? 'agent' : origin(source)[0]}</span>;
 
 export function Skills({ query, now }: { query?: string; now: number }) {
-  const [data, setData] = useState<Data>();
+  const [read, setRead] = useState<{ query: string; data: Data }>(); // what was read, for which query (#88)
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -33,14 +33,15 @@ export function Skills({ query, now }: { query?: string; now: number }) {
     let on = true;
     fetch(`/api/skills?${query}`)
       .then(async (res) => (res.ok ? (res.json() as Promise<Data>) : Promise.reject(new Error(`/api/skills answered ${res.status}`))))
-      .then((d) => on && (setData(d), setError(undefined)))
+      .then((d) => on && (setRead({ query, data: d }), setError(undefined)))
       .catch((e: Error) => on && setError(e.message));
     return () => { on = false; };
   }, [query]);
 
   if (error) return <div className="empty"><b>The skills could not load.</b><span>{error}</span></div>;
-  if (!data) return null;
-  return <SkillsView data={data} now={now} />;
+  if (!query) return null;
+  if (read?.query !== query) return <Loading>Reading which skills ran…</Loading>;
+  return <SkillsView data={read.data} now={now} />;
 }
 
 /** What the Skills scope draws from the data: apart from the fetch so that a test renders it. */

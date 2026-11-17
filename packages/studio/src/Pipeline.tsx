@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { duration, modelLabel, tokens, usd } from './format.ts';
 import { rangeOf } from './ledger-math.ts';
 import { edgeLabel, edgePath, edgeWidth, isStall, layoutRoles, NODE, ownSpans, recentFirst, roleText, typeText } from './pipeline-layout.ts';
-import { Explain, PageHeader, PeriodSelect, ProjectSelect, Seg, useProject, useReveal } from './kit.tsx';
+import { Explain, Loading, PageHeader, PeriodSelect, ProjectSelect, Seg, useProject, useReveal } from './kit.tsx';
 import { Skills } from './Skills.tsx';
 
 // The Pipeline (PROJECT.md §8.3), drawn as approved in design/pages.html, from /api/pipeline and /api/lanes.
@@ -28,11 +28,11 @@ const json = async <T,>(url: string, init?: RequestInit): Promise<T> => {
 };
 
 export function Pipeline({ now }: { now: number }) {
-  const { project } = useProject(true); // one project: the Pipeline never offers all of them
+  const { project, projects } = useProject(true); // one project: the Pipeline never offers all of them
   const [scope, setScope] = useState<Scope>('week');
   const [sessions, setSessions] = useState<{ id: string; started_at: number; tokens: number }[]>([]);
   const [session, setSession] = useState('');
-  const [data, setData] = useState<Data>();
+  const [read, setRead] = useState<{ query: string; data: Data }>(); // what was read, for which query (#88)
   const [lanes, setLanes] = useState<LaneData>();
   const [picked, setPicked] = useState<string>();
   const [error, setError] = useState<string>();
@@ -61,7 +61,7 @@ export function Pipeline({ now }: { now: number }) {
 
   useEffect(() => {
     if (!query || view !== 'roles') return;
-    json<Data>(`/api/pipeline?${query}`).then((d) => { setData(d); setError(undefined); }).catch((e) => setError(e.message));
+    json<Data>(`/api/pipeline?${query}`).then((d) => { setRead({ query, data: d }); setError(undefined); }).catch((e) => setError(e.message));
     if (scope === 'session') json<typeof lanes>(`/api/lanes?session=${encodeURIComponent(session)}`).then(setLanes).catch(() => setLanes(undefined));
     else setLanes(undefined);
   }, [query, view, version]);
@@ -71,6 +71,8 @@ export function Pipeline({ now }: { now: number }) {
     setVersion((v) => v + 1);
   };
 
+  // What shows is what was read for the project and period picked: one just picked waits for its own answer, not the last one's org chart.
+  const data = read && read.query === query ? read.data : undefined;
   const role = data?.roles.find((r) => r.role === picked);
   const pick = (r: string) => setPicked(picked === r ? undefined : r);
   return (
@@ -89,6 +91,7 @@ export function Pipeline({ now }: { now: number }) {
 
       {view === 'skills' ? <Skills query={query} now={now} /> : <>
       {error && <div className="empty"><b>The Pipeline could not load.</b><span>{error}</span></div>}
+      {!error && !data && (query || (!project && !projects)) && <Loading>{project ? `Reading who delegated to whom in ${project}…` : 'Reading your projects…'}</Loading>}
       {data && !data.roles.length && <div className="empty"><b>No agents in this period.</b><span>Pick a longer period or another project.</span></div>}
 
       {data && data.roles.length > 0 && (

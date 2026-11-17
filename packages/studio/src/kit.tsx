@@ -33,6 +33,11 @@ export function useProject(one: boolean) {
   return { project: shown(choice, one, projects), projects };
 }
 
+/** What a view shows while its read is out (#88): a spinner, and in words what it is reading. The answer or an error takes its place. */
+export function Loading({ children }: { children: ReactNode }) {
+  return <div className="empty loading" role="status"><span className="spin" aria-hidden="true" />{children}</div>;
+}
+
 /** The header's project slot: the one picker of the page, the same list on every view; "All projects" only where the view can show it. */
 export function ProjectSelect({ one }: { one: boolean }) {
   const { projects, choice, pick } = useContext(ProjectContext);

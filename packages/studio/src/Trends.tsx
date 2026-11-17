@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { useBars } from './bars.ts';
 import { plural, tokens } from './format.ts';
-import { Explain, Figures, PageHeader, PeriodSelect, ProjectSelect, Reading, Say, Seg, useProject, useReveal } from './kit.tsx';
+import { Explain, Figures, Loading, PageHeader, PeriodSelect, ProjectSelect, Reading, Say, Seg, useProject, useReveal } from './kit.tsx';
 import { busiestOf, niceMax, roundedTop } from './ledger-math.ts';
 import {
   PARTS, axisMoney, barSegments, compare, compareSentence, commitLine, fillBuckets, firstFiles, gitFiles, goalTitle, goalView, listLine, listed, markers, money,
@@ -59,6 +59,8 @@ export function Trends({ views, hidden }: { views: ReactNode; hidden: boolean })
     };
   }, [project, unit, hidden]);
 
+  // What shows is what was read for this project and unit (#88): a project or unit just picked waits for its own answer.
+  const fresh = data && data.project === project && data.unit === unit ? data : undefined;
   return (
     <main className="ledger trends" hidden={hidden}>
       <PageHeader title="Ledger" sub="What a day costs, and what each change did to it" views={views} project={<ProjectSelect one />}
@@ -66,11 +68,12 @@ export function Trends({ views, hidden }: { views: ReactNode; hidden: boolean })
 
       {error && <div className="empty"><b>Trends could not load.</b><span>{error}</span></div>}
       {projects?.length === 0 && <NoHistory />}
-      {data && !data.buckets.length && (
-        data.unit === 'week' ? <NoHistory project={data.project} /> : <div className="empty"><b>No requests for {data.project} in the last 30 days.</b><span>Week shows the last 12 weeks.</span></div>
+      {!error && !fresh && projects?.length !== 0 && <Loading>{project ? `Reading ${unit === 'week' ? 'the last 12 weeks' : 'the last 30 days'} for ${project}…` : 'Reading your projects…'}</Loading>}
+      {fresh && !fresh.buckets.length && (
+        fresh.unit === 'week' ? <NoHistory project={fresh.project} /> : <div className="empty"><b>No requests for {fresh.project} in the last 30 days.</b><span>Week shows the last 12 weeks.</span></div>
       )}
 
-      {data && data.buckets.length > 0 && <TrendsBody data={data} project={project} split={split} onSplit={setSplit} hidden={hidden} />}
+      {fresh && fresh.buckets.length > 0 && <TrendsBody data={fresh} project={project} split={split} onSplit={setSplit} hidden={hidden} />}
     </main>
   );
 }
