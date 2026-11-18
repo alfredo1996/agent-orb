@@ -2,7 +2,7 @@
 # The base image is pinned by digest: it updates by bumping this digest (`docker buildx imagetools inspect node:22-alpine`); Dependabot (`.github/dependabot.yml`, docker ecosystem) proposes the bump as a PR into dev.
 # The studio and deps stages run on the build machine's platform ($BUILDPLATFORM), so a multi-arch build never runs Node under QEMU:
 # the release run's arm64 `pnpm install` crashed there with an illegal instruction and hung (#100). The final stage only copies their output.
-FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS studio
+FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS studio
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
@@ -14,7 +14,7 @@ RUN pnpm --filter @agent-orb/studio build
 
 # ponytail: installing on the build platform holds while the server's production dependencies are pure JavaScript.
 # A dependency with a native addon would land here built for the wrong architecture: its install then moves back into the final stage.
-FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS deps
+FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a AS deps
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
@@ -22,7 +22,7 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/server/package.json packages/server/
 RUN pnpm install --frozen-lockfile --prod --filter @agent-orb/server...
 
-FROM node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202
+FROM node:22-alpine@sha256:1314fb30ec37592d5845e5a160d522c0e680972aa534549940b8d73bde88481a
 WORKDIR /app
 COPY --from=deps /app ./
 COPY packages/shared/src packages/shared/src
