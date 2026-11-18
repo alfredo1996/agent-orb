@@ -1710,6 +1710,17 @@ test('v0.4 slice 1: the open PRs are read in the checkout at session start and e
   expect(JSON.stringify(w.sent())).not.toMatch(/races|Ship it|someone|Retry after|retry the refresh|MERGEABLE/)
 })
 
+test('#94: a PR whose only bot comment is CodeRabbit\'s "review skipped" notice is read with no bot comment, so the merge check has nothing unread to hold it on', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  const [pr] = JSON.parse(OPEN_LIST)
+  w.gh.open = JSON.stringify([{ ...pr, mergeStateStatus: 'CLEAN', comments: [{ author: { login: 'coderabbitai' }, body: '<!-- This is an auto-generated comment: skip review by coderabbit.ai -->\n> ## Review skipped\n> fewer than 10 stars', createdAt: '2026-11-01T15:10:51Z' }] }])
+  await boot($)
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+  expect(openSent(w).map((e) => e.data.prs.map((p: any) => [p.number, p.merge_state, p.bots]))).toEqual([[[416, 'CLEAN', []]]])
+  expect(JSON.stringify(w.sent())).not.toMatch(/Review skipped|stars|coderabbit\.ai/)
+})
+
 test('v0.4 slice 1: an excluded project\'s open PRs go without branch names; a gh that is not logged in sends nothing', { options: { token: 'tok', excludeProjects: 'o/r' } }, async ($: any, on: any) => {
   const w = world(on)
   w.gh.open = OPEN_LIST
