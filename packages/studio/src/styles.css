@@ -887,6 +887,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 /* The issue page (v0.5 slice 2, #106; design/home-issue.html, the Issue board): a crumb, a sentence and seven steps, then the story beside the checks, the related issues, the findings, the cost and the sessions.
    One column below 1100px, and the steps stack on a phone. The checks, findings and cost are the sheet's own pieces (.factory-sheet), so they look as they did there. */
 .issue .iss-head { display: grid; gap: 10px; }
+.issue .pagehead h1 { flex: 0 1 auto; min-width: 0; text-wrap: balance; overflow-wrap: anywhere; } /* an issue's title is a sentence: it wraps, where a page's one-word title never needs to */
 .issue .iss-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .issue .iss-crumb a { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
 .issue .iss-crumb a:hover { text-decoration: underline; text-underline-offset: 3px; }

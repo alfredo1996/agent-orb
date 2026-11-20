@@ -272,6 +272,16 @@ describe('GET /api/issue: the rest of the page', () => {
     expect(p.stages.find((s) => s.stage === 'merged')!.at).toBe(T0 + 9 * MIN);
   });
 
+  it('a PR the latest read lists open is not merged, whatever merge time its number carries from an older repo: no merge line, and the stage is the board\'s', async () => {
+    await send(start('s-409', 'fix/409-retry'), ...call('s-409', T0 + MIN, { write: 'src/a.ts' }),
+      merged(T0 + 2 * MIN, [{ number: 416, merged_at: T0 - 7 * 24 * 60 * MIN, head: 'old/416' }]), // the number, as a repo the project moved from used it
+      read(NOW - MIN, [pr(416, { head: 'fix/409-retry', issue: 409, created_at: T0 + 3 * MIN })], issues(409)));
+    const p = await page(409);
+    expect(p.story.map((l) => [l.kind, l.at])).toEqual([['run', T0], ['pr-open', T0 + 3 * MIN]]);
+    expect(p.issue.stage).toBe('building');
+    expect((await board()).issues.find((i) => i.number === 409)!.stage).toBe('building');
+  });
+
   it('for every issue of a fixture that covers all seven stages, the story\'s last stage and the issue\'s are the board\'s', async () => {
     const branch = (s: string, b: string, ...rest: unknown[]) => [start(s, b), ...call(s, T0 + MIN, { write: 'src/a.ts' }), ...rest];
     await send(

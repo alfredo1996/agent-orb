@@ -139,9 +139,11 @@ export function issueOf(store: Store, content: ContentStore, project: string, nu
       rounds: mine.map(({ ref, agent, ...x }) => x), usd: r.usd, partial: r.partial });
   }
   for (const x of rounds) if (!runIds.has(x.agent)) lines.push({ kind: 'round', at: x.at, last: x.at, agent: x.agent, reviewer: x.reviewer, open: x.open, dropped: x.dropped });
+  // A PR the latest read lists open isn't merged, whatever merge time its number carries (a repo the project moved from used the number): the board's mergedPr() reads it the same way.
+  const stillOpen = new Set((openOf.get(number) ?? []).map((p) => p.number));
   for (const p of prs) {
     if (p.createdAt != null) lines.push({ kind: 'pr-open', at: p.createdAt, last: p.createdAt, pr: p.number });
-    if (p.mergedAt != null) lines.push({ kind: 'pr-merged', at: p.mergedAt, last: p.mergedAt, pr: p.number });
+    if (p.mergedAt != null && !stillOpen.has(p.number)) lines.push({ kind: 'pr-merged', at: p.mergedAt, last: p.mergedAt, pr: p.number });
   }
   lines.sort((a, b) => a.at - b.at);
   const story = lines.map(({ last, ...l }) => ({ ...l, stage: stageAt(last) }));
