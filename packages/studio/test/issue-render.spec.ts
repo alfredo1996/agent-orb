@@ -33,14 +33,14 @@ const FLIGHT: IssueData = {
   ],
   stages: NO_STEPS({ building: { at: T0 }, reviewing: { at: T0 + 15 * MIN }, fixing: { at: T0 + 20 * MIN } }),
   checks: CHECKS, cost: cost(1.5),
-  links: [{ kind: 'file', a: 409, b: 412, files: ['src/net/client.ts'], count: 1, together: true, title: 'Queue uploads while offline' }, { kind: 'mention', a: 409, b: 403, title: 'Offline banner' }],
-  mentions: [{ issue: 999, direction: 'out', title: null }],
-  sessions: [{ id: 's-409', branch: 'fix/409-retry', at: T0 + 20 * MIN, windowOnly: false, imported: false }],
+  links: [{ kind: 'file', a: 409, b: 412, files: ['src/net/client.ts'], count: 1, together: true, title: 'Queue uploads while offline', stage: 'ready' }, { kind: 'mention', a: 409, b: 403, title: 'Offline banner', stage: 'merged' }],
+  mentions: [{ issue: 999, direction: 'out', title: null, stage: null, known: false }, { issue: 777, direction: 'out', both: true, title: 'Cache sizes', stage: null, known: true }],
+  sessions: [{ id: 's-409', branch: 'fix/409-retry', at: T0 + 20 * MIN, startedAt: T0, windowOnly: false, imported: false }],
 };
 const MERGED: IssueData = {
   ...FLIGHT, issue: { ...FLIGHT.issue, number: 403, title: 'Offline banner', stage: 'merged', ready: null, reason: null, pr: { number: 405, head: 'fix/403-banner', merged: true } },
   story: [FLIGHT.story[0]!, { kind: 'pr-merged', at: T0 + 30 * MIN, stage: 'merged', pr: 405 }], stages: NO_STEPS({ building: { at: T0 }, merged: { at: T0 + 30 * MIN } }), checks: null, links: [], mentions: [],
-  sessions: [{ id: 's-403', branch: 'fix/403-banner', at: T0, windowOnly: false, imported: false }],
+  sessions: [{ id: 's-403', branch: 'fix/403-banner', at: T0, startedAt: T0, windowOnly: false, imported: false }],
 };
 const QUEUED: IssueData = {
   ...FLIGHT, issue: { number: 417, title: 'Clear the cache on sign-out', milestone: 'v2.3 Offline', stage: 'queued', ready: null, reason: null, openedAt: null, pr: null },
@@ -95,13 +95,15 @@ describe('the issue page, in flight', () => {
     expect(t).toContain('Fixed (1)');
     expect(t).toContain('Cost, estimate');
     expect(page(FLIGHT)).toContain('aria-label="Budget for this issue"');
-    expect(t).toContain('fix/409-retry Last event Tue 09:20 Open in Live');
+    expect(t).toContain('fix/409-retry Tue 09:00 to Tue 09:20 Open in Live');
   });
 
   it('related issues: the file two wrote, in flight together, the mention, one that is on no map, and the link to the milestone\'s map', () => {
     const html = page(FLIGHT);
     const rel = plain(html.match(/<section class="card" aria-label="Related issues">[\s\S]*?<\/section>/)![0]);
-    expect(rel).toBe('Related issues #412 Queue uploads while offline Both wrote src/net/client.ts In flight together #403 Offline banner This issue mentions it #999 This issue mentions it, and it is not on the milestone\'s map See them on the milestone\'s map');
+    expect(rel).toBe('Related issues by files written, and by mentions #412 Queue uploads while offline Both wrote src/net/client.ts Ready In flight together #403 Offline banner This issue mentions it Merged #999 This issue mentions it, and it is not on the milestone\'s map #777 Cache sizes Each mentions the other, and it is not on the milestone\'s map See them on the milestone\'s map');
+    expect(html).not.toContain('href="#/issue?project=mobile-app&amp;issue=999"'); // the plugin never read #999: it has no page to open, so it is text
+    expect(html).toContain('href="#/issue?project=mobile-app&amp;issue=777"');
     const href = html.match(/href="([^"]*)">See them on the milestone/)![1]!.replace(/&amp;/g, '&');
     expect(readFactory(href)).toEqual({ view: 'map', milestone: 'v2.3 Offline' }); // the Map this link lands on
     expect(readChoice(href).single).toBe('mobile-app');
@@ -126,7 +128,7 @@ describe('the issue page, merged and queued', () => {
     expect(plain(html)).toContain('Can it merge? No PR yet.');
     expect(plain(html)).toContain('Findings No review has reported yet.');
     expect(plain(html)).toContain('Sessions None yet.');
-    expect(plain(html)).toContain('Related issues No link to another issue.');
+    expect(plain(html)).toContain('Related issues by files written, and by mentions No link to another issue.');
     expect(plain(html)).toContain('No GitHub data yet');
     expect(lines(html)).toEqual([]);
   });
@@ -136,14 +138,14 @@ describe('what is missing, said in words', () => {
   const words = (d: IssueData) => [...page(d).matchAll(/<p class="miss">([^<]*)<\/p>/g)].map((m) => plain(m[1]!).replace(/&#x27;/g, "'"));
 
   it('an issue reached only through a PR: the split is by time window', () => {
-    const d = { ...FLIGHT, sessions: [{ id: 's-long', branch: 'dev', at: T0, windowOnly: true, imported: false }] };
+    const d = { ...FLIGHT, sessions: [{ id: 's-long', branch: 'dev', at: T0, startedAt: T0, windowOnly: true, imported: false }] };
     expect(words(d)).toContain('Reached only through a PR: a session on no issue branch counts here from its turns up to the PR\'s opening, split by time window.');
-    expect(plain(page(d))).toContain('dev Last event Tue 09:00 By time window');
+    expect(plain(page(d))).toContain('dev Tue 09:00 to Tue 09:00 By time window');
     expect(words(FLIGHT).join()).not.toContain('Reached only through a PR');
   });
 
   it('a session imported from the logs: no files or findings were recorded', () => {
-    const d = { ...FLIGHT, sessions: [{ id: 's-imp', branch: 'fix/409-retry', at: T0, windowOnly: false, imported: true }] };
+    const d = { ...FLIGHT, sessions: [{ id: 's-imp', branch: 'fix/409-retry', at: T0, startedAt: null, windowOnly: false, imported: true }] };
     expect(words(d)).toContain('Imported from Claude Code\'s logs: files and findings weren\'t recorded.');
   });
 
@@ -157,5 +159,38 @@ describe('what is missing, said in words', () => {
     const d = { ...QUEUED, content: 'excluded' as const, issue: { ...QUEUED.issue, title: null } };
     expect(words(d)).toContain('This project is in excludeProjects: issues show by number, with no title.');
     expect(page(d)).toContain('<h1>#417</h1>');
+  });
+});
+
+describe('the page\'s details (#106)', () => {
+  it('a stage that was skipped shows nothing, one ahead Not yet, and Not recorded only for Gate and Ready of a merged issue', () => {
+    const stepsOf = (d: IssueData) => [...page(d).matchAll(/<li class="([^"]*)"[^>]*><b>(\w+)<\/b><span>([^<]*)<\/span>/g)].map((m) => [m[2], m[3]]);
+    // Building then straight to Gate: no review reported, so Reviewing and Fixing were passed with no time
+    const gate = { ...FLIGHT, issue: { ...FLIGHT.issue, stage: 'gate' as const }, stages: NO_STEPS({ building: { at: T0 }, gate: { at: T0 + 5 * MIN } }) };
+    expect(stepsOf(gate)).toEqual([['Queued', ''], ['Building', 'Tue 09:00'], ['Reviewing', ''], ['Fixing', ''], ['Gate', 'Tue 09:05'], ['Ready', 'Not yet'], ['Merged', 'Not yet']]);
+    const merged = { ...MERGED, stages: NO_STEPS({ building: { at: T0 }, merged: { at: T0 + 30 * MIN } }) };
+    expect(stepsOf(merged)).toEqual([['Queued', ''], ['Building', 'Tue 09:00'], ['Reviewing', ''], ['Fixing', ''], ['Gate', 'Not recorded'], ['Ready', 'Not recorded'], ['Merged', 'Tue 09:30']]);
+  });
+
+  it('a stage reached more than six days from now says its date too', () => {
+    const d = { ...FLIGHT, stages: NO_STEPS({ building: { at: T0 - 8 * 86_400_000 }, reviewing: { at: T0 + 15 * MIN } }) };
+    const html = page(d);
+    expect(html).toContain('<b>Building</b><span>Mon 26 Oct 09:00</span>');
+    expect(html).toContain('<b>Reviewing</b><span>Tue 09:15</span>');
+  });
+
+  it('a report by an agent that wrote code, with no run of its own on the issue, is a developer\'s, not a raw id', () => {
+    const d = { ...FLIGHT, story: [{ kind: 'round' as const, at: T0, stage: 'reviewing' as const, agent: 's-9:fx-3', reviewer: false, open: 2, dropped: 0 }] };
+    expect(lines(page(d))).toEqual(['09:00 D developer reported 2 open findings → Reviewing']);
+  });
+
+  it('the headings go h1, h2, h3: the shared sections take the page\'s level', () => {
+    const html = page(FLIGHT);
+    expect([...html.matchAll(/<h([1-6])[ >]/g)].map((m) => m[1]).filter((v, k, all) => all.indexOf(v) === k).sort()).toEqual(['1', '2', '3']);
+    expect(html).toContain('<h2>Can it merge?</h2>');
+  });
+
+  it('a session shows when it ran, start to last event', () => {
+    expect(plain(page(FLIGHT))).toContain('fix/409-retry Tue 09:00 to Tue 09:20');
   });
 });

@@ -156,7 +156,7 @@ describe('the session a Live link names (the Factory board, #32)', () => {
 });
 
 // #106: Factory's hash also carries the milestone and the view, and the issue page its issue; the App writes the project choice into the hash without dropping them.
-import { hashWith, readFactory, readIssue, withChoice } from '../src/project-choice.ts';
+import { factoryHash, hashWith, readFactory, readIssue, routedHash, withChoice } from '../src/project-choice.ts';
 describe('the hash beyond the project (#106)', () => {
   const MAP = '#/factory?project=mobile-app&milestone=v2.3+Offline&view=map';
   it('Factory\'s view and milestone are read from the hash, and the Board is the default', () => {
@@ -181,5 +181,22 @@ describe('the hash beyond the project (#106)', () => {
   it('the issue page\'s issue is read from the hash: a positive whole number, else none', () => {
     expect(readIssue('#/issue?project=mobile-app&issue=409')).toBe(409);
     for (const bad of ['#/issue?project=a', '#/issue?issue=0', '#/issue?issue=4.5', '#/issue?issue=abc', '#/issue?issue=-3']) expect(readIssue(bad)).toBeNull();
+  });
+});
+
+// The two writes back to the hash the components make in an effect, as the pure functions they call: an effect is not run by the markup tests, so these hold what they write.
+describe('what the App and Factory write back into the hash (#106)', () => {
+  const MAP = '#/factory?project=mobile-app&milestone=v2.3+Offline&view=map';
+  it('the App writes the project choice into a route\'s hash and keeps the rest of its query; a hash that is no route is left as it is', () => {
+    expect(routedHash(MAP, true, { all: false, single: 'docs-site' })).toBe('#/factory?project=docs-site&milestone=v2.3+Offline&view=map');
+    expect(routedHash('#/issue?issue=409', true, { all: false, single: 'mobile-app' })).toBe('#/issue?issue=409&project=mobile-app');
+    expect(routedHash('#/live?session=s-1&project=a', false, { all: false, single: 'b' })).toBe('#/live?session=s-1&project=a');
+  });
+
+  it('Factory writes the Map and the milestone picked for the project they were picked in, and takes both out for the Board and for another project', () => {
+    const picked = { project: 'mobile-app', milestone: 'v2.3 Offline' };
+    expect(factoryHash('#/factory?project=mobile-app', 'map', picked, 'mobile-app')).toBe('#/factory?project=mobile-app&view=map&milestone=v2.3+Offline');
+    expect(factoryHash(MAP, 'board', undefined, 'mobile-app')).toBe('#/factory?project=mobile-app');
+    expect(factoryHash('#/factory?project=docs-site&view=map&milestone=v2.3+Offline', 'map', picked, 'docs-site')).toBe('#/factory?project=docs-site&view=map'); // picked in another project
   });
 });

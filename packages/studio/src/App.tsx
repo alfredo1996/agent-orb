@@ -7,7 +7,7 @@ import { Ledger } from './Ledger.tsx';
 import { Live, type Session } from './Live.tsx';
 import { lastEventOf, shown } from './live-cards.ts';
 import { Pipeline } from './Pipeline.tsx';
-import { choose, readChoice, readIssue, readSession, withChoice } from './project-choice.ts';
+import { choose, readChoice, readIssue, readSession, routedHash } from './project-choice.ts';
 
 // The studio's frame and routes, and the one /stream every view shares.
 
@@ -59,7 +59,7 @@ function useRoute() {
   }, [view]);
   useEffect(() => {
     const path = location.hash.split('?')[0]!;
-    const next = path in ROUTES ? withChoice(location.hash, choice) : location.hash; // #106: the rest of the query (Factory's view and milestone, the issue page's issue) stays
+    const next = routedHash(location.hash, path in ROUTES, choice); // #106: the rest of the query (Factory's view and milestone, the issue page's issue) stays
     if (next !== location.hash) history.replaceState(null, '', next);
   }, [hash, choice]);
   return { view, hash, choice, pick: (name: string) => setChoice((c) => choose(c, name)) };

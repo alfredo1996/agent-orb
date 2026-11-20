@@ -6,7 +6,7 @@ import { usd } from './format.ts';
 import { trapTab, usePhone } from './History.tsx';
 import { Loading, PageHeader, ProjectSelect, Reading, Seg, useProject, type Said } from './kit.tsx';
 import type { Session } from './Live.tsx';
-import { hashWith, readChoice, readFactory } from './project-choice.ts';
+import { factoryHash, readChoice, readFactory } from './project-choice.ts';
 
 // Factory (v0.4 slice 1, #27), drawn as approved in design/v0.4-factory.html, the Factory and Findings boards, from GET /api/factory: each open PR with the first
 // reason it isn't ready for your ok, or "Ready for your ok", and its findings in a sheet. Nothing here merges: the merge stays yours.
@@ -167,14 +167,19 @@ export function BudgetCard({ data, onSave }: { data: BudgetData; onSave: Save })
   );
 }
 
+/** The heading a shared section opens with: the sheet's own are h4 (under its h3), the issue page's h2 (under its h1), and a group inside one is the next level down. */
+type HeadingLevel = 2 | 3 | 4 | 5;
+const heading = (level: HeadingLevel) => `h${level}` as 'h4';
+
 /** The PR sheet's cost: where the issue's money went, and its own budget (which beats the milestone's). */
-export function CostSection({ issue, cost, onSave }: { issue: number | null | undefined; cost?: IssueCost; onSave: Save }) {
-  if (!issue) return <section className="dsec"><h4>Cost, estimate</h4><p className="dnote">This PR closes no issue, so its cost is on "not on an issue".</p></section>;
+export function CostSection({ issue, cost, onSave, level = 4 }: { issue: number | null | undefined; cost?: IssueCost; onSave: Save; level?: HeadingLevel }) {
+  const H = heading(level);
+  if (!issue) return <section className="dsec"><H>Cost, estimate</H><p className="dnote">This PR closes no issue, so its cost is on "not on an issue".</p></section>;
   const c = cost ?? { number: issue, milestone: null, usd: 0, partial: false, whole: 0, windows: 0, budget: null, milestoneBudget: null, source: null, mark: null };
   const dflt = c.milestoneBudget; // known beside the issue's own budget: it is what removing that gives back
   return (
     <section className="dsec">
-      <h4>Cost, estimate</h4>
+      <H>Cost, estimate</H>
       <div className="ledger2">
         {c.whole > 0 && <div><span className="sub">On the issue's branch, whole</span><span className="num">{usd(c.whole)}</span></div>}
         {c.windows > 0 && <div><span className="sub">Turns before a PR opened, in a longer session</span><span className="num">{usd(c.windows)}</span></div>}
@@ -453,10 +458,11 @@ export function Row({ f }: { f: FactoryFinding }) {
 }
 
 /** The four conditions of a PR, as the sheet and the issue page (#106) both show them. */
-export function ChecksSection({ pr, readAt, now }: { pr: FactoryPr; readAt: number | null; now: number }) {
+export function ChecksSection({ pr, readAt, now, level = 4 }: { pr: FactoryPr; readAt: number | null; now: number; level?: HeadingLevel }) {
+  const H = heading(level);
   return (
     <section className="dsec">
-      <h4>Can it merge?</h4>
+      <H>Can it merge?</H>
       <ul className="cond">
         {CONDITIONS.map(([k, name]) => {
           const c = pr.conditions[k];
@@ -474,18 +480,20 @@ export function ChecksSection({ pr, readAt, now }: { pr: FactoryPr; readAt: numb
 }
 
 /** A PR's findings: open, dismissed (read these before merging), and fixed, folded. Shared by the sheet and the issue page (#106). */
-export function FindingsSection({ pr }: { pr: FactoryPr }) {
+export function FindingsSection({ pr, level = 4 }: { pr: FactoryPr; level?: HeadingLevel }) {
+  const H = heading(level);
+  const G = heading((level + 1) as HeadingLevel);
   const of = (fate: FactoryFinding['fate']) => pr.findings.filter((f) => f.fate === fate);
   const [open, dismissed, fixed] = [of('open'), of('dismissed'), of('fixed')];
   const unreported = !pr.findings.length && pr.conditions.findings.ok === null && !pr.dropped;
   return (
     <section className="dsec">
-      <h4>Findings</h4>
+      <H>Findings</H>
       {pr.dropped > 0 && <p className="dnote">{count(pr.dropped, 'line')} of the last report didn't parse: ask the reviewer to report it again.</p>}
       {unreported && <p className="dnote">No <code>orb-findings</code> block has reached this PR's branch yet, so ready can't be proved.</p>}
       {!pr.findings.length && !unreported && <p className="dnote">Reported, none found.</p>}
-      {open.length > 0 && <div className="fgroup"><h5>Open ({open.length})</h5>{open.map((f) => <Row key={f.id} f={f} />)}</div>}
-      {dismissed.length > 0 && <div className="fgroup"><h5>Dismissed: read these before merging ({dismissed.length})</h5>{dismissed.map((f) => <Row key={f.id} f={f} />)}</div>}
+      {open.length > 0 && <div className="fgroup"><G>Open ({open.length})</G>{open.map((f) => <Row key={f.id} f={f} />)}</div>}
+      {dismissed.length > 0 && <div className="fgroup"><G>Dismissed: read these before merging ({dismissed.length})</G>{dismissed.map((f) => <Row key={f.id} f={f} />)}</div>}
       {fixed.length > 0 && <details className="fgroup"><summary>Fixed ({fixed.length})</summary>{fixed.map((f) => <Row key={f.id} f={f} />)}</details>}
     </section>
   );
@@ -652,7 +660,7 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
     return undefined;
   };
   useEffect(() => {
-    const next = hashWith(location.hash, { view: view === 'map' ? 'map' : undefined, milestone: chosen?.project === project ? chosen.milestone : undefined });
+    const next = factoryHash(location.hash, view, chosen, project);
     if (next !== location.hash) history.replaceState(null, '', next);
   }, [view, chosen, project]);
   const pr = shown?.prs.find((p) => p.number === picked);

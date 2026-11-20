@@ -62,6 +62,13 @@ export function hashWith(hash: string, set: Record<string, string | undefined>):
 /** The hash with the project choice written into it, as `choiceQuery` says it, and every other parameter kept. */
 export const withChoice = (hash: string, c: Choice) => hashWith(hash, { project: c.single || undefined, all: c.single && c.all ? '1' : undefined });
 
+/** The hash the App writes back: a route's own gets the project choice (the rest of its query stays), any other hash (Live's, an unknown one) is left as it is. */
+export const routedHash = (hash: string, routed: boolean, c: Choice) => (routed ? withChoice(hash, c) : hash);
+
+/** The hash Factory writes back: `view=map` for the Map, and the milestone picked when it was picked in this project; the Board, and the server's own choice, leave both out. */
+export const factoryHash = (hash: string, view: 'board' | 'map', chosen: { project: string; milestone: string } | undefined, project: string) =>
+  hashWith(hash, { view: view === 'map' ? 'map' : undefined, milestone: chosen?.project === project ? chosen.milestone : undefined });
+
 /** What Factory's hash holds besides the project: `view=map` for the Map (the Board otherwise) and the milestone picked (`milestone=v2.3+Offline`), so a link or a reload lands where it was. */
 export function readFactory(hash: string): { view: 'board' | 'map'; milestone?: string } {
   const q = new URLSearchParams(hash.split('?')[1] ?? '');

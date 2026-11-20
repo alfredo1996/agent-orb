@@ -20,16 +20,19 @@ export type IssueData = {
   story: StoryLine[]; stages: { stage: BoardStage; at: number | null; again: number[] }[];
   /** The open PR as /api/factory gives it; none when the issue has no open PR. */
   checks: FactoryPr | null; cost: IssueCost | null;
-  links: ({ kind: 'file'; a: number; b: number; files: string[]; count: number; together: boolean; title: string | null } | { kind: 'mention'; a: number; b: number; both?: true; title: string | null })[];
-  mentions: { issue: number; direction: 'out' | 'in'; title: string | null }[];
-  sessions: { id: string; branch: string | null; at: number; windowOnly: boolean; imported: boolean }[];
+  /** `stage`: the other issue's, as the board gives it (null: it is not on the board). */
+  links: ({ kind: 'file'; a: number; b: number; files: string[]; count: number; together: boolean; title: string | null; stage: BoardStage | null } | { kind: 'mention'; a: number; b: number; both?: true; title: string | null; stage: BoardStage | null })[];
+  /** Mentions of issues that are not on the milestone's map; `known`: the plugin has read the issue, so it has a page to open. */
+  mentions: { issue: number; direction: 'out' | 'in'; both?: true; title: string | null; stage: BoardStage | null; known: boolean }[];
+  sessions: { id: string; branch: string | null; at: number; startedAt: number | null; windowOnly: boolean; imported: boolean }[];
 };
 
 // Times as the page says them, in the viewer's zone (`tz` undefined) or the one a test gives. Parts, not a locale's whole format, so Node's ICU cannot change the words.
 const parts = (at: number, tz?: string) => Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: tz, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(at).map((p) => [p.type, p.value])) as Record<string, string>;
 const clock = (at: number, tz?: string) => { const p = parts(at, tz); return `${p.hour}:${p.minute}`; };
 const dayOf = (at: number, tz?: string) => { const p = parts(at, tz); return `${p.weekday} ${p.day} ${p.month}`; };
-const when = (at: number, tz?: string) => { const p = parts(at, tz); return `${p.weekday} ${p.hour}:${p.minute}`; };
+/** Weekday and time; with the date too when it is more than six days from `now`, as a weekday alone would name two days. */
+const when = (at: number, now: number, tz?: string) => { const p = parts(at, tz); return `${p.weekday}${Math.abs(now - at) > 6 * 86_400_000 ? ` ${p.day} ${p.month}` : ''} ${p.hour}:${p.minute}`; };
 
 /** The sentence at the top, counted from the page's own data: the stage, how many runs and sessions, what it cost, and where the PR stands. No model writes it. */
 export function issueReading(d: IssueData): Said {
@@ -78,7 +81,7 @@ function Line({ l, prev, d, tz }: { l: StoryLine; prev: BoardStage; d: IssueData
     );
   }
   if (l.kind === 'round') {
-    const who = l.reviewer ? 'reviewer' : l.agent.split(':')[1] ?? l.agent;
+    const who = l.reviewer ? 'reviewer' : 'developer'; // a report by an agent that wrote code; its own run is not on this issue, so its name is not known
     return (
       <div className="iss-st"><span className="t">{clock(l.at, tz)}</span><span className="av other" aria-hidden="true">{initial(who)}</span>
         <div><span><b>{who}</b> {l.open ? `reported ${count(l.open, 'open finding')}` : 'reported, none open'}</span>{to}</div><span className="cost num" /></div>
@@ -104,11 +107,14 @@ function Line({ l, prev, d, tz }: { l: StoryLine; prev: BoardStage; d: IssueData
   );
 }
 
-/** The seven stages, each with when it was first reached and when it came round again; `Not yet` for one ahead, `Not recorded` for one passed that the store keeps no time for (Gate and Ready, once merged). */
-function Steps({ d, tz }: { d: IssueData; tz?: string }) {
+/**
+ * The seven stages, each with when it was first reached and when it came round again; `Not yet` for one ahead; nothing for one that was skipped (no review reported); `Not recorded` only for Gate and
+ * Ready of a merged issue, which were passed and which the store keeps no time for.
+ */
+function Steps({ d, now: at, tz }: { d: IssueData; now: number; tz?: string }) {
   const now = STAGES.indexOf(d.issue.stage);
   const note = (s: IssueData['stages'][number], k: number) =>
-    s.at !== null ? `${when(s.at, tz)}${s.again.map((t, j) => `${j === 0 ? ', again ' : ', '}${when(t, tz)}`).join('')}` : k === 0 ? '' : k > now ? 'Not yet' : 'Not recorded';
+    s.at !== null ? `${when(s.at, at, tz)}${s.again.map((t, j) => `${j === 0 ? ', again ' : ', '}${when(t, at, tz)}`).join('')}` : k > now ? 'Not yet' : d.issue.stage === 'merged' && (s.stage === 'gate' || s.stage === 'ready') ? 'Not recorded' : '';
   const gateTimes = d.stages.some((s) => (s.stage === 'gate' || s.stage === 'ready') && s.at !== null);
   return (
     <section className="card" aria-label="Stages">
@@ -122,10 +128,12 @@ function Steps({ d, tz }: { d: IssueData; tz?: string }) {
 
 function Related({ d }: { d: IssueData }) {
   const n = d.issue.number;
-  const link = (issue: number, title: string | null) => <a className="hm-lnk" href={issueHref(d.project, issue)}><b>{`#${issue}${title ? ` ${title}` : ''}`}</b></a>;
+  const name = (issue: number, title: string | null) => `#${issue}${title ? ` ${title}` : ''}`;
+  const link = (issue: number, title: string | null) => <a className="hm-lnk" href={issueHref(d.project, issue)}><b>{name(issue, title)}</b></a>;
+  const stage = (s: BoardStage | null) => (s ? <span className="chip">{STAGE_LABEL[s]}</span> : null);
   return (
     <section className="card" aria-label="Related issues">
-      <h2>Related issues</h2>
+      <h2>Related issues <span className="hint">by files written, and by mentions</span></h2>
       {d.links.map((l) => {
         const other = l.a === n ? l.b : l.a;
         return (
@@ -133,13 +141,13 @@ function Related({ d }: { d: IssueData }) {
             <div>{link(other, l.title)}<span className="sub">{l.kind === 'file'
               ? <>Both wrote {l.files.map((f, k) => <span key={f}>{k > 0 && ', '}<code>{f}</code></span>)}{l.count > l.files.length && ` and ${l.count - l.files.length} more`}</>
               : l.both ? 'Each mentions the other' : l.a === n ? 'This issue mentions it' : 'It mentions this issue'}</span></div>
-            <div className="side">{l.kind === 'file' && l.together && <span className="flag left">In flight together</span>}</div>
+            <div className="side">{stage(l.stage)}{l.kind === 'file' && l.together && <span className="flag left">In flight together</span>}</div>
           </div>
         );
       })}
       {d.mentions.map((m) => (
         <div key={`m${m.issue}`} className="iss-rel">
-          <div>{link(m.issue, m.title)}<span className="sub">{m.direction === 'out' ? 'This issue mentions it' : 'It mentions this issue'}, and it is not on the milestone's map</span></div><div className="side" />
+          <div>{m.known ? link(m.issue, m.title) : <b>{name(m.issue, m.title)}</b>}<span className="sub">{m.both ? 'Each mentions the other' : m.direction === 'out' ? 'This issue mentions it' : 'It mentions this issue'}, and it is not on the milestone's map</span></div><div className="side">{stage(m.stage)}</div>
         </div>
       ))}
       {!d.links.length && !d.mentions.length && <div className="iss-none">No link to another issue.</div>}
@@ -169,7 +177,7 @@ export function IssueView({ data: d, now, tz, onSave }: { data: IssueData; now: 
         </div>
       </div>
       <Reading said={issueReading(d)} by="Counted from the data on this page. No model writes this." />
-      <Steps d={d} tz={tz} />
+      <Steps d={d} now={now} tz={tz} />
       <div className="iss-grid">
         <section className="card" aria-label="The story">
           <h2>The story <span className="hint">one line per agent run, oldest first</span></h2>
@@ -184,20 +192,20 @@ export function IssueView({ data: d, now, tz, onSave }: { data: IssueData; now: 
         </section>
         <div className="stack">
           <section className="card factory-sheet" aria-label="Can it merge?">
-            {d.checks ? <ChecksSection pr={d.checks} readAt={d.readAt} now={now} />
-              : <section className="dsec"><h4>Can it merge?</h4><p className="dnote">{i.pr?.merged ? `It merged as PR #${i.pr.number}.` : 'No PR yet.'}</p></section>}
+            {d.checks ? <ChecksSection pr={d.checks} readAt={d.readAt} now={now} level={2} />
+              : <section className="dsec"><h2>Can it merge?</h2><p className="dnote">{i.pr?.merged ? `It merged as PR #${i.pr.number}.` : 'No PR yet.'}</p></section>}
           </section>
           <Related d={d} />
           <section className="card factory-sheet" aria-label="Findings">
-            {d.checks ? <FindingsSection pr={d.checks} />
-              : <section className="dsec"><h4>Findings</h4><p className="dnote">{i.pr?.merged ? 'The PR merged: its findings are listed while it is open.' : 'No review has reported yet.'}</p></section>}
+            {d.checks ? <FindingsSection pr={d.checks} level={2} />
+              : <section className="dsec"><h2>Findings</h2><p className="dnote">{i.pr?.merged ? 'The PR merged: its findings are listed while it is open.' : 'No review has reported yet.'}</p></section>}
           </section>
-          <section className="card factory-sheet" aria-label="Cost"><CostSection issue={i.number} cost={d.cost ?? undefined} onSave={onSave} /></section>
+          <section className="card factory-sheet" aria-label="Cost"><CostSection issue={i.number} cost={d.cost ?? undefined} onSave={onSave} level={2} /></section>
           <section className="card" aria-label="Sessions">
             <h2>Sessions</h2>
             {d.sessions.map((s) => (
               <div key={s.id} className="iss-rel">
-                <div><code className="chip branch">{s.branch ?? 'no branch'}</code><span className="sub">Last event {when(s.at, tz)}</span>{s.windowOnly && <span className="sub">By time window</span>}{s.imported && <span className="sub">Imported</span>}</div>
+                <div><code className="chip branch">{s.branch ?? 'no branch'}</code><span className="sub">{s.startedAt !== null ? `${when(s.startedAt, now, tz)} to ${when(s.at, now, tz)}` : `Last event ${when(s.at, now, tz)}`}</span>{s.windowOnly && <span className="sub">By time window</span>}{s.imported && <span className="sub">Imported</span>}</div>
                 <div className="side"><a className="hm-lnk" href={liveHref(s.id, d.project)}>Open in Live</a></div>
               </div>
             ))}
