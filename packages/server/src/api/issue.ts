@@ -132,7 +132,8 @@ export function issueOf(store: Store, content: ContentStore, project: string, nu
   // The PR's checks and findings are /api/factory's, the cost /api/budget's, the links /api/links'.
   const checks = openPr ? (({ projectId, gate, reportAt, ...p }) => p)(openPrs(store, content, now, project, null).prs.find((p) => p.number === openPr.number)!) : null;
   const cost = budgetOf(store, project, tz, now).issues.find((i) => i.number === number) ?? null;
-  const links = linksOf(store, content, project, known?.milestone ?? undefined, now, reach).links.filter((l) => l.a === number || l.b === number);
+  const links = linksOf(store, content, project, known?.milestone ?? undefined, now, reach).links.filter((l) => l.a === number || l.b === number)
+    .map((l) => ({ ...l, title: open.get(l.a === number ? l.b : l.a)?.title ?? null })); // the other issue's title, when the plugin sent one
   // Mentions of issues that are not on the milestone's map show here only (#64): the ones this issue's text names, and the ones whose text names it.
   const names = (text: string | null) => JSON.parse(text ?? '[]') as number[];
   const mentions = [
