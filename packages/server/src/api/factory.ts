@@ -133,7 +133,7 @@ export function openPrs(store: Store, content: ContentStore, now: number, projec
     if (verdict.ready && readAt !== null && now - readAt > STALE_MS) verdict = { ...verdict, ready: false, reason: `Was ready when GitHub was last read, ${Math.floor((now - readAt) / 60_000)} min ago` };
     return {
       number: r.number as number, head: (r.head ?? null) as string | null, issue: (r.issue ?? null) as number | null, headOid: r.head_oid as string, ...verdict, findings, dropped: report?.dropped ?? 0,
-      projectId: r.project_id as string, gate: gate ? { result: gate.result as 'pass' | 'fail', ts: gate.ts as number } : null,
+      projectId: r.project_id as string, reportAt: (report?.ts ?? null) as number | null, gate: gate ? { result: gate.result as 'pass' | 'fail', ts: gate.ts as number } : null,
     };
   });
   // Not ready first (they need you), then the newest PR.
@@ -145,6 +145,6 @@ export function factory(app: FastifyInstance, { store, content, now = Date.now }
     const q = Query.safeParse(req.query);
     if (!q.success) return reply.code(400).send({ error: 'give a project', issues: q.error.issues });
     const { prs, ...rest } = openPrs(store, content, now(), q.data.project, q.data.remote ?? null);
-    return { ...rest, prs: prs.map(({ projectId, gate, ...pr }) => pr) };
+    return { ...rest, prs: prs.map(({ projectId, gate, reportAt, ...pr }) => pr) };
   });
 }

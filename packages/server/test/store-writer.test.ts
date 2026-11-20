@@ -870,3 +870,31 @@ describe('turns and requests', () => {
     expect(q(`SELECT model FROM agents WHERE id = 's-1:main'`)).toEqual([{ model: 'claude-opus-5-5' }]);
   });
 });
+
+describe('finding_rounds (#106): every findings report, not the latest only', () => {
+  const rep = (ts: number, findings: object[], o: Opts = {}) => ev('findings.report', { branch: 'fix/409-retry', findings, dropped: 1 }, { agent: 'rev', ts, ...o });
+  const F = (id: string, fate: string) => ({ id, severity: 'major', file: 'src/a.ts', fate });
+
+  it('one row per report with its agent, reviewer mark, open count and dropped lines; finding_reports keeps the latest as it always did', () => {
+    plugin([start('plugin'), rep(T + 1000, [F('F1', 'open'), F('F2', 'fixed')]), rep(T + 5000, [F('F1', 'fixed')])]);
+    expect(q('SELECT ref, ts, agent_id, reviewer, open, dropped FROM finding_rounds ORDER BY ts')).toEqual([
+      { ref: 'fix/409-retry', ts: T + 1000, agent_id: 's-1:rev', reviewer: 1, open: 1, dropped: 1 },
+      { ref: 'fix/409-retry', ts: T + 5000, agent_id: 's-1:rev', reviewer: 1, open: 0, dropped: 1 },
+    ]);
+    expect(q('SELECT ref, ts, dropped, reviewed_at FROM finding_reports')).toEqual([{ ref: 'fix/409-retry', ts: T + 5000, dropped: 1, reviewed_at: T + 5000 }]);
+  });
+
+  it('a report by an agent that wrote code is a round, but not a reviewer\'s', () => {
+    plugin([start('plugin'), ev('tool.call', { tool_use_id: 'w', tool: 'Edit', input_size: 1 }, { agent: 'dev', turn: 'td' }),
+      ev('tool.result', { tool_use_id: 'w', success: true, duration_ms: 1, output_size: 1, files_touched: [{ path: 'a.ts', mode: 'write' }] }, { agent: 'dev', turn: 'td' }), rep(T + 9000, [F('F1', 'fixed')], { agent: 'dev' })]);
+    expect(q('SELECT agent_id, reviewer FROM finding_rounds')).toEqual([{ agent_id: 's-1:dev', reviewer: 0 }]);
+  });
+
+  it('the same report again, as the same event or as another event of the same moment, is one row', () => {
+    const r = rep(T + 1000, [F('F1', 'open')]);
+    plugin([start('plugin'), r]);
+    plugin([r]);
+    plugin([rep(T + 1000, [F('F1', 'open')])]); // a new event id, the same project, ref, time and agent
+    expect(count('finding_rounds')).toBe(1);
+  });
+});

@@ -266,6 +266,9 @@ function writeRows(db: Store, ev: Event[], source: Source) {
              ON CONFLICT (project_id, ref) DO UPDATE SET ts = excluded.ts,
                dropped = CASE WHEN :reviewer THEN excluded.dropped ELSE max(finding_reports.dropped, excluded.dropped) END WHERE excluded.ts >= finding_reports.ts`,
     { ...key, dropped: e.data.dropped, reviewer });
+    // #106: every round is kept, whoever sent it, for the issue page's story; the key makes the same report twice one row
+    run(db, 'INSERT OR IGNORE INTO finding_rounds (project_id, ref, ts, agent_id, reviewer, open, dropped) VALUES (:project, :ref, :ts, :agent, :reviewer, :open, :dropped)',
+      { ...key, agent: agentKey(e), reviewer, open: e.data.findings.filter((f) => f.fate === 'open').length, dropped: e.data.dropped });
     if (reviewer) run(db, 'UPDATE finding_reports SET reviewed_at = max(coalesce(reviewed_at, 0), :ts) WHERE project_id = :project AND ref = :ref', key); // #32: a fixer's report is not the review
     for (const f of e.data.findings) {
       run(db, `INSERT INTO findings (project_id, ref, id, severity, file, fate, ts) VALUES (:project, :ref, :id, :severity, :file, :fate, :ts)

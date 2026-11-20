@@ -103,3 +103,18 @@ describe('opening a history file made before #28', () => {
     db.close();
   });
 });
+
+describe('#106: a file from before finding_rounds', () => {
+  it('gains the table on open, and takes a round', () => {
+    const path = join(dir, 'before-106.db');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE finding_reports (project_id TEXT NOT NULL, ref TEXT NOT NULL, ts INTEGER NOT NULL, dropped INTEGER NOT NULL, reviewed_at INTEGER, PRIMARY KEY (project_id, ref)) WITHOUT ROWID;
+      INSERT INTO finding_reports VALUES ('p', 'pr:7', 1792000000000, 0, 1792000000000);`);
+    old.close();
+    const db = openStore(path);
+    expect(columns(db, 'finding_rounds')).toEqual(['project_id', 'ref', 'ts', 'agent_id', 'reviewer', 'open', 'dropped']);
+    expect(all(db, 'SELECT * FROM finding_reports').length).toBe(1);
+    db.exec("INSERT INTO finding_rounds VALUES ('p', 'pr:7', 1, 'a', 1, 0, 0)");
+    db.close();
+  });
+});

@@ -41,12 +41,14 @@ DatabaseSync.prototype.prepare = function (this: DatabaseSync, sql: string) {
 const dir = mkdtempSync(join(tmpdir(), 'orb-soak-'));
 const store = openStore(values.db ?? join(dir, 'history.db'));
 const now = Date.now();
-let target: { project: string; session: string; agent: string };
+let target: { project: string; session: string; agent: string; issue: number };
 if (values.db) {
   const big = all(store, `SELECT s.id AS session, p.name AS project, count(*) AS agents FROM sessions s JOIN agents a ON a.session_id = s.id JOIN projects p ON p.id = s.project_id
     GROUP BY s.id ORDER BY agents DESC LIMIT 1`)[0];
   if (!big) throw new Error(`${values.db} holds no session`);
-  target = { project: big.project, session: big.session, agent: 'main' };
+  // #106: an issue of that project for GET /api/issue (the newest one the plugin read, else the number a PR's branch names; none: the route answers 404 and the soak says so)
+  const issue = all(store, 'SELECT o.number AS n FROM open_issues o JOIN projects p ON p.id = o.project_id WHERE p.name = :p ORDER BY o.number DESC LIMIT 1', { p: big.project })[0]?.n ?? 0;
+  target = { project: big.project, session: big.session, agent: 'main', issue };
   console.log(`soak on ${values.db}: the biggest session has ${big.agents} agents`);
 } else {
   target = seedSyntheticSession(store, { now });

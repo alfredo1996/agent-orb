@@ -116,6 +116,11 @@ CREATE TABLE IF NOT EXISTS findings (
   PRIMARY KEY (project_id, ref, id)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS finding_reports (project_id TEXT NOT NULL, ref TEXT NOT NULL, ts INTEGER NOT NULL, dropped INTEGER NOT NULL, reviewed_at INTEGER, PRIMARY KEY (project_id, ref)) WITHOUT ROWID;
+-- finding_rounds (#106) keeps every findings.report, which finding_reports (the latest per ref, for the merge check) overwrites: the issue page's story lists each round with the agent that sent it. agent_id is
+-- `session:agent` (the main agent `session:main`), never missing; `open` is how many findings the report marked open, `reviewer` the writer's mark as for reviewed_at. The key makes a report seen twice one row.
+-- Rounds before this table are not recovered.
+CREATE TABLE IF NOT EXISTS finding_rounds (project_id TEXT NOT NULL, ref TEXT NOT NULL, ts INTEGER NOT NULL, agent_id TEXT NOT NULL, reviewer INTEGER NOT NULL, open INTEGER NOT NULL, dropped INTEGER NOT NULL,
+  PRIMARY KEY (project_id, ref, ts, agent_id)) WITHOUT ROWID;
 -- v0.4 slice 2 (#28, issue cost). open_issues: the open issues' numbers and milestones as the plugin last read them, a snapshot per project replaced like open_prs (a read
 -- with no `issues` leaves it). budgets: the owner's, set by PUT /api/budget and never by the writer, per project *name* like goal_usd: kind 'milestone' (key the milestone's title:
 -- the default for each issue in it) or 'issue' (key the number: that issue's own budget, which wins). No default ships: with none, nothing warns.

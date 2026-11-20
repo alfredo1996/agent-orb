@@ -24,8 +24,9 @@ const WROTE = `FROM agents a JOIN turns t ON t.agent_id = a.id JOIN tool_calls c
 const PR_FILES = `SELECT pr.issue AS issue, o.files AS files FROM open_prs o JOIN projects p ON p.id = o.project_id LEFT JOIN pull_requests pr ON pr.id = o.project_id || ':' || o.number
   WHERE p.name = :project AND o.files IS NOT NULL`;
 
-export function linksOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number) {
-  const { open, reaches, milestone, mergedPr, shown } = reachOf(store, content, project, chosenParam, now);
+/** `reach` is for a caller that has read it already (the issue page, #106), so the pass over the sessions is made once. */
+export function linksOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number, reach = reachOf(store, content, project, chosenParam, now)) {
+  const { open, reaches, milestone, mergedPr, shown } = reach;
 
   // Each written path, with the shown issues that wrote it: all of a session's writes on the issue's branch, else those inside the window of a PR the session linked (the board's rule for
   // an issue's last write). Lockfiles, images, build output and generated files are left out, as a PR's size leaves them out: two issues that both rewrote the lockfile are not tied by it.
