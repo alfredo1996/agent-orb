@@ -100,8 +100,9 @@ CREATE TABLE IF NOT EXISTS claims (
 
 -- v0.4 slice 1 (#27, Factory). open_prs: the open PRs as the plugin last read them from GitHub (project.open_prs), a snapshot per project: a read newer than
 -- projects.prs_read_at replaces the project's rows, so a PR merged or closed since leaves. checks and bots are JSON arrays ({ name, state }, { author, at }).
+-- files (#68) is a JSON array of the paths the PR changes, for the Map's links; null when the read carried none (a plugin before #68, or the read's size budget dropped them).
 CREATE TABLE IF NOT EXISTS open_prs (
-  project_id TEXT NOT NULL, number INTEGER NOT NULL, head TEXT, head_oid TEXT NOT NULL, merge_state TEXT NOT NULL, last_commit_at INTEGER, checks TEXT NOT NULL, bots TEXT NOT NULL,
+  project_id TEXT NOT NULL, number INTEGER NOT NULL, head TEXT, head_oid TEXT NOT NULL, merge_state TEXT NOT NULL, last_commit_at INTEGER, checks TEXT NOT NULL, bots TEXT NOT NULL, files TEXT,
   PRIMARY KEY (project_id, number)
 ) WITHOUT ROWID;
 -- One finding per project, ref and id, as reviewers and developers reported it (findings.report): the latest report wins, across rounds, and a finding no later

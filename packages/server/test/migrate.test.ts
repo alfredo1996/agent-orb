@@ -79,6 +79,19 @@ describe('opening a history file made before #28', () => {
     openStore(path).close(); // and opens again
   });
 
+  it('#68: an open_prs table made by #27 has no files; opening takes the column and keeps its rows', () => {
+    const path = join(dir, 'before-68.db');
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE open_prs (project_id TEXT NOT NULL, number INTEGER NOT NULL, head TEXT, head_oid TEXT NOT NULL, merge_state TEXT NOT NULL, last_commit_at INTEGER, checks TEXT NOT NULL, bots TEXT NOT NULL,
+        PRIMARY KEY (project_id, number)) WITHOUT ROWID;
+      INSERT INTO open_prs (project_id, number, head, head_oid, merge_state, checks, bots) VALUES ('p', 416, 'fix/409-retry', '${'a'.repeat(40)}', 'CLEAN', '[]', '[]');`);
+    old.close();
+    const db = openStore(path);
+    expect({ ...get(db, 'SELECT number, head, merge_state, files FROM open_prs') }).toEqual({ number: 416, head: 'fix/409-retry', merge_state: 'CLEAN', files: null });
+    db.close();
+    openStore(path).close(); // and opens again
+  });
+
   it('#32: a finding_reports table made by #27 has no reviewed_at; opening takes the column and keeps its rows', () => {
     const path = join(dir, 'before-32-reports.db');
     const old = new DatabaseSync(path);

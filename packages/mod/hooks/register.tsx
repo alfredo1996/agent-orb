@@ -4,7 +4,7 @@ import type { EngineInterface as $, Register } from 'claude-code'
 import type { OrbAgentRow, OrbEventRow, OrbView } from '../types'
 import {
   BATCH, build, capText, changesArgv, checkStalls, commandClass, enqueue, errorClass, errorShape, filesTouched, fingerprintFiles, fingerprintsFrom, fmtTokens, goalNotice, hostName, isExcluded, mask, modelLabel, newOutbox, newTracker,
-  normalizeRemote, openIssuesArgv, openIssuesBareArgv, openPrsArgv, parseChanges, parseFactory, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, toolContent, type ContentMode, type FactoryMemory, type Goal, type GoalSent,
+  normalizeRemote, openIssuesArgv, openIssuesBareArgv, openPrsArgv, openPrsBareArgv, parseChanges, parseFactory, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, toolContent, type ContentMode, type FactoryMemory, type Goal, type GoalSent,
   backgroundFromFrontmatter, familyOf, judgeMerge, mergesIn, modelCheck, modelFromFrontmatter, pricierNotice, remoteNamed, rejectedIn, roleFromFrontmatter, settle, statusText, stopWaits, takeBatch, tokensOf, usageOf,
   descriptionOf, FINDINGS_ASK, preloadOf, refsIn, type CatalogAgent, type CatalogSkill, type Ctx, type Ev, type Refs, type Role, type SkillLoad,
 } from './core.ts'
@@ -350,7 +350,9 @@ async function readOpenPrs($: $) {
   openPrsBusy = true
   try {
     openPrsAt = await $.clock.now()
-    const r = await $.process.run(openPrsArgv, { cwd: checkout, timeoutMs: 60_000 })
+    let r = await $.process.run(openPrsArgv, { cwd: checkout, timeoutMs: 60_000 })
+    // #68: gh fails the whole list when GitHub cannot list one PR's files (a diff too large): asked again without them, the PRs arrive with no paths and stay in the merge check.
+    if (r.exitCode !== 0 || r.isStdoutTruncated) r = await $.process.run(openPrsBareArgv, { cwd: checkout, timeoutMs: 60_000 })
     const prs = r.exitCode === 0 ? parseOpenPrs(r.stdout, !excluded) : undefined
     if (prs && ctx) {
       if ([...openNumbers].some((n) => !prs.some((p) => p.number === n)) && !(await sendPrs($, excluded).catch(() => false))) return

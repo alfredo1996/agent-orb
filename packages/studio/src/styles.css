@@ -752,10 +752,12 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .map .mp-link code { font: 12px var(--mono); }
 .map .mp-link .flag { justify-self: start; font-size: 12px; font-weight: 500; padding: 2px 7px; border-radius: 6px; white-space: nowrap; color: var(--wait); background: var(--wait-bg); }
 .map .mp-none { padding: 14px 20px; font-size: 14px; color: var(--muted); }
+.map .mp-common { padding: 10px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.map .mp-common code { font: 12px var(--mono); }
 .map .bnote { padding: 10px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); border-radius: 0 0 14px 14px; }
 @container (max-width: 700px) {
   .map .mp-link { grid-template-columns: minmax(0, 1fr); padding-left: 16px; padding-right: 16px; }
-  .map .nothing, .map .mp-day, .map .mp-none, .map .bnote { padding-left: 16px; padding-right: 16px; }
+  .map .nothing, .map .mp-day, .map .mp-none, .map .mp-common, .map .bnote { padding-left: 16px; padding-right: 16px; }
 }
 /* Machine (v0.4 slice 3, #29; design/v0.4-factory.html, the Machine band). Like the other bands, it narrows with its container, not the window. */
 .machine { scroll-margin-top: 16px; }

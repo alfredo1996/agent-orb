@@ -11,16 +11,19 @@ import { layoutMap } from './map-layout.ts';
 // ("in flight together": the second to merge may conflict), dashed where one's text mentions the other. Pressing a card keeps its links and fades the rest, and the list under the map follows.
 // On a phone the Map is that list. Nothing here acts on a session or an issue: it is read only.
 
-/** Two issues wrote the same file: `files` are up to three of them, `count` all of them, `together` while neither issue is merged. `a` is the lower number. */
+/** Two issues change the same file (a session on each wrote it, or #68 each one's open PR lists it): `files` are up to three of them, `count` all of them, `together` while neither issue is merged. `a` is the lower number. */
 export type FileLink = { kind: 'file'; a: number; b: number; files: string[]; count: number; together: boolean };
 /** The text of issue `a` mentions issue `b`; `both` when each names the other (#70), `a` then the lower number. */
 export type MentionLink = { kind: 'mention'; a: number; b: number; both?: true };
 export type IssueLink = FileLink | MentionLink;
-/** GET /api/links: the links between the issues GET /api/board shows for `milestone`. */
-export type LinksData = { project: string; milestone: string | null; links: IssueLink[] };
+/** GET /api/links: the links between the issues GET /api/board shows for `milestone`; `common` (#68) the files most of them change, which tie none of them. */
+export type LinksData = { project: string; milestone: string | null; links: IssueLink[]; common: string[] };
 
 const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 const list = (numbers: number[]) => numbers.map((n) => `#${n}`).join(', ').replace(/, (#\d+)$/, ' and $1');
+/** Paths as code, joined as a sentence joins them: `a`, `b` and `c`. */
+const FILES_SHOWN = 3; // as the server's links.ts: the paths a row, and the note, name
+const paths = (all: readonly string[], more = false) => all.map((f, i) => <Fragment key={f}>{i === 0 ? '' : i === all.length - 1 && !more ? ' and ' : ', '}<code>{f}</code></Fragment>);
 const MARK_WORDS = { bad: 'stalled', wait: 'waits on you', ok: 'ready' };
 const hot = (l: IssueLink) => l.kind === 'file' && l.together;
 
@@ -72,7 +75,7 @@ function LinkRow({ link: l, titles }: { link: IssueLink; titles: ReadonlyMap<num
     <div className="mp-link">
       <span>{name(l.a)} <span className="sub">{l.kind === 'file' || l.both ? 'and' : 'mentions'}</span> {name(l.b)}</span>
       {l.kind === 'file'
-        ? <span className="sub">Both wrote {l.files.map((f, i) => <Fragment key={f}>{i > 0 && ', '}<code>{f}</code></Fragment>)}{l.count > l.files.length && ` and ${l.count - l.files.length} more`}</span>
+        ? <span className="sub">Both change {l.files.map((f, i) => <Fragment key={f}>{i > 0 && ', '}<code>{f}</code></Fragment>)}{l.count > l.files.length && ` and ${l.count - l.files.length} more`}</span>
         : <span className="sub">{l.both ? 'name each other' : `In #${l.a}'s text`}</span>}
       {hot(l) ? <span className="flag left">In flight together</span> : <span />}
     </div>
@@ -156,6 +159,10 @@ export function MapBand({ board, links, error, boardError, sessions, picked, onP
           <div className="mp-day">{sel === undefined ? `Every link · ${all.length}` : `Links of #${sel} · ${listed.length}`}</div>
           {listed.map((l) => <LinkRow key={`${l.kind}:${l.a}:${l.b}`} link={l} titles={titles} />)}
           {!listed.length && <div className="mp-none">{sel === undefined ? 'No issue here touches another: no file two of them wrote, and no mention.' : `#${sel} has no link to another issue.`}</div>}
+          {sel === undefined && links.common.length > 0 && (
+            // #68: a file most of the issues change (PROJECT.md, which every slice edits) says nothing about a pair, so the server ties none of them by it: said once, under the whole list (a pressed card's list is its own), naming up to 3 as a link row does
+            <div className="mp-common">Most of these issues change {paths(links.common.slice(0, FILES_SHOWN), links.common.length > FILES_SHOWN)}{links.common.length > FILES_SHOWN && ` and ${links.common.length - FILES_SHOWN} more`}, so no line is drawn for {links.common.length === 1 ? 'it' : 'them'}.</div>
+          )}
         </>
       )}
       {note && <div className="bnote">{note}</div>}

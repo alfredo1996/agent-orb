@@ -55,7 +55,8 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   // answers (`hang`), or is not installed (`missing`: the call rejects).
   const gh = { out: '', exitCode: 0, hang: false, missing: false, mergedExit: undefined as number | undefined, calls: [] as { argv: readonly string[]; cwd?: string }[],
     // v0.4 slice 1 (#27): `gh pr list --state open ...` answers `gh.open`, and is recorded in `openCalls` (not `calls`, which is the merged list's)
-    open: '', openCalls: [] as { argv: readonly string[]; cwd?: string }[],
+    // #68: `filesFail` makes the open-PR read that asks for `files` exit 1, as gh does when GitHub cannot list one PR's files; the read without them answers
+    open: '', filesFail: false, openCalls: [] as { argv: readonly string[]; cwd?: string }[],
     // v0.4 slice 2 (#28): `gh issue list --state open ...` answers `gh.issues` (empty: gh printed nothing usable) and is recorded in `issueCalls`
     // #66: `issuesCut` makes the read that asks for bodies come back cut short, as one past 4 MiB does (half of `gh.issues`, marked truncated); the read without bodies answers whole
     issues: '', issuesCut: false, issueCalls: [] as { argv: readonly string[]; cwd?: string }[] }
@@ -108,7 +109,8 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
       const bodies = String(e.argv.at(-1)).includes('body') // gh prints only the fields `--json` names: a read that does not ask for bodies gets none
       const cut = issue && gh.issuesCut && bodies
       const listed = issue && !bodies ? withoutBodies(gh.issues) : gh.issues
-      return { value: { exitCode: !issue && !open && gh.mergedExit !== undefined ? gh.mergedExit : gh.exitCode, stdout: cut ? gh.issues.slice(0, gh.issues.length / 2) : issue ? listed : open ? gh.open : gh.out, stderr: '', isStdoutTruncated: cut, isStderrTruncated: false } }
+      if (open && gh.filesFail && String(e.argv.at(-1)).endsWith(',files')) return { value: { exitCode: 1, stdout: '', stderr: 'GraphQL: could not list files', isStdoutTruncated: false, isStderrTruncated: false } }
+      return { value: { exitCode: !issue && !open && gh.mergedExit !== undefined ? gh.mergedExit : gh.exitCode, stdout: cut ? gh.issues.slice(0, gh.issues.length / 2) : issue ? listed : open ? (String(e.argv.at(-1)).endsWith(',files') ? gh.open : withoutFiles(gh.open)) : gh.out, stderr: '', isStdoutTruncated: cut, isStderrTruncated: false } }
     }
     const isLog = e.argv[0] === 'git' && e.argv[3] === 'log'
     if (isLog) git.calls.push(e.argv)
@@ -202,6 +204,16 @@ function withoutBodies(out: string) {
   try {
     const list = JSON.parse(out)
     return Array.isArray(list) ? JSON.stringify(list.map(({ body: _, ...i }: Record<string, unknown>) => i)) : out
+  } catch {
+    return out
+  }
+}
+
+/** gh's open-PR list as it prints it when `--json` names no `files`. */
+function withoutFiles(out: string) {
+  try {
+    const list = JSON.parse(out)
+    return Array.isArray(list) ? JSON.stringify(list.map(({ files: _, ...p }: Record<string, unknown>) => p)) : out
   } catch {
     return out
   }
@@ -1687,9 +1699,10 @@ const OPEN_LIST = JSON.stringify([{
   statusCheckRollup: [{ __typename: 'CheckRun', name: 'Unit tests', status: 'COMPLETED', conclusion: 'SUCCESS' }],
   comments: [{ author: { login: 'coderabbitai' }, body: 'The refresh races with logout', createdAt: '2026-11-01T15:10:51Z' }, { author: { login: 'someone' }, body: 'Ship it', createdAt: '2026-11-01T15:20:00Z' }],
   reviews: [], commits: [{ oid: 'e'.repeat(40), committedDate: '2026-11-01T15:04:42Z', messageHeadline: 'fix: retry the refresh' }],
+  files: [{ path: 'src/auth/refresh.ts', additions: 12, deletions: 3 }, { path: 'pnpm-lock.yaml', additions: 40, deletions: 2 }],
 }])
 const openSent = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'project.open_prs')
-const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']
+const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body,files']
 const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title,createdAt,body']
 
 test('v0.4 slice 1: the open PRs are read in the checkout at session start and every 5 minutes after, and no comment text, title or commit message leaves', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
@@ -1706,8 +1719,20 @@ test('v0.4 slice 1: the open PRs are read in the checkout at session start and e
   expect(openSent(w).map((e) => e.data)).toEqual([0, 1].map(() => ({ prs: [{
     number: 416, head: 'fix/409-token-retry', issue: 409, head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: Date.parse('2026-11-01T15:04:42Z'),
     checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: Date.parse('2026-11-01T15:10:51Z') }],
+    files: ['src/auth/refresh.ts'], // #68: the paths it changes, the lockfile left out
   }] })))
   expect(JSON.stringify(w.sent())).not.toMatch(/races|Ship it|someone|Retry after|retry the refresh|MERGEABLE/)
+})
+
+test('#68: a read that fails with the files is asked again without them, so a PR whose files GitHub cannot list is still in the merge check', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
+  const w = world(on)
+  w.gh.open = OPEN_LIST
+  w.gh.filesFail = true
+  await boot($)
+  await w.clock.advance(2_000)
+  await w.clock.advance(2_000)
+  expect(w.gh.openCalls.map((c) => c.argv.at(-1))).toEqual([OPEN_ARGV.at(-1), OPEN_ARGV.at(-1)!.replace(/,files$/, '')])
+  expect(openSent(w).map((e) => e.data.prs.map((p: any) => [p.number, p.merge_state, 'files' in p]))).toEqual([[[416, 'UNSTABLE', false]]])
 })
 
 test('#94: a PR whose only bot comment is CodeRabbit\'s "review skipped" notice is read with no bot comment, so the merge check has nothing unread to hold it on', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {

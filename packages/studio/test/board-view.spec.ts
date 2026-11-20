@@ -48,7 +48,7 @@ describe('linksQuery', () => {
 });
 
 describe('linksFor', () => {
-  const links = (project: string, milestone: string | null): LinksData => ({ project, milestone, links: [] });
+  const links = (project: string, milestone: string | null): LinksData => ({ project, milestone, links: [], common: [] });
   it('shows the last links answer only when it is for this project and for the milestone the board shows', () => {
     const last = links('mobile-app', 'v2.3');
     expect(linksFor(last, 'mobile-app', board('v2.3'))).toBe(last);
