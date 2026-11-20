@@ -153,6 +153,18 @@ describe('the Map: the list of links under it', () => {
     expect(plain(note(band({ links: links(LINKS, ['PROJECT.md']) }))!)).toBe('Most of these issues change PROJECT.md, so no line is drawn for it.');
     expect(plain(note(band({ links: links([], ['a.ts', 'b.ts', 'c.ts']) }))!)).toBe('Most of these issues change a.ts, b.ts and c.ts, so no line is drawn for them.');
     expect(note(band())).toBeUndefined();
+    const eleven = Array.from({ length: 11 }, (_, i) => `f${i}.ts`);
+    expect(plain(note(band({ links: links(LINKS, eleven) }))!)).toBe('Most of these issues change f0.ts, f1.ts, f2.ts and 8 more, so no line is drawn for them.'); // up to 3 named, as a link row names its files
+    expect(note(band({ links: links(LINKS, eleven) }))).not.toContain('f3.ts');
+    expect(plain(note(band({ links: links(LINKS, ['a.ts', 'b.ts', 'c.ts', 'd.ts']) }))!)).toBe('Most of these issues change a.ts, b.ts, c.ts and 1 more, so no line is drawn for them.');
+    // it speaks of the whole board, so it is said under the whole list; a pressed card's list is that issue's own, and the note is left out
+    expect(note(band({ links: links(LINKS, ['PROJECT.md']), picked: 409 }))).toBeUndefined();
+    // and after the list's own rows and its empty-state line
+    const empty = band({ links: links([], ['PROJECT.md']) });
+    expect(empty.indexOf('mp-none')).toBeGreaterThan(-1);
+    expect(empty.indexOf('mp-none')).toBeLessThan(empty.indexOf('mp-common'));
+    const rows = band({ links: links(LINKS, ['PROJECT.md']) });
+    expect(rows.lastIndexOf('class="mp-link"')).toBeLessThan(rows.indexOf('mp-common'));
     expect(note(band({ links: links(LINKS, ['PROJECT.md']), phone: true }))).toBeDefined(); // the list is all a phone shows, and the note is part of it
   });
 

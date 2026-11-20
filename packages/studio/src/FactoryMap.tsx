@@ -22,7 +22,8 @@ export type LinksData = { project: string; milestone: string | null; links: Issu
 const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 const list = (numbers: number[]) => numbers.map((n) => `#${n}`).join(', ').replace(/, (#\d+)$/, ' and $1');
 /** Paths as code, joined as a sentence joins them: `a`, `b` and `c`. */
-const paths = (all: readonly string[]) => all.map((f, i) => <Fragment key={f}>{i === 0 ? '' : i === all.length - 1 ? ' and ' : ', '}<code>{f}</code></Fragment>);
+const FILES_SHOWN = 3; // as the server's links.ts: the paths a row, and the note, name
+const paths = (all: readonly string[], more = false) => all.map((f, i) => <Fragment key={f}>{i === 0 ? '' : i === all.length - 1 && !more ? ' and ' : ', '}<code>{f}</code></Fragment>);
 const MARK_WORDS = { bad: 'stalled', wait: 'waits on you', ok: 'ready' };
 const hot = (l: IssueLink) => l.kind === 'file' && l.together;
 
@@ -157,11 +158,11 @@ export function MapBand({ board, links, error, boardError, sessions, picked, onP
         <>
           <div className="mp-day">{sel === undefined ? `Every link · ${all.length}` : `Links of #${sel} · ${listed.length}`}</div>
           {listed.map((l) => <LinkRow key={`${l.kind}:${l.a}:${l.b}`} link={l} titles={titles} />)}
-          {links.common.length > 0 && (
-            // #68: a file most of the issues change (PROJECT.md, which every slice edits) says nothing about a pair, so the server ties none of them by it: said once, here
-            <div className="mp-common">Most of these issues change {paths(links.common)}, so no line is drawn for {links.common.length === 1 ? 'it' : 'them'}.</div>
-          )}
           {!listed.length && <div className="mp-none">{sel === undefined ? 'No issue here touches another: no file two of them wrote, and no mention.' : `#${sel} has no link to another issue.`}</div>}
+          {sel === undefined && links.common.length > 0 && (
+            // #68: a file most of the issues change (PROJECT.md, which every slice edits) says nothing about a pair, so the server ties none of them by it: said once, under the whole list (a pressed card's list is its own), naming up to 3 as a link row does
+            <div className="mp-common">Most of these issues change {paths(links.common.slice(0, FILES_SHOWN), links.common.length > FILES_SHOWN)}{links.common.length > FILES_SHOWN && ` and ${links.common.length - FILES_SHOWN} more`}, so no line is drawn for {links.common.length === 1 ? 'it' : 'them'}.</div>
+          )}
         </>
       )}
       {note && <div className="bnote">{note}</div>}

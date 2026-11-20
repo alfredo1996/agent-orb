@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Event } from '../../shared/src/index.ts';
-import { build, FINDINGS_ASK, isBot, openPrsArgv, parseFindings, parseOpenPrs, type Ctx } from '../hooks/core.ts';
+import { build, FINDINGS_ASK, isBot, openPrsArgv, openPrsBareArgv, parseFindings, parseOpenPrs, type Ctx } from '../hooks/core.ts';
 
 // v0.4 slice 1 (#27, Factory): the `orb-findings` block at the end of an agent's final report, parsed on the machine, and the open PRs read from gh.
 // #34: the paragraph the plugin appends to every subagent's prompt, asking for that block.
@@ -154,6 +154,10 @@ describe('the open-PR read', () => {
     expect(openPrsArgv).toEqual(['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body,files']);
   });
 
+  it('#68: the read asked again when gh fails with the files is the same read without them', () => {
+    expect(openPrsBareArgv).toEqual([...openPrsArgv.slice(0, -1), 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']);
+  });
+
   it('keeps numbers, the branch, the head, the merge state, each check\'s name and result, and each bot\'s latest comment time: never a comment\'s text', () => {
     const prs = parseOpenPrs(OPEN)!;
     expect(prs).toEqual([
@@ -209,20 +213,57 @@ describe('the open-PR read', () => {
     expect(one([]).files).toEqual([]); // read, and it changes no file
   });
 
-  it('#68: paths never cost a PR its place: past 250,000 characters the longest lists go first, and every PR still arrives', () => {
-    // 40 PRs, PR i with 2(i + 1) paths of about 280 characters: some 460,000 characters of paths
+  const bare = { headRefOid: 'a'.repeat(40), mergeStateStatus: 'CLEAN', statusCheckRollup: [], comments: [], reviews: [], commits: [] };
+  const sum = (prs: unknown[]) => prs.reduce<number>((n, p) => n + JSON.stringify(p).length + 1, 0);
+
+  it('#68: paths never cost a PR its place: past 250,000 characters the longest lists go first (whatever their place in gh\'s order), and every PR still arrives', () => {
+    // 40 PRs, the lists growing to PR 20 and shrinking after it: PR i with 3(min(i, 39 - i) + 1) paths of about 280 characters, some 350,000 characters of paths
+    const size = (i: number) => 3 * (Math.min(i, 39 - i) + 1);
     const many = Array.from({ length: 40 }, (_, i) => ({
-      number: 1000 - i, headRefOid: 'a'.repeat(40), mergeStateStatus: 'CLEAN', statusCheckRollup: [], comments: [], reviews: [], commits: [],
-      files: Array.from({ length: 2 * (i + 1) }, (_, k) => ({ path: `src/${String(i).padStart(2, '0')}/${'p'.repeat(260)}-${k}.ts`, additions: 1, deletions: 1 })),
+      ...bare, number: 1000 - i,
+      files: Array.from({ length: size(i) }, (_, k) => ({ path: `src/${String(i).padStart(2, '0')}/${'p'.repeat(260)}-${k}.ts`, additions: 1, deletions: 1 })),
     }));
     const prs = parseOpenPrs(JSON.stringify(many))!;
     expect(prs.map((p) => p.number)).toEqual(many.map((p) => p.number));
     expect(JSON.stringify(prs).length).toBeLessThanOrEqual(250_000);
-    const kept = prs.map((p) => p.files?.length ?? 0);
-    const cut = kept.findIndex((n) => n === 0);
-    expect(cut).toBeGreaterThan(0);
-    expect(kept).toEqual(many.map((p, i) => (i < cut ? p.files.length : 0))); // the shorter lists whole, the longest ones none at all
-    expect(prs.slice(cut).every((p) => !('files' in p))).toBe(true);
+    const dropped = prs.flatMap((p, i) => (p.files ? [] : [size(i)]));
+    const kept = prs.flatMap((p, i) => (p.files ? [size(i)] : []));
+    expect(dropped.length).toBeGreaterThan(0);
+    expect(kept.length).toBeGreaterThan(0);
+    expect(Math.min(...dropped)).toBeGreaterThanOrEqual(Math.max(...kept)); // the longest lists went, the shorter stayed whole
+    expect(prs.every((p, i) => !p.files || p.files.length === size(i))).toBe(true);
+    expect(prs[19]!.files).toBeUndefined(); // the longest, in the middle of gh's order
+  });
+
+  it('#68: the longest is by characters, not by paths, and a list is dropped only while the read is over budget: one list kept at exactly 250,000 characters', () => {
+    const check = (k: number) => Array.from({ length: k }, (_, j) => ({ __typename: 'CheckRun', name: `${'c'.repeat(190)}${j}`, status: 'COMPLETED', conclusion: 'SUCCESS' }));
+    const A = Array.from({ length: 20 }, (_, k) => ({ path: `a/${'a'.repeat(250)}${k}` })); // fewer paths, more characters
+    // 88 short paths and two whose lengths make up `extra`, so the list can be made to cost one character more at a time
+    const B = (extra: number) => [...Array.from({ length: 88 }, (_, k) => ({ path: `b/${k}.ts` })), { path: `b/${'y'.repeat(Math.min(extra, 290))}` }, { path: `c/${'z'.repeat(Math.max(0, extra - 290))}` }]; // more paths, fewer characters
+    const world = (k: number, a: unknown, b: unknown) => [
+      ...[1, 2, 3, 4, 5].map((n) => ({ ...bare, number: n, statusCheckRollup: check(200) })), { ...bare, number: 6, ...(a ? { files: a } : {}) }, { ...bare, number: 7, ...(b ? { files: b } : {}) },
+      { ...bare, number: 8, statusCheckRollup: check(k) },
+    ];
+    // the most checks the last PR can carry with B whole and A none and the read within the budget, then B's last path lengthened to land on the budget exactly
+    let k = 0;
+    const fits = (k: number, b: unknown) => { const r = parseOpenPrs(JSON.stringify(world(k, undefined, b)))!; return r.length === 8 && !!r[6]!.files && sum(r) <= 250_000; }; // over the budget, B's list goes, and then a PR
+    while (fits(k + 1, B(1))) k++;
+    let last = 1;
+    while (fits(k, B(last + 1))) last++;
+    expect(sum(parseOpenPrs(JSON.stringify(world(k, undefined, B(last))))!)).toBe(250_000);
+    const prs = parseOpenPrs(JSON.stringify(world(k, A, B(last))))!;
+    expect(prs.map((p) => p.number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(prs[5]!.files).toBeUndefined(); // A: 20 paths, more characters: it goes
+    expect(prs[6]!.files).toHaveLength(90); // B: 90 paths, fewer characters, and it fits to the character: it stays
+    expect(sum(prs)).toBe(250_000);
+  });
+
+  it('#68: the budget is bytes, not characters: paths of 3-byte characters keep the read within 250,000 bytes of JSON, the server\'s 1 MB less its issues', () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({ ...bare, number: 1000 - i, files: Array.from({ length: 100 }, (_, k) => ({ path: `src/${i}/${'漢'.repeat(100)}${k}` })) }));
+    const prs = parseOpenPrs(JSON.stringify(many))!;
+    expect(prs.map((p) => p.number)).toEqual(many.map((p) => p.number));
+    expect(new TextEncoder().encode(JSON.stringify(prs)).length).toBeLessThanOrEqual(250_000);
+    expect(prs.some((p) => p.files)).toBe(true);
   });
 
   it('an excluded project sends no branch names', () => {
@@ -250,6 +291,9 @@ describe('the three events speak the server schema', () => {
     build.findingsReport(ctx, { agentId: 'a-1', turnId: 't-2' }, undefined, parseFindings(REPORT.replace('```orb-findings', '```orb-findings #416'))!), // a detached head, the PR named
     build.gateReport(ctx, { agentId: 'a-2', turnId: 't-3' }, { result: 'pass', commit: 'a1b2c3d' }),
     build.projectOpenPrs(ctx, parseOpenPrs(OPEN)!),
+    // #68: the plugin's limits on a PR's paths (100 of 300 characters) are the schema's: a path the plugin kept and the schema refused would refuse every read
+    build.projectOpenPrs(ctx, parseOpenPrs(JSON.stringify([{ number: 7, headRefOid: HEAD, mergeStateStatus: 'CLEAN', statusCheckRollup: [], comments: [], reviews: [], commits: [],
+      files: Array.from({ length: 101 }, (_, i) => ({ path: `${String(i).padStart(3, '0')}${'x'.repeat(297)}` })) }]))!),
   ])('%#', (e) => {
     const parsed = Event.safeParse(e);
     expect(parsed.error).toBeUndefined();

@@ -843,13 +843,15 @@ export type OpenPr = { number: number; head?: string; head_oid: string; merge_st
 export type OpenIssue = { number: number; milestone?: string; title?: string; created_at?: number; mentions?: number[] };
 // gh's `commits` asks GitHub for 100 commits of 100 authors a PR, and GitHub refuses a query of more than 500,000 nodes before running it: 50 PRs fail, on every repo.
 const OPEN_PRS_MAX = 40;
-const OPEN_PRS_BUDGET = 250_000; // characters of JSON, as PRS_BUDGET: 100 PRs of 200 checks would pass the server's 1 MB request, and a refused event is lost
+const OPEN_PRS_BUDGET = 250_000; // bytes of JSON (a path of 3-byte characters costs 3), though PRS_BUDGET counts characters: 100 PRs of 200 checks would pass the server's 1 MB request, and a refused event is lost
 
 /**
  * The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time; and (#28) when the PR opened and its body, for the issue
  * it closes; and (#68) the files it changes, for the Map. gh asks for 100 files a PR: 4,000 nodes on 40 PRs, beside the commits' 400,000 (measured on two repos, 20 Nov: answered in 2 s).
  */
 export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', String(OPEN_PRS_MAX), '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body,files'];
+/** #68: the same read without the files, for when gh fails with them (GitHub cannot list one PR's files, as of a diff too large): the PRs then arrive with no paths, and stay in the merge check. */
+export const openPrsBareArgv = [...openPrsArgv.slice(0, -1), openPrsArgv.at(-1)!.replace(/,files$/, '')];
 const PR_PATHS_MAX = 100; // gh's own: it lists at most 100 files a PR
 const PATH_MAX = 300; // as shared/src/event.ts
 
@@ -972,7 +974,7 @@ export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined
       checks, bots: [...bots].slice(0, 50).map(([author, t]) => ({ author, at: t })), ...(files ? { files } : {}),
     });
   }
-  const length = (x: unknown) => JSON.stringify(x).length;
+  const length = (x: unknown) => new TextEncoder().encode(JSON.stringify(x)).length;
   let total = prs.reduce((n, p) => n + length(p) + 1, 0);
   for (const p of prs.toSorted((a, b) => length(b.files ?? []) - length(a.files ?? []))) {
     if (total <= OPEN_PRS_BUDGET || !p.files) break;
