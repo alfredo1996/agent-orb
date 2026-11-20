@@ -119,7 +119,7 @@ export function layoutMap<L extends MapLink>(stages: readonly string[], issues: 
     if (shape === 'under') {
       const [x1, x2, y] = [u.x + MAP_NODE.w / 2 + e.at[0], l.x + MAP_NODE.w / 2 + e.at[1], u.y + MAP_NODE.h];
       const dip = DIP[0]! + ((DIP[1]! - DIP[0]!) * (l.col - u.col - 1)) / Math.max(1, stages.length - 2) + DEEPER * e.rank;
-      return { e, d: `M${round(x1)},${y} C${round(x1)},${round(y + dip)} ${round(x2)},${round(y + dip)} ${round(x2)},${y}`, gap: u.row, x: (x1 + x2) / 2, y: y + 0.75 * dip , run: undefined };
+      return { e, d: `M${round(x1)},${y} C${round(x1)},${round(y + dip)} ${round(x2)},${round(y + dip)} ${round(x2)},${y}`, gap: u.row, x: (x1 + x2) / 2, y: y + 0.75 * dip, run: undefined };
     }
     const [x1, y1, x2, y2] = [u.x + MAP_NODE.w / 2 + e.at[0], u.y + MAP_NODE.h, l.x + MAP_NODE.w / 2 + e.at[1], l.y];
     const middle = y2 - GAP / 2; // the middle of the gap just above the lower card: where the line turns into it, and where the name goes
