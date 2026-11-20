@@ -1687,9 +1687,10 @@ const OPEN_LIST = JSON.stringify([{
   statusCheckRollup: [{ __typename: 'CheckRun', name: 'Unit tests', status: 'COMPLETED', conclusion: 'SUCCESS' }],
   comments: [{ author: { login: 'coderabbitai' }, body: 'The refresh races with logout', createdAt: '2026-11-01T15:10:51Z' }, { author: { login: 'someone' }, body: 'Ship it', createdAt: '2026-11-01T15:20:00Z' }],
   reviews: [], commits: [{ oid: 'e'.repeat(40), committedDate: '2026-11-01T15:04:42Z', messageHeadline: 'fix: retry the refresh' }],
+  files: [{ path: 'src/auth/refresh.ts', additions: 12, deletions: 3 }, { path: 'pnpm-lock.yaml', additions: 40, deletions: 2 }],
 }])
 const openSent = (w: ReturnType<typeof world>) => w.sent().filter((e) => e.kind === 'project.open_prs')
-const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']
+const OPEN_ARGV = ['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body,files']
 const ISSUES_ARGV = ['gh', 'issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,milestone,title,createdAt,body']
 
 test('v0.4 slice 1: the open PRs are read in the checkout at session start and every 5 minutes after, and no comment text, title or commit message leaves', { ...opts, timeoutMs: 20_000 }, async ($: any, on: any) => {
@@ -1706,6 +1707,7 @@ test('v0.4 slice 1: the open PRs are read in the checkout at session start and e
   expect(openSent(w).map((e) => e.data)).toEqual([0, 1].map(() => ({ prs: [{
     number: 416, head: 'fix/409-token-retry', issue: 409, head_oid: 'e'.repeat(40), merge_state: 'UNSTABLE', last_commit_at: Date.parse('2026-11-01T15:04:42Z'),
     checks: [{ name: 'Unit tests', state: 'pass' }], bots: [{ author: 'coderabbitai', at: Date.parse('2026-11-01T15:10:51Z') }],
+    files: ['src/auth/refresh.ts'], // #68: the paths it changes, the lockfile left out
   }] })))
   expect(JSON.stringify(w.sent())).not.toMatch(/races|Ship it|someone|Retry after|retry the refresh|MERGEABLE/)
 })
