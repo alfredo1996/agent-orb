@@ -132,7 +132,10 @@ export function seedSyntheticSession(store: Store, { shape = BIGGEST, now = Date
     });
     run(store, 'INSERT INTO session_prs (session_id, pr_id) VALUES (:session, :pr)', { session: i % 3 === 0 ? 'soak-big' : `soak-${i % 14}`, pr: `${projectId}:${i}` });
   }
-  run(store, "UPDATE sessions SET branch = 'fix/3-soak' WHERE id = 'soak-big'"); // #106: the big session is on issue 3 (PR 3 is in the history), so GET /api/issue reads all its calls
+  run(store, "UPDATE sessions SET branch = 'fix/3-soak' WHERE id = 'soak-big'"); // #106: the big session is on issue 3 (PR 3 is in the history)
+  // ...and the plugin has read issue 3 as open: reachOf keeps a session only for an issue the plugin read or one touched this week, and this one is sixty days old, so without the row GET /api/issue
+  // drops it (no session, a one-line story) instead of reading all its calls.
+  run(store, "INSERT INTO open_issues (project_id, number, milestone, title) VALUES (:project, 3, 'soak', 'soak issue')", { project: projectId });
   store.exec('COMMIT');
   return { project, session: 'soak-big', agent: 'main', calls: big.calls + 14 * 120, issue: 3 };
 }

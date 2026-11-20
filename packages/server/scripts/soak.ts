@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { parseArgs } from 'node:util';
+import { branchIssue } from '@agent-orb/shared';
 import { buildApp } from '../src/app.ts';
 import { all, get, openStore, run, type Store } from '../src/store/store.ts';
 import { getRoutes } from './routes.ts';
@@ -43,11 +44,12 @@ const store = openStore(values.db ?? join(dir, 'history.db'));
 const now = Date.now();
 let target: { project: string; session: string; agent: string; issue: number };
 if (values.db) {
-  const big = all(store, `SELECT s.id AS session, p.name AS project, count(*) AS agents FROM sessions s JOIN agents a ON a.session_id = s.id JOIN projects p ON p.id = s.project_id
+  const big = all(store, `SELECT s.id AS session, s.branch AS branch, p.name AS project, count(*) AS agents FROM sessions s JOIN agents a ON a.session_id = s.id JOIN projects p ON p.id = s.project_id
     GROUP BY s.id ORDER BY agents DESC LIMIT 1`)[0];
   if (!big) throw new Error(`${values.db} holds no session`);
-  // #106: an issue of that project for GET /api/issue (the newest one the plugin read, else the number a PR's branch names; none: the route answers 404 and the soak says so)
-  const issue = all(store, 'SELECT o.number AS n FROM open_issues o JOIN projects p ON p.id = o.project_id WHERE p.name = :p ORDER BY o.number DESC LIMIT 1', { p: big.project })[0]?.n ?? 0;
+  // #106: the issue for GET /api/issue is the one the biggest session's branch names, so the route reads that session's calls; when the branch names none, the project's newest issue the plugin read
+  // (the session is then reached through a PR window or not at all); with neither, issue 0, which the route answers with a 400 and the soak reports as not 200.
+  const issue = branchIssue(big.branch) ?? all(store, 'SELECT o.number AS n FROM open_issues o JOIN projects p ON p.id = o.project_id WHERE p.name = :p ORDER BY o.number DESC LIMIT 1', { p: big.project })[0]?.n ?? 0;
   target = { project: big.project, session: big.session, agent: 'main', issue };
   console.log(`soak on ${values.db}: the biggest session has ${big.agents} agents`);
 } else {
