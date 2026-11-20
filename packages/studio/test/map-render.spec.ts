@@ -126,7 +126,7 @@ describe('the Map: the lines', () => {
   });
 
   it('the legend says what each line and each mark means', () => {
-    expect(plain(band().match(/<div class="mp-legend">(.*?)<\/div>/)![1]!)).toBe('both wrote a file and both are still unmerged one mentions the other outside this milestone stalled waits on you ready');
+    expect(plain(band().match(/<div class="mp-legend">(.*?)<\/div>/)![1]!)).toBe('both wrote a file and both are still unmerged one mentions the other, or both do outside this milestone stalled waits on you ready');
   });
 });
 
@@ -148,7 +148,7 @@ describe('the Map: the list of links under it', () => {
 
   it('two issues that name each other are one row and one dashed line (#70)', () => {
     const html = band({ links: links([{ kind: 'mention', a: 409, b: 417, both: true }]) });
-    expect(rows(html)).toEqual(['#409 Retry after an expired token and #417 Clear the cache on sign-out Name each other']);
+    expect(rows(html)).toEqual(['#409 Retry after an expired token and #417 Clear the cache on sign-out name each other']);
     expect(paths(html)).toEqual(['said']);
   });
 

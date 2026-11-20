@@ -73,7 +73,7 @@ function LinkRow({ link: l, titles }: { link: IssueLink; titles: ReadonlyMap<num
       <span>{name(l.a)} <span className="sub">{l.kind === 'file' || l.both ? 'and' : 'mentions'}</span> {name(l.b)}</span>
       {l.kind === 'file'
         ? <span className="sub">Both wrote {l.files.map((f, i) => <Fragment key={f}>{i > 0 && ', '}<code>{f}</code></Fragment>)}{l.count > l.files.length && ` and ${l.count - l.files.length} more`}</span>
-        : <span className="sub">{l.both ? 'Name each other' : `In #${l.a}'s text`}</span>}
+        : <span className="sub">{l.both ? 'name each other' : `In #${l.a}'s text`}</span>}
       {hot(l) ? <span className="flag left">In flight together</span> : <span />}
     </div>
   );
@@ -142,7 +142,7 @@ export function MapBand({ board, links, error, boardError, sessions, picked, onP
           <div className="mp-legend">
             <span><svg width="30" height="8" aria-hidden="true"><path className="mp-e file" d="M2 4H28" /></svg>both wrote a file</span>
             <span><svg width="30" height="8" aria-hidden="true"><path className="mp-e hot" d="M2 4H28" /></svg>and both are still unmerged</span>
-            <span><svg width="30" height="8" aria-hidden="true"><path className="mp-e said" d="M2 4H28" /></svg>one mentions the other</span>
+            <span><svg width="30" height="8" aria-hidden="true"><path className="mp-e said" d="M2 4H28" /></svg>one mentions the other, or both do</span>
             <span><i className="out" />outside this milestone</span>
             <span><i className="bad" />stalled</span>
             <span><i className="wait" />waits on you</span>
