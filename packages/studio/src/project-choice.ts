@@ -40,3 +40,30 @@ export function choiceQuery(c: Choice): string {
   const s = q.toString();
   return s ? `?${s}` : '';
 }
+
+/** The issue an issue page's hash names (`#/issue?project=<name>&issue=409`); none when it names no positive whole number. */
+export function readIssue(hash: string): number | null {
+  const n = Number(new URLSearchParams(hash.split('?')[1] ?? '').get('issue'));
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/**
+ * The hash with some parameters of its query set (a value) or removed (undefined), the others kept in their place: the project choice, Factory's view and milestone (#106) and the issue page's
+ * issue share one query, and each writes its own without dropping the rest.
+ */
+export function hashWith(hash: string, set: Record<string, string | undefined>): string {
+  const [path = '', query = ''] = hash.split('?');
+  const q = new URLSearchParams(query);
+  for (const [k, v] of Object.entries(set)) (v === undefined ? q.delete(k) : q.set(k, v));
+  const s = q.toString();
+  return s ? `${path}?${s}` : path;
+}
+
+/** The hash with the project choice written into it, as `choiceQuery` says it, and every other parameter kept. */
+export const withChoice = (hash: string, c: Choice) => hashWith(hash, { project: c.single || undefined, all: c.single && c.all ? '1' : undefined });
+
+/** What Factory's hash holds besides the project: `view=map` for the Map (the Board otherwise) and the milestone picked (`milestone=v2.3+Offline`), so a link or a reload lands where it was. */
+export function readFactory(hash: string): { view: 'board' | 'map'; milestone?: string } {
+  const q = new URLSearchParams(hash.split('?')[1] ?? '');
+  return { view: q.get('view') === 'map' ? 'map' : 'board', ...(q.get('milestone') ? { milestone: q.get('milestone')! } : {}) };
+}

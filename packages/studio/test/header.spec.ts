@@ -154,3 +154,32 @@ describe('the session a Live link names (the Factory board, #32)', () => {
     for (const h of ['', '#/live', '#/live?project=docs-site', '#/factory?session=', '#/']) expect(readSession(h), h).toBeNull();
   });
 });
+
+// #106: Factory's hash also carries the milestone and the view, and the issue page its issue; the App writes the project choice into the hash without dropping them.
+import { hashWith, readFactory, readIssue, withChoice } from '../src/project-choice.ts';
+describe('the hash beyond the project (#106)', () => {
+  const MAP = '#/factory?project=mobile-app&milestone=v2.3+Offline&view=map';
+  it('Factory\'s view and milestone are read from the hash, and the Board is the default', () => {
+    expect(readFactory(MAP)).toEqual({ view: 'map', milestone: 'v2.3 Offline' });
+    expect(readFactory('#/factory?project=mobile-app')).toEqual({ view: 'board' });
+    expect(readFactory('#/factory?view=board&milestone=')).toEqual({ view: 'board' });
+  });
+
+  it('they survive the App writing the project choice back (a reload, or a pick of the same project), and a pick of another project keeps them for Factory to clear', () => {
+    expect(withChoice(MAP, readChoice(MAP))).toBe(MAP);
+    expect(withChoice(MAP, { all: false, single: 'docs-site' })).toBe('#/factory?project=docs-site&milestone=v2.3+Offline&view=map');
+    expect(withChoice('#/factory', FIRST)).toBe('#/factory');
+    expect(withChoice('#/ledger?project=docs-site&all=1', { all: true, single: 'docs-site' })).toBe('#/ledger?project=docs-site&all=1');
+  });
+
+  it('Factory writes its own two back and removes them when they go back to the default', () => {
+    expect(hashWith('#/factory?project=a', { view: 'map', milestone: 'v1' })).toBe('#/factory?project=a&view=map&milestone=v1');
+    expect(hashWith(MAP, { view: undefined })).toBe('#/factory?project=mobile-app&milestone=v2.3+Offline');
+    expect(hashWith('#/factory?view=map', { view: undefined })).toBe('#/factory');
+  });
+
+  it('the issue page\'s issue is read from the hash: a positive whole number, else none', () => {
+    expect(readIssue('#/issue?project=mobile-app&issue=409')).toBe(409);
+    for (const bad of ['#/issue?project=a', '#/issue?issue=0', '#/issue?issue=4.5', '#/issue?issue=abc', '#/issue?issue=-3']) expect(readIssue(bad)).toBeNull();
+  });
+});

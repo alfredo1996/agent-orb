@@ -6,6 +6,7 @@ import { usd } from './format.ts';
 import { trapTab, usePhone } from './History.tsx';
 import { Loading, PageHeader, ProjectSelect, Reading, Seg, useProject, type Said } from './kit.tsx';
 import type { Session } from './Live.tsx';
+import { hashWith, readChoice, readFactory } from './project-choice.ts';
 
 // Factory (v0.4 slice 1, #27), drawn as approved in design/v0.4-factory.html, the Factory and Findings boards, from GET /api/factory: each open PR with the first
 // reason it isn't ready for your ok, or "Ready for your ok", and its findings in a sheet. Nothing here merges: the merge stays yours.
@@ -23,6 +24,8 @@ export type FactoryPr = {
 };
 export type FactoryData = { project: string; readAt: number | null; prs: FactoryPr[] };
 type OpenSheet = (pr: number, from: HTMLElement) => void;
+/** An issue's page (#106): every board row opens it, and so does a PR of Needs you that closes an issue. */
+export const issueHref = (project: string, issue: number) => `#/issue?${new URLSearchParams({ project, issue: String(issue) })}`;
 /** An issue's cost, estimated by time windows, with its budget (the issue's own, else its milestone's) and whether it has reached 80% (`at80`) or the budget (`at100`). */
 export type IssueCost = {
   number: number; milestone: string | null; usd: number; partial: boolean; whole: number; windows: number; budget: number | null; milestoneBudget: number | null; source: 'issue' | 'milestone' | null; mark: 'at80' | 'at100' | null;
@@ -47,18 +50,20 @@ export type MachineGroup = {
 export type MachineHost = { host: string; at: number; ageMs: number; docker: 'ok' | 'absent' | 'stopped'; memFree: number | null; memTotal: number | null; containers: number; memory: number; groups: MachineGroup[] };
 export type MachineData = { hosts: MachineHost[] };
 /** Saves a budget (null removes it) and answers the server's words when it refused, or nothing. */
-type Save = (target: { milestone: string } | { issue: number }, usd: number | null) => Promise<string | undefined>;
+export type Save = (target: { milestone: string } | { issue: number }, usd: number | null) => Promise<string | undefined>;
 
-const REFRESH_MS = 30_000; // the plugin reads GitHub every 5 minutes; the page asks more often so a fresh read shows soon after it lands
+/** The page's hash; empty where there is no window (the tests render to markup in Node). */
+const hashNow = () => (typeof location === 'undefined' ? '' : location.hash);
+export const REFRESH_MS = 30_000; // the plugin reads GitHub every 5 minutes; the page asks more often so a fresh read shows soon after it lands
 const STALE_MS = 10 * 60_000; // two reads missed: no session is reading this repo now
 const MIN = 60_000;
 const MACHINE_STALE_MS = 30 * MIN; // a sample older than this says when it was read: the plugin samples while a session runs
-const short = (oid: string) => oid.slice(0, 7);
-const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
+export const short = (oid: string) => oid.slice(0, 7);
+export const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 const CONDITIONS = [['findings', 'No finding is open'], ['gate', 'The gate passed on this head'], ['bots', 'No bot comment is newer than the last commit'], ['clean', 'Merge state is CLEAN']] as const;
 
 /** The state a PR shows: from the first condition that does not hold, as its reason is. All four holding on data too old to trust (the server's call) is not known. */
-function stateOf(p: FactoryPr): { tone: 'working' | 'stalled' | 'waiting'; label: string } {
+export function stateOf(p: FactoryPr): { tone: 'working' | 'stalled' | 'waiting'; label: string } {
   if (p.ready) return { tone: 'working', label: 'Ready' };
   const first = Object.entries(p.conditions).find(([, c]) => c.ok !== true);
   if (!first || first[1].ok === null) return { tone: 'waiting', label: 'Not known' };
@@ -115,7 +120,7 @@ export function CostCell({ issue, cost }: { issue: number | null | undefined; co
 }
 
 /** One budget: a dollar amount to save, or to leave empty and save to remove. `value` is what is stored; a refusal shows the server's words. */
-function BudgetField({ label, value, placeholder, onSave }: { label: string; value: number | null; placeholder?: number | null; onSave: (usd: number | null) => Promise<string | undefined> }) {
+export function BudgetField({ label, value, placeholder, onSave }: { label: string; value: number | null; placeholder?: number | null; onSave: (usd: number | null) => Promise<string | undefined> }) {
   const [draft, setDraft] = useState(value === null ? '' : String(value));
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -151,11 +156,11 @@ export function BudgetCard({ data, onSave }: { data: BudgetData; onSave: Save })
     <section className="card budget" aria-labelledby="fbudget-h">
       <h2 id="fbudget-h">Budget per issue <span className="hint">warns at 80% and 100%, never stops anything</span></h2>
       <div className="bbody">
-        {!data.milestones.length && <p className="dnote">No open issue has a milestone, so there is no default to set. An issue's own budget is on its PR's sheet.</p>}
+        {!data.milestones.length && <p className="dnote">No open issue has a milestone, so there is no default to set. An issue's own budget is on its page.</p>}
         {data.milestones.map((m) => <BudgetField key={m.name} label={`Default for ${m.name}`} value={m.budget} onSave={(u) => onSave({ milestone: m.name }, u)} />)}
         {none && <span className="sub">No budget is set, so rows show cost only and nothing warns.</span>}
         {own.length > 0 && (
-          <span className="sub">{own.length === 1 ? 'One issue has its own budget' : `${own.length} issues have their own budget`}: {own.map((i) => `#${i.number}, ${usd(i.budget!)}`).join('; ')}. Set it on the PR's sheet.</span>
+          <span className="sub">{own.length === 1 ? 'One issue has its own budget' : `${own.length} issues have their own budget`}: {own.map((i) => `#${i.number}, ${usd(i.budget!)}`).join('; ')}. Set it on the issue's page.</span>
         )}
       </div>
     </section>
@@ -163,7 +168,7 @@ export function BudgetCard({ data, onSave }: { data: BudgetData; onSave: Save })
 }
 
 /** The PR sheet's cost: where the issue's money went, and its own budget (which beats the milestone's). */
-function CostSection({ issue, cost, onSave }: { issue: number | null | undefined; cost?: IssueCost; onSave: Save }) {
+export function CostSection({ issue, cost, onSave }: { issue: number | null | undefined; cost?: IssueCost; onSave: Save }) {
   if (!issue) return <section className="dsec"><h4>Cost, estimate</h4><p className="dnote">This PR closes no issue, so its cost is on "not on an issue".</p></section>;
   const c = cost ?? { number: issue, milestone: null, usd: 0, partial: false, whole: 0, windows: 0, budget: null, milestoneBudget: null, source: null, mark: null };
   const dflt = c.milestoneBudget; // known beside the issue's own budget: it is what removing that gives back
@@ -185,7 +190,7 @@ function CostSection({ issue, cost, onSave }: { issue: number | null | undefined
 export const STAGE_LABEL: Record<BoardStage, string> = { queued: 'Queued', building: 'Building', reviewing: 'Reviewing', fixing: 'Fixing', gate: 'Gate', ready: 'Ready', merged: 'Merged' };
 
 /** Seven segments, one a stage: those before the issue's stage lit, its own marked, green once the issue is ready or merged, red when the test run or a check on its head failed. */
-function Track({ stage, bad }: { stage: BoardStage; bad?: true }) {
+export function Track({ stage, bad }: { stage: BoardStage; bad?: true }) {
   const at = STAGES.indexOf(stage);
   return (
     <span className={stage === 'ready' || stage === 'merged' ? 'trk good' : bad ? 'trk bad' : 'trk'} role="img" aria-label={`Stage ${at + 1} of ${STAGES.length}: ${STAGE_LABEL[stage]}${bad ? ', failed' : ''}`}>
@@ -218,17 +223,14 @@ function SessionsCell({ issue, live, project }: { issue: BoardIssue; live: Reado
 export const outsideNote = (i: BoardIssue, chosen: string | null) =>
   !i.outside ? '' : chosen === null ? ` · in flight${i.milestone ? `, ${i.milestone}` : ''}` : ` · outside this milestone${i.milestone === undefined ? '' : `, ${i.milestone ?? 'in none'}`}`;
 
-function BoardRow({ issue: i, chosen, project, live, openable, cost, onOpen }: { issue: BoardIssue; chosen: string | null; project: string; live: ReadonlySet<string>; openable: ReadonlySet<number>; cost?: ReadonlyMap<number, IssueCost>; onOpen: OpenSheet }) {
+function BoardRow({ issue: i, chosen, project, live, cost }: { issue: BoardIssue; chosen: string | null; project: string; live: ReadonlySet<string>; cost?: ReadonlyMap<number, IssueCost> }) {
   const name = <b>{`#${i.number}${i.title ? ` ${i.title}` : ''}`}</b>;
-  const open = i.pr && !i.pr.merged && openable.has(i.pr.number) ? i.pr.number : undefined; // an open PR the page holds: its sheet has the four checks, the findings and the budget
   const ready = i.pr?.merged ? <span className="why none">Merged</span> : !i.pr ? <span className="why none">No PR yet</span>
     : i.ready ? <span className="why yes">Ready for your ok</span> : <span className="why no">{i.reason ?? 'Not ready'}</span>;
   return (
     <div className={i.stage === 'merged' ? 'brow merged' : 'brow'} data-issue={i.number}>
       <div className="bissue">
-        {open !== undefined
-          ? <button type="button" className="open" aria-label={`Issue #${i.number}: see the checks of PR #${open}`} onClick={(e) => onOpen(open, e.currentTarget)}>{name}</button>
-          : name}
+        <a className="open" href={issueHref(project, i.number)} aria-label={`Issue #${i.number}: open its page`}>{name}</a>
         <small>{i.pr ? `PR #${i.pr.number}${i.pr.merged ? ', merged' : ''}` : 'No PR'}{outsideNote(i, chosen)}</small>
       </div>
       <div className="stagecell"><span>{STAGE_LABEL[i.stage]}</span><Track stage={i.stage} bad={i.bad} /></div>
@@ -259,7 +261,7 @@ export const titlesNote = (data: BoardData) =>
  * is read the cells are empty rather than "nothing spent"); under the rows, what this month spent on no issue, which is that read's too and so stays when the board could not be read (`error`, with `data` the
  * last answer for the milestone asked for, if any). A title shows only if the plugin sent it (Content on full).
  */
-export function BoardBand({ data, error, live, openable, cost, notOnIssue, onOpen }: { data?: BoardData; error?: string; live: ReadonlySet<string>; openable: ReadonlySet<number>; cost?: ReadonlyMap<number, IssueCost>; notOnIssue?: BudgetData['notOnIssue']; onOpen: OpenSheet }) {
+export function BoardBand({ data, error, live, cost, notOnIssue }: { data?: BoardData; error?: string; live: ReadonlySet<string>; cost?: ReadonlyMap<number, IssueCost>; notOnIssue?: BudgetData['notOnIssue'] }) {
   const inside = data ? data.issues.filter((i) => !i.outside).length : 0;
   const outside = data ? data.issues.length - inside : 0;
   const note = data && titlesNote(data);
@@ -274,7 +276,7 @@ export function BoardBand({ data, error, live, openable, cost, notOnIssue, onOpe
         : (
           <>
             <div className="bcols" aria-hidden="true"><span>Issue</span><span>Stage</span><span>Ready</span><span>Cost, estimate</span><span>Sessions</span></div>
-            {data.issues.map((i) => <BoardRow key={i.number} issue={i} chosen={data.milestone} project={data.project} live={live} openable={openable} cost={cost} onOpen={onOpen} />)}
+            {data.issues.map((i) => <BoardRow key={i.number} issue={i} chosen={data.milestone} project={data.project} live={live} cost={cost} />)}
           </>
         ))}
       {notOnIssue && <NotOnIssue data={notOnIssue} />}
@@ -321,7 +323,7 @@ const seeMachine = (host: string) => {
 };
 
 /** Each open PR, worst first (the server's order): its state, the first reason it isn't ready or "Ready for your ok", its issue's cost once read, and its dismissed findings to read. */
-export function NeedsYou({ prs, costs, onOpen, left = [], now = Date.now() }: { prs: FactoryPr[]; costs?: Map<number, IssueCost>; onOpen: OpenSheet; left?: Left[]; now?: number }) {
+export function NeedsYou({ prs, costs, onOpen, left = [], now = Date.now(), project }: { prs: FactoryPr[]; costs?: Map<number, IssueCost>; onOpen: OpenSheet; left?: Left[]; now?: number; project?: string }) {
   return (
     <section className={costs ? 'card needs withcost' : 'card needs'} aria-labelledby="fneeds-h">
       <h2 id="fneeds-h">Needs you</h2>
@@ -339,7 +341,10 @@ export function NeedsYou({ prs, costs, onOpen, left = [], now = Date.now() }: { 
             </span>
             {costs && <CostCell issue={p.issue} cost={p.issue ? costs.get(p.issue) : undefined} />}
             <span className="since num">{open ? `${open} open` : short(p.headOid)}</span>
-            <button type="button" className={p.ready ? 'btn primary' : 'btn'} onClick={(e) => onOpen(p.number, e.currentTarget)}>{open ? 'See findings' : 'See checks'}</button>
+            {/* #106: a PR that closes an issue opens the issue's page; the sheet is for a PR with no issue */}
+            {p.issue && project
+              ? <a className={p.ready ? 'btn primary' : 'btn'} href={issueHref(project, p.issue)}>{open ? 'See findings' : 'See checks'}</a>
+              : <button type="button" className={p.ready ? 'btn primary' : 'btn'} onClick={(e) => onOpen(p.number, e.currentTarget)}>{open ? 'See findings' : 'See checks'}</button>}
           </div>
         );
       })}
@@ -437,7 +442,7 @@ export function MachineBands({ data, error, now }: { data?: MachineData; error?:
   );
 }
 
-function Row({ f }: { f: FactoryFinding }) {
+export function Row({ f }: { f: FactoryFinding }) {
   return (
     <div className="fnd">
       <span className="id">{f.id}</span><span className={`sev ${f.severity}`}>{f.severity}</span><span className="file">{f.file}</span>
@@ -447,7 +452,46 @@ function Row({ f }: { f: FactoryFinding }) {
   );
 }
 
-/** One PR's sheet: can it merge (the four conditions), then its findings: open, dismissed (read these before merging), and fixed, folded. */
+/** The four conditions of a PR, as the sheet and the issue page (#106) both show them. */
+export function ChecksSection({ pr, readAt, now }: { pr: FactoryPr; readAt: number | null; now: number }) {
+  return (
+    <section className="dsec">
+      <h4>Can it merge?</h4>
+      <ul className="cond">
+        {CONDITIONS.map(([k, name]) => {
+          const c = pr.conditions[k];
+          return (
+            <li key={k} className={c.ok === true ? 'ok' : c.ok === false ? 'no' : 'unk'}>
+              <span className="mk" aria-hidden="true">{c.ok === true ? '✓' : c.ok === false ? '✗' : '?'}</span>
+              <span>{name}<small>{c.note}</small></span>
+            </li>
+          );
+        })}
+      </ul>
+      <span className="sub">{readAt === null ? 'No GitHub data yet' : ageText(readAt, now)} · head {short(pr.headOid)}</span>
+    </section>
+  );
+}
+
+/** A PR's findings: open, dismissed (read these before merging), and fixed, folded. Shared by the sheet and the issue page (#106). */
+export function FindingsSection({ pr }: { pr: FactoryPr }) {
+  const of = (fate: FactoryFinding['fate']) => pr.findings.filter((f) => f.fate === fate);
+  const [open, dismissed, fixed] = [of('open'), of('dismissed'), of('fixed')];
+  const unreported = !pr.findings.length && pr.conditions.findings.ok === null && !pr.dropped;
+  return (
+    <section className="dsec">
+      <h4>Findings</h4>
+      {pr.dropped > 0 && <p className="dnote">{count(pr.dropped, 'line')} of the last report didn't parse: ask the reviewer to report it again.</p>}
+      {unreported && <p className="dnote">No <code>orb-findings</code> block has reached this PR's branch yet, so ready can't be proved.</p>}
+      {!pr.findings.length && !unreported && <p className="dnote">Reported, none found.</p>}
+      {open.length > 0 && <div className="fgroup"><h5>Open ({open.length})</h5>{open.map((f) => <Row key={f.id} f={f} />)}</div>}
+      {dismissed.length > 0 && <div className="fgroup"><h5>Dismissed: read these before merging ({dismissed.length})</h5>{dismissed.map((f) => <Row key={f.id} f={f} />)}</div>}
+      {fixed.length > 0 && <details className="fgroup"><summary>Fixed ({fixed.length})</summary>{fixed.map((f) => <Row key={f.id} f={f} />)}</details>}
+    </section>
+  );
+}
+
+/** A PR's sheet, for a PR that closes no issue (an issue's PR opens the issue's page, #106): can it merge (the four conditions), then its findings. */
 export function PrSheet({ pr, readAt, now, sheet, onClose, cost, onSave }: { pr: FactoryPr; readAt: number | null; now: number; sheet: boolean; onClose: () => void; cost?: IssueCost; onSave?: Save }) {
   const box = useRef<HTMLElement>(null);
   useEffect(() => box.current?.focus(), []);
@@ -457,9 +501,6 @@ export function PrSheet({ pr, readAt, now, sheet, onClose, cost, onSave }: { pr:
     return () => removeEventListener('keydown', on);
   }, [onClose]);
   const s = stateOf(pr);
-  const of = (fate: FactoryFinding['fate']) => pr.findings.filter((f) => f.fate === fate);
-  const [open, dismissed, fixed] = [of('open'), of('dismissed'), of('fixed')];
-  const unreported = !pr.findings.length && pr.conditions.findings.ok === null && !pr.dropped;
   return (
     <aside ref={box} tabIndex={-1} className={sheet ? 'drawer sheet factory-sheet' : 'drawer factory-sheet'} role="dialog" aria-modal="true" aria-labelledby="f-name" onKeyDown={(e) => trapTab(box.current!, e)}>
       <div className="dh">
@@ -471,30 +512,8 @@ export function PrSheet({ pr, readAt, now, sheet, onClose, cost, onSave }: { pr:
         {pr.head && <div className="dfacts"><code>{pr.head}</code></div>}
       </div>
       <div className="dbody">
-        <section className="dsec">
-          <h4>Can it merge?</h4>
-          <ul className="cond">
-            {CONDITIONS.map(([k, name]) => {
-              const c = pr.conditions[k];
-              return (
-                <li key={k} className={c.ok === true ? 'ok' : c.ok === false ? 'no' : 'unk'}>
-                  <span className="mk" aria-hidden="true">{c.ok === true ? '✓' : c.ok === false ? '✗' : '?'}</span>
-                  <span>{name}<small>{c.note}</small></span>
-                </li>
-              );
-            })}
-          </ul>
-          <span className="sub">{readAt === null ? 'No GitHub data yet' : ageText(readAt, now)} · head {short(pr.headOid)}</span>
-        </section>
-        <section className="dsec">
-          <h4>Findings</h4>
-          {pr.dropped > 0 && <p className="dnote">{count(pr.dropped, 'line')} of the last report didn't parse: ask the reviewer to report it again.</p>}
-          {unreported && <p className="dnote">No <code>orb-findings</code> block has reached this PR's branch yet, so ready can't be proved.</p>}
-          {!pr.findings.length && !unreported && <p className="dnote">Reported, none found.</p>}
-          {open.length > 0 && <div className="fgroup"><h5>Open ({open.length})</h5>{open.map((f) => <Row key={f.id} f={f} />)}</div>}
-          {dismissed.length > 0 && <div className="fgroup"><h5>Dismissed: read these before merging ({dismissed.length})</h5>{dismissed.map((f) => <Row key={f.id} f={f} />)}</div>}
-          {fixed.length > 0 && <details className="fgroup"><summary>Fixed ({fixed.length})</summary>{fixed.map((f) => <Row key={f.id} f={f} />)}</details>}
-        </section>
+        <ChecksSection pr={pr} readAt={readAt} now={now} />
+        <FindingsSection pr={pr} />
         {onSave && <CostSection issue={pr.issue} cost={cost} onSave={onSave} />}
       </div>
     </aside>
@@ -510,12 +529,17 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
   const [budget, setBudget] = useState<BudgetData>();
   const [board, setBoard] = useState<BoardData>();
   const [boardError, setBoardError] = useState<string>();
-  const [chosen, setChosen] = useState<{ project: string; milestone: string }>(); // the milestone picked, for the project it was picked in; none: the server's choice
+  // #106: the milestone picked and the view are in the hash (#/factory?project=..&milestone=..&view=map), read on load and written back when they change, so a reload and a link from the issue page or Home land on the same Map.
+  const [chosen, setChosen] = useState<{ project: string; milestone: string } | undefined>(() => {
+    const { milestone } = readFactory(hashNow());
+    const { single } = readChoice(hashNow());
+    return milestone && single ? { project: single, milestone } : undefined; // the milestone picked, for the project it was picked in; none: the server's choice
+  });
   const [machine, setMachine] = useState<MachineData>();
   const [machineError, setMachineError] = useState<string>();
   const [error, setError] = useState<string>();
   const [picked, setPicked] = useState<number>();
-  const [view, setView] = useState<'board' | 'map'>('board'); // ponytail: kept in the page, so a reload opens on Board. In the hash when another page links to a milestone's Map (#64, Home).
+  const [view, setView] = useState<'board' | 'map'>(() => readFactory(hashNow()).view);
   const [links, setLinks] = useState<LinksData>();
   const [linksError, setLinksError] = useState<string>();
   const [pressed, setPressed] = useState<number>(); // the Map's pressed card
@@ -627,6 +651,10 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
     }
     return undefined;
   };
+  useEffect(() => {
+    const next = hashWith(location.hash, { view: view === 'map' ? 'map' : undefined, milestone: chosen?.project === project ? chosen.milestone : undefined });
+    if (next !== location.hash) history.replaceState(null, '', next);
+  }, [view, chosen, project]);
   const pr = shown?.prs.find((p) => p.number === picked);
   const close = () => {
     setPicked(undefined);
@@ -655,9 +683,9 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
       {view === 'board' && shown && (
         <>
           <Reading said={factoryReading(shown)} />
-          <NeedsYou prs={shown.prs} costs={costs} left={leftRunning(machine)} now={now} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />
+          <NeedsYou prs={shown.prs} costs={costs} left={leftRunning(machine)} now={now} project={project} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />
           {!boarded && !boardError && <Loading>Reading the board…</Loading>}
-          {(boarded || boardError) && <BoardBand data={boarded} error={boardError} live={live} openable={new Set(shown.prs.map((p) => p.number))} cost={costs} notOnIssue={costed?.notOnIssue} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />}
+          {(boarded || boardError) && <BoardBand data={boarded} error={boardError} live={live} cost={costs} notOnIssue={costed?.notOnIssue} />}
           {costed && <BudgetCard data={costed} onSave={save} />}
         </>
       )}

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Factory, type BoardData, type BoardIssue } from '../src/Factory.tsx';
 import { MapBand, mapReading, nowOn, type IssueLink, type LinksData } from '../src/FactoryMap.tsx';
-import { Reading } from '../src/kit.tsx';
+import { ProjectContext, Reading } from '../src/kit.tsx';
 import type { Agent, Session } from '../src/Live.tsx';
 
 // The Map (v0.5 slice 1, #66; design/home-issue.html, the Map board): the board's issues, each a card in the column of its stage, over the lines that tie them: solid where two wrote the
@@ -288,5 +288,14 @@ describe('the Factory page: the Board and Map switch', () => {
     const html = renderToStaticMarkup(createElement(Factory, { now: NOW, live: new Set<string>() }));
     expect([...html.matchAll(/<button type="button" aria-pressed="(true|false)">(Board|Map)<\/button>/g)].map((m) => [m[2], m[1]])).toEqual([['Board', 'true'], ['Map', 'false']]);
     expect(html).toContain('role="group" aria-label="Factory view"');
+  });
+
+  // #106: the view and the milestone are in the hash, so a reload (or the issue page's link to a milestone's Map) opens where it was
+  it('a hash with view=map opens on the Map, with the milestone it names in the picker', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }));
+    vi.stubGlobal('location', { hash: '#/factory?project=mobile-app&milestone=v2.3+Offline&view=map' });
+    const html = renderToStaticMarkup(createElement(ProjectContext.Provider, { value: { choice: { all: false, single: 'mobile-app' }, pick: () => {} } }, createElement(Factory, { now: NOW, live: new Set<string>() })));
+    expect([...html.matchAll(/<button type="button" aria-pressed="(true|false)">(Board|Map)<\/button>/g)].map((m) => [m[2], m[1]])).toEqual([['Board', 'false'], ['Map', 'true']]);
+    expect(html).toContain('<option value="v2.3 Offline" selected="">v2.3 Offline</option>');
   });
 });
