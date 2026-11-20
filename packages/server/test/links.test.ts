@@ -141,15 +141,54 @@ describe('GET /api/links: two issues whose open PRs change the same file (#68)',
     expect((await links()).links).toEqual([file(409, 412, ['src/a.ts', 'src/b.ts'])]);
   });
 
-  it('a path that three issues change, more than half of those with any file, ties none of them and comes back in `common`; two issues sharing a path are still tied by it', async () => {
+  it('a path that three issues change, more than half of those with any file, ties none of them and comes back in `common`; a path only two share still ties them', async () => {
     await send(read(NOW - MIN, opens([416, 409, ['PROJECT.md', 'src/a.ts']], [418, 412, ['PROJECT.md', 'src/a.ts']], [420, 415, ['PROJECT.md']]), issues(409, 412, 415)));
     expect(await links()).toEqual({ project: 'mobile-app', milestone: M, links: [file(409, 412, ['src/a.ts'])], common: ['PROJECT.md'] });
-    // three of seven with files is not more than half: the path ties the three
+    // three of seven shown is not more than half: the path ties the three
     await send(read(NOW, opens([416, 409, ['PROJECT.md']], [418, 412, ['PROJECT.md']], [420, 415, ['PROJECT.md']], [421, 417, ['x.ts']], [422, 419, ['y.ts']], [423, 421, ['z.ts']], [424, 423, ['w.ts']]),
       issues(409, 412, 415, 417, 419, 421, 423)));
     const seven = await links();
     expect(seven.common).toEqual([]);
     expect(seven.links.map((l) => [l.a, l.b])).toEqual([[409, 412], [409, 415], [412, 415]]);
+  });
+
+  it('an issue whose newest PR merged is joined only by what its sessions wrote: an older PR of it still open, with the path, ties nothing', async () => {
+    await send(merged(NOW - 3 * MIN, [{ number: 420, merged_at: NOW - 3 * MIN, head: 'fix/409-x' }]),
+      read(NOW - MIN, opens([416, 409, ['src/a.ts']], [418, 412, ['src/a.ts']]), issues(409, 412)));
+    expect((await links()).links).toEqual([]);
+    await send(on(409, 'src/a.ts')); // what its own session wrote still ties it, and no longer together
+    expect((await links()).links).toEqual([file(409, 412, ['src/a.ts'], false)]);
+  });
+
+  it('`common` counts the issues that change a path by a session\'s write and by a PR\'s files together: one writes it, two PRs list it, and it is common', async () => {
+    await send(on(409, 'PROJECT.md'), read(NOW - MIN, opens([418, 412, ['PROJECT.md']], [420, 415, ['PROJECT.md']]), issues(409, 412, 415)));
+    expect(await links()).toEqual({ project: 'mobile-app', milestone: M, links: [], common: ['PROJECT.md'] });
+  });
+
+  it('`common` is sorted by path, whatever order the paths were read in', async () => {
+    const both = ['PROJECT.md', 'PLAN.md'];
+    await send(read(NOW - MIN, opens([416, 409, both], [418, 412, both], [420, 415, both]), issues(409, 412, 415)));
+    expect((await links()).common).toEqual(['PLAN.md', 'PROJECT.md']);
+  });
+
+  it('another project\'s open PRs, with the same issue numbers and the same path, tie nothing here', async () => {
+    const OTHER: Project = { cwd: '/Users/a/web', name: 'web', git_remote: 'github.com/o/web' };
+    await send(read(NOW - MIN, opens([416, 409, ['src/a.ts']]), issues(409, 412)),
+      ev('reader', NOW - MIN, 'project.open_prs', { prs: opens([418, 412, ['src/a.ts']]), issues: issues(409, 412) }, {}, OTHER));
+    expect((await links()).links).toEqual([]);
+  });
+
+  it('`common` is measured against the issues the board shows, files or none: three open PRs on an eight-issue board change src/core.ts, and it ties them; four of six is most of the board, and is common', async () => {
+    const core = ['src/core.ts'];
+    await send(read(NOW - MIN, opens([416, 409, core], [418, 412, core], [420, 415, core]), issues(409, 412, 415, 417, 419, 421, 423, 425)));
+    const eight = await links();
+    expect(eight.common).toEqual([]);
+    expect(eight.links.map((l) => [l.a, l.b])).toEqual([[409, 412], [409, 415], [412, 415]]);
+    // exactly half (three of six, here with one issue that has no file) is not more than half; four of six is
+    await send(read(NOW, opens([416, 409, core], [418, 412, core], [420, 415, core]), issues(409, 412, 415, 417, 419, 421)));
+    expect((await links()).common).toEqual([]);
+    await send(read(NOW + MIN, opens([416, 409, core], [418, 412, core], [420, 415, core], [422, 417, core]), issues(409, 412, 415, 417, 419, 421)));
+    expect(await links()).toMatchObject({ links: [], common: core });
   });
 
   it('a read whose PRs carry no files (a plugin from before #68) leaves the column null, and the route answers from the sessions\' writes as before', async () => {

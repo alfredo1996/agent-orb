@@ -40,12 +40,12 @@ export function linksOf(store: Store, content: ContentStore, project: string, ch
     if (r.own !== null) for (const w of each(store, `SELECT DISTINCT f.path AS path ${WROTE}`, { id: r.id })) add(r.own, w.path);
     else for (const w of each(store, `SELECT f.path AS path, c.ts AS ts ${WROTE}`, { id: r.id })) add(windowIssue(r.links, w.ts), w.path);
   }
-  for (const r of each(store, PR_FILES, { project })) for (const path of JSON.parse(r.files) as string[]) add(r.issue, path);
+  // An issue whose newest PR merged is joined by its sessions' writes only: an older PR of it still open says nothing of what it changes now (README, the Map's links).
+  for (const r of each(store, PR_FILES, { project })) if (r.issue === null || !mergedPr(r.issue)) for (const path of JSON.parse(r.files) as string[]) add(r.issue, path);
 
-  // #68: a path that at least three shown issues change, and more than half of those that change any, says nothing about a pair (PROJECT.md and README.md here, which every slice edits): it is
-  // set aside before the pairs are made, and named once under the Map instead. Two issues that share it are still tied by it.
-  const changing = new Set([...wrote.values()].flatMap((s) => [...s])).size;
-  const common = [...wrote].filter(([, issues]) => issues.size >= 3 && issues.size > changing / 2).map(([path]) => path).sort();
+  // #68: a path that at least three shown issues change, and more than half of the issues the board shows (those with no file count: few have one), says nothing about a pair (PROJECT.md and README.md here, which every slice edits): it is
+  // set aside before the pairs are made, and named once under the Map instead. A path only two issues share is not common (at least three), so it still ties them.
+  const common = [...wrote].filter(([, issues]) => issues.size >= 3 && issues.size > shown.size / 2).map(([path]) => path).sort();
   for (const path of common) wrote.delete(path);
 
   // ponytail: a file k issues change makes k(k-1)/2 pairs; a board holds tens of issues, and a file most of them change is in `common` above, so k stays under half the board.
