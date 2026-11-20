@@ -13,8 +13,8 @@ import { layoutMap } from './map-layout.ts';
 
 /** Two issues wrote the same file: `files` are up to three of them, `count` all of them, `together` while neither issue is merged. `a` is the lower number. */
 export type FileLink = { kind: 'file'; a: number; b: number; files: string[]; count: number; together: boolean };
-/** The text of issue `a` mentions issue `b`. */
-export type MentionLink = { kind: 'mention'; a: number; b: number };
+/** The text of issue `a` mentions issue `b`; `both` when each names the other (#70), `a` then the lower number. */
+export type MentionLink = { kind: 'mention'; a: number; b: number; both?: true };
 export type IssueLink = FileLink | MentionLink;
 /** GET /api/links: the links between the issues GET /api/board shows for `milestone`. */
 export type LinksData = { project: string; milestone: string | null; links: IssueLink[] };
@@ -70,10 +70,10 @@ function LinkRow({ link: l, titles }: { link: IssueLink; titles: ReadonlyMap<num
   const name = (n: number) => <><b>#{n}</b>{titles.get(n) ? ` ${titles.get(n)}` : ''}</>;
   return (
     <div className="mp-link">
-      <span>{name(l.a)} <span className="sub">{l.kind === 'file' ? 'and' : 'mentions'}</span> {name(l.b)}</span>
+      <span>{name(l.a)} <span className="sub">{l.kind === 'file' || l.both ? 'and' : 'mentions'}</span> {name(l.b)}</span>
       {l.kind === 'file'
         ? <span className="sub">Both wrote {l.files.map((f, i) => <Fragment key={f}>{i > 0 && ', '}<code>{f}</code></Fragment>)}{l.count > l.files.length && ` and ${l.count - l.files.length} more`}</span>
-        : <span className="sub">In #{l.a}'s text</span>}
+        : <span className="sub">{l.both ? 'Name each other' : `In #${l.a}'s text`}</span>}
       {hot(l) ? <span className="flag left">In flight together</span> : <span />}
     </div>
   );
@@ -116,8 +116,8 @@ export function MapBand({ board, links, error, boardError, sessions, picked, onP
                 {/* the names after every line, each on a patch of the card's own colour, so a line that runs under a name is cut by it and never crosses it out */}
                 {map.edges.map(({ link: l, label }, i) => label && (
                   <g key={i}>
-                    <rect className={`elbg${dimmed(l)}`} x={(label.anchor === 'middle' ? label.x - label.w / 2 : label.x) - 3} y={label.y - 11} width={label.w + 6} height={15} rx={3} />
-                    <text className={`el${dimmed(l)}`} x={label.x} y={label.y} textAnchor={label.anchor}>{label.text}</text>
+                    <rect className={`elbg${dimmed(l)}`} x={label.x - label.w / 2 - 3} y={label.y - 11} width={label.w + 6} height={15} rx={3} />
+                    <text className={`el${dimmed(l)}`} x={label.x} y={label.y} textAnchor="middle">{label.text}</text>
                   </g>
                 ))}
               </svg>

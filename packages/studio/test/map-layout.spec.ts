@@ -28,6 +28,38 @@ const onBorder = (pt: { x: number; y: number }, p: { x: number; y: number }) => 
 };
 const CHAR = 7.2; // a 12px monospace character, as the label's width is judged
 
+/** Points along a path of M, C and V commands, 40 to a segment: what a line passes over on its way. */
+const along = (d: string) => {
+  const pts: { x: number; y: number }[] = [];
+  let at = { x: 0, y: 0 };
+  for (const [, cmd, args] of d.matchAll(/([MCV])([^MCV]*)/g)) {
+    const n = args!.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+    if (cmd === 'M') at = { x: n[0]!, y: n[1]! };
+    else if (cmd === 'V') {
+      for (let k = 0; k <= 40; k++) pts.push({ x: at.x, y: at.y + ((n[0]! - at.y) * k) / 40 });
+      at = { x: at.x, y: n[0]! };
+    } else {
+      const [x1, y1, x2, y2, x3, y3] = n as [number, number, number, number, number, number];
+      for (let k = 0; k <= 40; k++) {
+        const t = k / 40, u = 1 - t;
+        pts.push({ x: u * u * u * at.x + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3, y: u * u * u * at.y + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3 });
+      }
+      at = { x: x3, y: y3 };
+    }
+  }
+  return pts;
+};
+/** The cards a line passes behind: a point of it strictly inside a card's box (on the border is where a line leaves or reaches its own card). */
+const behind = (m: ReturnType<typeof layoutMap>, d: string) =>
+  [...m.pos].filter(([, p]) => along(d).some((pt) => pt.x > p.x + 0.5 && pt.x < p.x + MAP_NODE.w - 0.5 && pt.y > p.y + 0.5 && pt.y < p.y + MAP_NODE.h - 0.5)).map(([n]) => n);
+/** The lines drawn as an arc under a row: both ends on the bottom of a card. */
+const arcs = (m: ReturnType<typeof layoutMap>) => m.edges.filter((e) => {
+  const [from, to] = ends(e.d);
+  return from!.y === m.pos.get(e.link.a)!.y + MAP_NODE.h && to!.y === m.pos.get(e.link.b)!.y + MAP_NODE.h;
+}).map((e) => [e.link.a, e.link.b]);
+// #67's fixture, the one its screenshots show: ISSUES without #421, and LINKS
+const FIXTURE = ISSUES.filter((i) => i.number !== 421);
+
 describe('layoutMap: where each issue sits', () => {
   const m = layoutMap(STAGES, ISSUES, LINKS);
 
@@ -43,7 +75,7 @@ describe('layoutMap: where each issue sits', () => {
     const all = ISSUES.map((i) => box(m.pos.get(i.number)!));
     for (let i = 0; i < all.length; i++) for (let j = i + 1; j < all.length; j++) expect(apart(all[i]!, all[j]!), `#${ISSUES[i]!.number} and #${ISSUES[j]!.number}`).toBe(true);
     const [a, b, c] = [417, 419, 421].map((n) => m.pos.get(n)!);
-    expect([a!.row, b!.row, c!.row]).toEqual([0, 1, 2]);
+    expect([a!.row, b!.row, c!.row]).toEqual([0, 2, 4]);
     expect(b!.y - a!.y).toBeGreaterThanOrEqual(MAP_NODE.h);
     expect(c!.y - b!.y).toBe(b!.y - a!.y);
   });
@@ -55,22 +87,18 @@ describe('layoutMap: where each issue sits', () => {
       expect(p.x + MAP_NODE.w).toBeLessThanOrEqual(m.width);
       expect(p.y + MAP_NODE.h).toBeLessThanOrEqual(m.height);
     }
-    for (const e of m.edges) for (const n of e.d.match(/-?\d+(?:\.\d+)?/g)!.filter((_, k) => k % 2 === 0).map(Number)) expect(n, e.d).toBeGreaterThanOrEqual(0), expect(n, e.d).toBeLessThanOrEqual(m.width); // every x of every path, control points too
+    for (const e of m.edges) for (const pt of along(e.d)) expect(pt.x, e.d).toBeGreaterThanOrEqual(0), expect(pt.x, e.d).toBeLessThanOrEqual(m.width), expect(pt.y, e.d).toBeLessThanOrEqual(m.height);
   });
 
-  it('a line between two cards of the last column, rows apart, bulges inside the canvas, and its name is put to the left of the line, where there is room, never clamped away from it', () => {
+  it('a line between two cards of the last column, rows apart, runs down the lane right of it, inside the canvas and behind no card, and names its file', () => {
     const three = layoutMap(STAGES, [...ISSUES, { number: 404, stage: 'merged' }, { number: 405, stage: 'merged' }], [file(403, 405, 'src/net/status.ts')]);
     const e = three.edges[0]!;
-    expect(e.d).toMatch(/^M\d/);
-    for (const x of e.d.match(/-?\d+(?:\.\d+)?/g)!.filter((_, k) => k % 2 === 0).map(Number)) expect(x).toBeLessThanOrEqual(three.width);
-    const l = e.label!;
-    expect(l).toBeDefined();
-    const edge = three.pos.get(403)!.x + MAP_NODE.w;
-    const crossesAt = edge + 21; // the curve's furthest point out is three quarters of its 28px bulge, which is where it crosses the middle of the gap
-    const w = l.text.length * 7.3;
-    expect(l.anchor).toBe('start');
-    expect(Math.abs(l.x + w - (crossesAt - 6))).toBeLessThanOrEqual(8); // the name ends just before the line
-    expect(l.x).toBeGreaterThanOrEqual(0);
+    const right = three.pos.get(403)!.x + MAP_NODE.w;
+    const down = along(e.d).filter((pt) => pt.y > three.pos.get(404)!.y && pt.y < three.pos.get(404)!.y + MAP_NODE.h); // beside #404, the card between the two
+    expect(down.length).toBeGreaterThan(0);
+    for (const pt of down) expect(pt.x > right && pt.x < three.width, `${pt.x}`).toBe(true);
+    expect(behind(three, e.d)).toEqual([]);
+    expect(e.label?.text).toBe('net/status.ts');
   });
 
   it('a card stays where it is whatever links it has, whichever is pressed and whatever order the board lists it in: only its stage and the numbers beside it place it', () => {
@@ -121,16 +149,48 @@ describe('layoutMap: the lines', () => {
     const links = [file(1, 2), file(1, 4), file(1, 5), file(1, 6), file(4, 5), file(3, 6)];
     const t = layoutMap(STAGES, tall, links);
     expect(t.edges).toHaveLength(links.length);
-    for (const e of t.edges) expect(e.d).toMatch(/^M-?[\d.]+,-?[\d.]+ C(-?[\d.]+,-?[\d.]+ ){2}-?[\d.]+,-?[\d.]+$/);
+    for (const e of t.edges) expect(e.d).toMatch(/^M-?[\d.]+,-?[\d.]+ C(-?[\d.]+,-?[\d.]+ ){2}-?[\d.]+,-?[\d.]+( V-?[\d.]+ C(-?[\d.]+,-?[\d.]+ ){2}-?[\d.]+,-?[\d.]+)?$/);
     expect(new Set(t.edges.map((e) => e.d)).size).toBe(links.length);
+  });
+});
+
+describe('layoutMap: the rows alternate by column, so a line crosses a gap instead of running along it (#70)', () => {
+  it('a stage\'s first issue sits on the top row in Queued, Reviewing, Gate and Merged, on the second in Building, Fixing and Ready; each further issue two rows down', () => {
+    const m = layoutMap(STAGES, ISSUES, LINKS);
+    expect(Object.fromEntries([...m.pos].map(([n, p]) => [n, p.row]))).toEqual({ 417: 0, 419: 2, 421: 4, 415: 1, 398: 0, 409: 1, 407: 0, 412: 1, 403: 0 });
+    const twice = layoutMap(STAGES, [{ number: 1, stage: 'fixing' }, { number: 2, stage: 'fixing' }, { number: 3, stage: 'gate' }, { number: 4, stage: 'gate' }], []);
+    expect(Object.fromEntries([...twice.pos].map(([n, p]) => [n, p.row]))).toEqual({ 1: 1, 2: 3, 3: 0, 4: 2 });
+  });
+
+  it('on #67\'s fixture one line is an arc under a row, #409 to #412 (both in odd columns); the other six each cross one gap', () => {
+    expect(arcs(layoutMap(STAGES, FIXTURE, LINKS))).toEqual([[409, 412]]);
+  });
+
+  it('on #67\'s fixture every file link is still named', () => {
+    expect(layoutMap(STAGES, FIXTURE, LINKS).edges.filter((e) => e.link.kind === 'file').map((e) => e.label?.text)).toEqual(['net/client.ts', 'auth/store.ts', 'upload/queue.ts', 'net/status.ts']);
+  });
+
+  it('no line passes behind a card: not on the fixture, not where a line skips rows, not in one column, not in a crowd', () => {
+    const tall = [1, 2, 3, 4].map((number) => ({ number, stage: 'queued' })).concat([{ number: 5, stage: 'building' }, { number: 6, stage: 'merged' }, { number: 7, stage: 'building' }, { number: 8, stage: 'reviewing' }]);
+    const crowd = [1, 2, 3, 4, 5, 6, 7].map((number, i) => ({ number, stage: STAGES[i]! })).concat([8, 9, 10, 11, 12, 13].map((number, i) => ({ number, stage: STAGES[i]! })));
+    const boards: [string, { number: number; stage: string }[], L[]][] = [
+      ['fixture', FIXTURE, LINKS],
+      ['three queued', ISSUES, [...LINKS, file(417, 421), said(421, 415), file(419, 403), said(421, 412)]],
+      ['tall', tall, [file(1, 2), file(1, 4), file(1, 5), file(1, 6), file(4, 5), file(3, 6), file(2, 7), file(4, 8), said(8, 3), file(7, 6)]],
+      ['crowd', crowd, [1, 2, 3, 4, 5, 6, 7].flatMap((n) => [8, 9, 10, 11, 12, 13].map((to) => file(n, to, `src/f${n}.ts`, false)))],
+    ];
+    for (const [name, issues, links] of boards) {
+      const m = layoutMap(STAGES, issues, links);
+      for (const e of m.edges) expect(behind(m, e.d), `${name}: #${e.link.a} to #${e.link.b}: ${e.d}`).toEqual([]);
+    }
   });
 });
 
 describe('layoutMap: the file a line names', () => {
   const m = layoutMap(STAGES, ISSUES, LINKS);
-  const labelBox = (l: { x: number; y: number; text: string; anchor: string }) => {
+  const labelBox = (l: { x: number; y: number; text: string }) => {
     const w = l.text.length * CHAR;
-    const x0 = l.anchor === 'middle' ? l.x - w / 2 : l.x;
+    const x0 = l.x - w / 2;
     return { x0, x1: x0 + w, y0: l.y - 11, y1: l.y + 3 };
   };
 

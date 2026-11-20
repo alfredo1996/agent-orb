@@ -146,6 +146,12 @@ describe('the Map: the list of links under it', () => {
     expect(html).toContain('Both wrote <code>src/net/client.ts</code>'); // a path shows whole, and with Content off too: it is kept as metadata
   });
 
+  it('two issues that name each other are one row and one dashed line (#70)', () => {
+    const html = band({ links: links([{ kind: 'mention', a: 409, b: 417, both: true }]) });
+    expect(rows(html)).toEqual(['#409 Retry after an expired token and #417 Clear the cache on sign-out Name each other']);
+    expect(paths(html)).toEqual(['said']);
+  });
+
   it('a pressed card keeps its links and fades the rest, and the list shows only its links', () => {
     const html = band({ picked: 409 });
     expect(cards(html).filter((c) => c.pressed).map((c) => c.n)).toEqual([409]);
