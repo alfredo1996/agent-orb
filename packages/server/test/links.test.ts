@@ -138,6 +138,11 @@ describe('GET /api/links: one issue mentions another', () => {
     expect((await links()).links).toEqual([file(409, 412, ['src/a.ts']), { kind: 'mention', a: 409, b: 412, both: true }, { kind: 'mention', a: 415, b: 409 }]);
   });
 
+  it('a mention stored twice (the ingest keeps the list as the plugin sent it) is one link, and a pair that names each other twice over is one `both` link', async () => {
+    await send(read(NOW - MIN, [], [{ number: 409, milestone: M, mentions: [412, 412] }, { number: 412, milestone: M }, { number: 415, milestone: M, mentions: [409, 409] }, { number: 417, milestone: M, mentions: [415, 415] }, { number: 420, milestone: M, mentions: [421, 421] }, { number: 421, milestone: M, mentions: [420, 420] }]));
+    expect((await links()).links).toEqual([{ kind: 'mention', a: 409, b: 412 }, { kind: 'mention', a: 415, b: 409 }, { kind: 'mention', a: 417, b: 415 }, { kind: 'mention', a: 420, b: 421, both: true }]);
+  });
+
   it('an event with no mentions (a plugin from before #66) leaves the column null, and the route still answers', async () => {
     await send(on(409, 'src/a.ts'), on(412, 'src/a.ts'), read(NOW - MIN, [], issues(409, 412)));
     expect(all(store, 'SELECT number, mentions FROM open_issues ORDER BY number').map((r) => ({ ...r }))).toEqual([{ number: 409, mentions: null }, { number: 412, mentions: null }]);
