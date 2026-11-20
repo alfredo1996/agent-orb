@@ -6,7 +6,8 @@
 // the one band no card is ever in. A file's name sits in that gap too, on its line. The cards of one row are tied by arcs under it, deeper the further apart the two are, so they nest.
 // A line between cards rows apart (two cards of one column always are) would cross the rows between them, where cards sit: it runs down the lane between two columns instead, the other
 // band no card is in, and turns into the gaps at either end. So no line passes behind a card.
-// ponytail: the lane is the one beside the upper card, toward the lower; lines that share a lane are spread across it, and past three they draw closer. Upgrade: pick the emptier lane.
+// ponytail: the lane is the one beside the upper card, toward the lower; lines that share a lane are spread across its middle 12px, a stroke apart up to five of them, and closer past that
+// (the centre 12px keep a line clear of the card's focus outline). Upgrade: pick the emptier lane, or spill into the one on the other side of the upper card.
 
 export const MAP_NODE = { w: 152, h: 76 };
 const LANE = 24; // between two columns: room for three lines that run down it (the mockup's 16px held none); the canvas is 1240px wide (1196 before #70, the mockup's 1176)
@@ -16,8 +17,9 @@ const GAP = ROW - MAP_NODE.h;
 const LEFT = 8;
 const TOP = 34; // room for the column headings
 const PORT = 24; // between two lines that meet one side of a card
-const DIP = [18, 78]; // how far a line between two cards of one row is pulled into the gap under them (it reaches three quarters of it): neighbours least, the far ends of the row most
-const STEP = 8; // between two lines that share a lane
+const DIP = [18, 64]; // how far a line between two cards of one row is pulled into the gap under them (it reaches three quarters of it): neighbours least, the far ends of the row most
+const DEEPER = 14; // a second line between the same two cards dips this much more, so it nests round the first (two issues have at most two links: a file and a mention)
+const STEP = 6; // between two lines that share a lane, and the whole spread of them is LANE - 12: the line on its edge is then 6px from a card, clear of its focus outline (2 to 4px)
 const CHAR = 7.3; // a 12px monospace character
 const LINE = 14; // a name's height, and how far one moves to clear another
 const TAIL_MAX = 24;
@@ -59,6 +61,7 @@ export function layoutMap<L extends MapLink>(stages: readonly string[], issues: 
   const last = Math.max(0, ...[...pos.values()].map((p) => p.row));
   const laneX = (lane: number) => LEFT + COL * lane + MAP_NODE.w + LANE / 2; // the middle of the lane right of column `lane`
 
+  const tied = new Map<string, number>();
   // Each line: its two ends, upper (or left) first, its shape, and for one rows apart the lane it runs down: beside the upper card, toward the lower one (right of it in its own column).
   const drawn = links.filter((l) => l.a !== l.b && pos.has(l.a) && pos.has(l.b)).map((link) => {
     const [a, b] = [pos.get(link.a)!, pos.get(link.b)!];
@@ -66,10 +69,28 @@ export function layoutMap<L extends MapLink>(stages: readonly string[], issues: 
     const shape: Shape = u.row === l.row ? 'under' : l.row - u.row === 1 ? 'down' : 'lane';
     const lane = l.col < u.col ? u.col - 1 : u.col;
     const sides: [Side, Side] = shape === 'under' ? ['bottom', 'bottom'] : ['bottom', 'top'];
-    // where each end heads first: the lane, for a line that runs down one, else the other card
-    const toward = shape === 'lane' ? [laneX(lane), laneX(lane)] : [l.x, u.x];
-    return { link, u, l, shape, lane, sides, toward, at: [0, 0] as [number, number], off: 0 };
+    // where each end heads first: the other card (its lane, for a line that runs down one, once the lanes are spread), and for an arc one px further for each arc already between the two
+    // cards, so the deeper arc is the outer one at both ends
+    const pair = `${u.x}:${u.y}:${l.x}`;
+    const rank = shape === 'under' ? tied.get(pair) ?? 0 : 0;
+    if (shape === 'under') tied.set(pair, rank + 1);
+    const toward: [number, number] = [l.x + rank, u.x - rank];
+    return { link, u, l, shape, lane, sides, toward, rank, at: [0, 0] as [number, number], off: 0 };
   });
+
+  // The lines down one lane, side by side across it. One that leaves the lane to the left (its lower card is left of it) goes left of those that leave to the right; of those that leave left
+  // the one that leaves first is furthest left, of those that leave right furthest right, so a line leaving does not cross the ones still running down.
+  const lanes = new Map<number, (typeof drawn)[number][]>();
+  for (const e of drawn) if (e.shape === 'lane') lanes.set(e.lane, [...(lanes.get(e.lane) ?? []), e]);
+  for (const [lane, list] of lanes) {
+    const step = Math.min(STEP, (LANE - 12) / Math.max(1, list.length - 1));
+    const right = (e: (typeof drawn)[number]) => Number(e.l.col > lane);
+    list.sort((p, q) => right(p) - right(q) || (right(p) ? q.l.y - p.l.y : p.l.y - q.l.y) || p.l.x - q.l.x || p.u.y - q.u.y || p.u.x - q.u.x);
+    list.forEach((e, i) => {
+      e.off = (i - (list.length - 1) / 2) * step;
+      e.toward = [laneX(lane) + e.off, laneX(lane) + e.off];
+    });
+  }
 
   // The lines at one side of a card, spread along it in the order of where each heads, so no two share a point and neighbours do not cross at the card.
   const meet = new Map<string, { e: (typeof drawn)[number]; end: 0 | 1; other: MapPos }[]>();
@@ -82,17 +103,12 @@ export function layoutMap<L extends MapLink>(stages: readonly string[], issues: 
   }
   for (const list of meet.values()) {
     const step = Math.min(PORT, (MAP_NODE.w - 24) / Math.max(1, list.length - 1));
-    list.sort((p, q) => p.e.toward[p.end]! - q.e.toward[q.end]! || p.other.y - q.other.y || p.other.x - q.other.x);
+    // by where each heads, those heading left first; but the arcs under a row go outward: of those heading the same way the farther is the outer, so the arcs nest and do not cross
+    const cx = (list[0]!.end === 0 ? list[0]!.e.u : list[0]!.e.l).x + MAP_NODE.w / 2;
+    const key = (p: (typeof list)[number]) => (p.e.shape === 'under' ? -p.e.toward[p.end]! : p.e.toward[p.end]!);
+    const group = (p: (typeof list)[number]) => Math.sign(p.e.toward[p.end]! - cx);
+    list.sort((p, q) => group(p) - group(q) || key(p) - key(q) || p.other.y - q.other.y || p.other.x - q.other.x);
     list.forEach((p, i) => (p.e.at[p.end] = (i - (list.length - 1) / 2) * step));
-  }
-
-  // The lines down one lane, side by side across it in the order of where their lower ends are, so two that share it never run on top of each other.
-  const lanes = new Map<number, (typeof drawn)[number][]>();
-  for (const e of drawn) if (e.shape === 'lane') lanes.set(e.lane, [...(lanes.get(e.lane) ?? []), e]);
-  for (const list of lanes.values()) {
-    const step = Math.min(STEP, (LANE - 8) / Math.max(1, list.length - 1));
-    list.sort((p, q) => p.l.x - q.l.x || p.l.y - q.l.y || p.u.y - q.u.y || p.u.x - q.u.x);
-    list.forEach((e, i) => (e.off = (i - (list.length - 1) / 2) * step));
   }
 
   const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
@@ -102,23 +118,25 @@ export function layoutMap<L extends MapLink>(stages: readonly string[], issues: 
     const { u, l, shape } = e;
     if (shape === 'under') {
       const [x1, x2, y] = [u.x + MAP_NODE.w / 2 + e.at[0], l.x + MAP_NODE.w / 2 + e.at[1], u.y + MAP_NODE.h];
-      const dip = DIP[0]! + ((DIP[1]! - DIP[0]!) * (l.col - u.col - 1)) / Math.max(1, stages.length - 2);
-      return { e, d: `M${round(x1)},${y} C${round(x1)},${round(y + dip)} ${round(x2)},${round(y + dip)} ${round(x2)},${y}`, gap: u.row, x: (x1 + x2) / 2, y: y + 0.75 * dip };
+      const dip = DIP[0]! + ((DIP[1]! - DIP[0]!) * (l.col - u.col - 1)) / Math.max(1, stages.length - 2) + DEEPER * e.rank;
+      return { e, d: `M${round(x1)},${y} C${round(x1)},${round(y + dip)} ${round(x2)},${round(y + dip)} ${round(x2)},${y}`, gap: u.row, x: (x1 + x2) / 2, y: y + 0.75 * dip , run: undefined };
     }
     const [x1, y1, x2, y2] = [u.x + MAP_NODE.w / 2 + e.at[0], u.y + MAP_NODE.h, l.x + MAP_NODE.w / 2 + e.at[1], l.y];
     const middle = y2 - GAP / 2; // the middle of the gap just above the lower card: where the line turns into it, and where the name goes
     if (shape === 'down') {
       // one gap apart: an S from one card to the other, inside the gap, which it crosses halfway along
-      return { e, d: `M${round(x1)},${y1} C${round(x1)},${middle} ${round(x2)},${middle} ${round(x2)},${y2}`, gap: l.row - 1, x: (x1 + x2) / 2, y: middle };
+      return { e, d: `M${round(x1)},${y1} C${round(x1)},${middle} ${round(x2)},${middle} ${round(x2)},${y2}`, gap: l.row - 1, x: (x1 + x2) / 2, y: middle, run: undefined };
     }
     // rows apart: an S into the lane inside the gap under the upper card, straight down the lane past the rows between, and an S out of it inside the gap above the lower card
     const x = laneX(e.lane) + e.off;
     const [top, bottom] = [y1 + GAP, y2 - GAP];
     return {
       e, d: `M${round(x1)},${y1} C${round(x1)},${y1 + GAP / 2} ${round(x)},${y1 + GAP / 2} ${round(x)},${top} V${bottom} C${round(x)},${middle} ${round(x2)},${middle} ${round(x2)},${y2}`,
-      gap: l.row - 1, x: (x + x2) / 2, y: middle,
+      gap: l.row - 1, x: (x + x2) / 2, y: middle, run: { x0: x, x1: x, y0: top, y1: bottom },
     };
   });
+  // the straight run of each line down a lane crosses the gaps between rows too, and a name over it would cut it and look like its own
+  for (const g of edges) if (g.run) placed.push(g.run);
 
   // The names, the ones that matter most first. A name sits on its line, where the line is lowest in the gap (an arc) or crosses the gap's middle; if another name is there it moves a line
   // down, then up, and if neither is free or still in the gap, the line goes unnamed: the list under the map has every file.
