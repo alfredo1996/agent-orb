@@ -132,10 +132,9 @@ export function issueCosts(store: Store, project: string, start: number, now: nu
 }
 
 /** What GET /api/budget answers, for the issue page (#106) to read an issue's row by the same figures. */
-export function budgetOf(store: Store, project: string, tz: string, at: number) {
+export function budgetOf(store: Store, project: string, tz: string, at: number, open = openIssues(store, project)) {
   const month = dayOf(tz, at).slice(0, 7); // as the goal reads it: from midnight on the month's first day in the viewer's zone, to now
   const [start] = monthBounds(tz, Number(month.slice(0, 4)), Number(month.slice(5, 7)));
-  const open = openIssues(store, project);
   const { issues, none } = issueCosts(store, project, start, at, open);
 
   // A closed issue keeps its milestone (#32), so what it cost is still held to the milestone's default; but only an open one is listed with no spend, and only an open one's milestone is offered.

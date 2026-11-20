@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Event } from '@agent-orb/shared';
 import { buildApp } from '../src/app.ts';
-import { stageOf } from '../src/api/board.ts';
+import { STAGES, stageOf } from '../src/api/board.ts';
 import { openStore } from '../src/store/store.ts';
 
 // v0.5 slice 2 (#106, Follow; the plan is #64): the page of one issue. GET /api/issue answers where it stands and its story, one line per agent run, worked out on read from rows already stored (and
@@ -67,8 +67,8 @@ type Issue = {
   project: string; content: string | null; readAt: number | null;
   issue: { number: number; title: string | null; milestone: string | null; stage: string; bad?: true; ready: boolean | null; reason: string | null; pr: { number: number; head: string | null; merged: boolean } | null; openedAt: number | null };
   story: Line[]; stages: { stage: string; at: number | null; again: number[] }[]; checks: { number: number; ready: boolean; findings: { id: string; fate: string }[]; conditions: object } | null;
-  cost: { number: number; usd: number; budget: number | null } | null; links: { kind: string; a: number; b: number }[]; mentions: { issue: number; direction: string }[];
-  sessions: { id: string; branch: string | null; at: number; windowOnly: boolean; imported: boolean }[];
+  cost: { number: number; usd: number; budget: number | null } | null; links: { kind: string; a: number; b: number; stage: string | null }[]; mentions: { issue: number; direction: string }[];
+  sessions: { id: string; branch: string | null; at: number; startedAt: number | null; windowOnly: boolean; imported: boolean }[];
 };
 const page = async (number: number, project = 'mobile-app'): Promise<Issue> => {
   const r = await app.inject({ url: `/api/issue?${new URLSearchParams({ project, issue: String(number), tz: 'UTC' })}` });
@@ -133,18 +133,67 @@ describe('GET /api/issue: the story', () => {
     expect(Object.fromEntries(p.stages.map((s) => [s.stage, [s.at, s.again]]))).toMatchObject({ reviewing: [T0 + 2 * MIN, []], gate: [T0 + 3 * MIN, []], ready: [T0 + 3 * MIN, []] });
   });
 
-  it('a session that reaches the issue only through a PR\'s window adds only the runs that start inside it, and only the writes inside it', async () => {
+  it('Ready shows the time of the findings report when it came after the gate', async () => {
+    await send(start('s-412', 'fix/412-queue'), ...call('s-412', T0 + MIN, { write: 'src/a.ts' }), gate(T0 + 3 * MIN, 'pass'), report(T0 + 5 * MIN, { branch: 'fix/412-queue' }),
+      read(NOW - MIN, [pr(418, { head: 'fix/412-queue', issue: 412 })], issues(412)));
+    const p = await page(412);
+    expect(p.issue.stage).toBe('ready');
+    expect(Object.fromEntries(p.stages.map((s) => [s.stage, [s.at, s.again]]))).toMatchObject({ gate: [T0 + 3 * MIN, []], reviewing: [T0 + 5 * MIN, []], ready: [T0 + 5 * MIN, []] });
+  });
+
+  it('a session that reaches the issue only through a PR\'s window adds the runs that wrote or spent inside it, and only the writes and cost inside it', async () => {
     // s-long is on no issue branch; it linked PR 416 (#409) at +10 and PR 418 (#412) at +20. Its main agent starts at T0 (#409's window); the subagent starts at +12 (#412's).
     await send(
-      start('s-long', 'dev'), ...call('s-long', T0 + MIN, { write: 'src/a.ts' }), ...call('s-long', T0 + 15 * MIN, { write: 'src/b.ts' }), link('s-long', T0 + 10 * MIN, 416), link('s-long', T0 + 20 * MIN, 418),
+      start('s-long', 'dev'), ...call('s-long', T0 + MIN, { write: 'src/a.ts' }), ...call('s-long', T0 + 15 * MIN, { write: 'src/b.ts' }), spend('s-long', T0 + 15 * MIN, 2), link('s-long', T0 + 10 * MIN, 416), link('s-long', T0 + 20 * MIN, 418),
       spawn('s-long', T0 + 12 * MIN, 'late'), ...call('s-long', T0 + 16 * MIN, { agent: 'late', write: 'src/c.ts' }),
       read(NOW - MIN, [pr(416, { head: 'feat/token', issue: 409, created_at: T0 + 10 * MIN }), pr(418, { head: 'feat/queue', issue: 412, created_at: T0 + 20 * MIN })], issues(409, 412)),
     );
     const a = await page(409);
-    expect(a.story.filter((l) => l.kind === 'run').map((l) => [l.agent && (l.agent as { id: string }).id, l.wrote])).toEqual([['s-long:main', { paths: ['src/a.ts'], count: 1 }]]); // its write at +15 is #412's
+    expect(a.story.filter((l) => l.kind === 'run').map((l) => [l.agent && (l.agent as { id: string }).id, l.wrote, l.usd])).toEqual([['s-long:main', { paths: ['src/a.ts'], count: 1 }, 0]]); // its write and its $2 at +15 are #412's
     expect(a.sessions).toMatchObject([{ id: 's-long', windowOnly: true, imported: false }]);
     const b = await page(412);
-    expect(b.story.filter((l) => l.kind === 'run').map((l) => [(l.agent as { id: string }).id, l.wrote])).toEqual([['s-long:late', { paths: ['src/c.ts'], count: 1 }]]);
+    // the main agent started before #412's window, but what it wrote and spent inside it is #412's: a run from its first request in the window
+    expect(b.story.filter((l) => l.kind === 'run').map((l) => [(l.agent as { id: string }).id, l.at, l.wrote, l.usd])).toEqual([
+      ['s-long:main', T0 + 15 * MIN, { paths: ['src/b.ts'], count: 1 }, 2], ['s-long:late', T0 + 16 * MIN, { paths: ['src/c.ts'], count: 1 }, 0],
+    ]);
+    expect(b.cost!.usd).toBe(2); // the story's cost is the page's cost
+    expect(b.story.reduce((n, l) => n + (l.usd ?? 0), 0)).toBe(2);
+  });
+
+  it('a line\'s stage is the stage after the run\'s own last event: a fixer that writes after the PR opened is Fixing on its own line, and the PR line is Reviewing', async () => {
+    await send(
+      start('s-409', 'fix/409-retry'), ...call('s-409', T0 + MIN, { write: 'src/a.ts' }), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }),
+      spawn('s-409', T0 + 4 * MIN, 'fx'), ...call('s-409', T0 + 6 * MIN, { agent: 'fx', write: 'src/b.ts' }),
+      read(NOW - MIN, [pr(416, { head: 'fix/409-retry', issue: 409, created_at: T0 + 5 * MIN })], issues(409)),
+    );
+    const p = await page(409);
+    expect(p.story.map((l) => [l.kind, l.at, l.stage])).toEqual([['run', T0, 'building'], ['round', T0 + 2 * MIN, 'reviewing'], ['run', T0 + 4 * MIN, 'fixing'], ['pr-open', T0 + 5 * MIN, 'reviewing']]);
+    expect(p.issue.stage).toBe('fixing');
+  });
+
+  it('a report by a run\'s own agent is a round on that run\'s line, not a line of its own, and not a review', async () => {
+    await send(
+      start('s-409', 'fix/409-retry'), ...call('s-409', T0 + MIN, { write: 'src/a.ts' }), spawn('s-409', T0 + 20 * MIN, 'fx'), ...call('s-409', T0 + 21 * MIN, { agent: 'fx', write: 'src/b.ts' }),
+      ev('s-409', T0 + 22 * MIN, 'findings.report', { branch: 'fix/409-retry', findings: [OPEN], dropped: 0 }, { agent_id: 'fx', turn_id: 't-s-409-fx' }), read(NOW - MIN, [], issues(409)),
+    );
+    const p = await page(409);
+    expect(p.story.map((l) => [l.kind, l.stage])).toEqual([['run', 'building'], ['run', 'building']]); // a fixer's report is no review
+    expect(p.story[1]!.rounds).toEqual([{ at: T0 + 22 * MIN, reviewer: false, open: 1, dropped: 0 }]);
+    expect(p.story[0]!.rounds).toEqual([]);
+  });
+
+  it('a run with a request the price list lacks is partial: its cost is a floor', async () => {
+    await send(start('s-409', 'fix/409-retry'), ...call('s-409', T0 + MIN, { write: 'src/a.ts' }), spend('s-409', T0 + MIN, 1),
+      ev('s-409', T0 + 2 * MIN, 'turn.step', { model: 'mystery-model-1', usage: { input: 1, output: 1, cache_read: 0, cache_creation: 0 }, stop_reason: 'end_turn', tool_use_ids: [] }, { turn_id: 't-s-409-main' }), read(NOW - MIN, [], issues(409)));
+    const p = await page(409);
+    expect(p.story[0]).toMatchObject({ usd: 1, partial: true });
+    expect(p.cost).toMatchObject({ usd: 1, partial: true });
+  });
+
+  it('an open PR the read gave no opening time for, and no session: Building is reached when the issue first showed a sign, not left empty under a later Reviewing', async () => {
+    await send(report(T0 + 2 * MIN, { pr: 418 }), gate(T0 + 3 * MIN, 'pass'), read(NOW - MIN, [pr(418, { head: 'fix/412-queue', issue: 412 })], issues(412)));
+    const p = await page(412);
+    expect(Object.fromEntries(p.stages.map((s) => [s.stage, [s.at, s.again]]))).toMatchObject({ building: [T0 + 2 * MIN, []], reviewing: [T0 + 2 * MIN, []], gate: [T0 + 3 * MIN, []] });
   });
 
   it('a session that did everything itself is one line; an imported session still gives its run, with no files and its cost', async () => {
@@ -197,12 +246,19 @@ describe('GET /api/issue: the rest of the page', () => {
     expect(p.cost).toEqual(budget);
     expect(p.cost).toMatchObject({ number: 412, usd: 3, budget: null });
     // the file #412 and #415 both wrote is a link on the Map; #999 is on no map, and #777 (another milestone) names this one: both show here only
-    expect(p.links).toMatchObject([{ kind: 'file', a: 412, b: 415, files: ['src/a.ts'] }, { kind: 'mention', a: 412, b: 415 }]);
-    expect(p.mentions).toEqual([{ issue: 999, direction: 'out', title: null }, { issue: 777, direction: 'in', title: null }]);
-    expect(p.sessions).toMatchObject([{ id: 's-412', branch: 'fix/412-queue', windowOnly: false }]);
+    expect(p.links).toMatchObject([{ kind: 'file', a: 412, b: 415, files: ['src/a.ts'], stage: 'building' }, { kind: 'mention', a: 412, b: 415, stage: 'building' }]);
+    expect(p.mentions).toEqual([{ issue: 999, direction: 'out', title: null, stage: null, known: false }, { issue: 777, direction: 'in', title: null, stage: null, known: true }]);
+    expect(p.sessions).toMatchObject([{ id: 's-412', branch: 'fix/412-queue', startedAt: T0, windowOnly: false }]);
     expect(p.readAt).toBe(NOW - MIN);
     // another issue's page shows none of these
     expect((await page(415)).checks).toBeNull();
+  });
+
+  it('a mention between this issue and one that is not on the map shows here whichever of the two has no milestone, once when each names the other', async () => {
+    await send(read(NOW - MIN, [], [{ number: 409, milestone: M, title: 'Retry' }, { number: 412, milestone: M }, { number: 500, mentions: [409, 777] }, { number: 777, milestone: 'other', mentions: [500] }]));
+    expect((await page(500)).mentions).toEqual([{ issue: 409, direction: 'out', title: 'Retry', stage: 'queued', known: true }, { issue: 777, direction: 'out', both: true, title: null, stage: null, known: true }]); // 500 is on no map, so its mention of 409 shows
+    expect((await page(777)).mentions).toEqual([{ issue: 500, direction: 'out', both: true, title: null, stage: null, known: true }]);
+    expect((await page(409)).mentions).toEqual([{ issue: 500, direction: 'in', title: null, stage: null, known: true }]);
   });
 
   it('a merged issue has no checks: the PR is merged', async () => {
@@ -231,9 +287,16 @@ describe('GET /api/issue: the rest of the page', () => {
     );
     const b = await board();
     expect(Object.fromEntries(b.issues.map((i) => [i.number, i.stage]))).toEqual({ 417: 'queued', 415: 'building', 413: 'reviewing', 409: 'fixing', 407: 'gate', 412: 'ready', 403: 'merged' });
+    const last: Record<number, string | undefined> = {};
     for (const { number, stage } of b.issues) {
       const p = await page(number);
-      expect([number, p.issue.stage, p.story.at(-1)?.stage ?? 'queued']).toEqual([number, stage, stage]);
+      expect(p.issue.stage).toBe(stage);
+      // the stage reached last on the track (the latest time, the later stage on a tie) is the board's: the story's lines can end earlier, a gate and readiness have none
+      const reached = p.stages.filter((s) => s.stage !== 'queued').flatMap((s) => [s.at, ...s.again].filter((t): t is number => t !== null).map((t) => [t, STAGES.indexOf(s.stage as never), s.stage] as const));
+      expect(reached.toSorted((x, y) => x[0] - y[0] || x[1] - y[1]).at(-1)?.[2] ?? 'queued', `#${number}`).toBe(stage);
+      last[number] = p.story.at(-1)?.stage;
     }
+    // each last line's own stage, after its own last event
+    expect(last).toEqual({ 417: undefined, 415: 'building', 413: 'reviewing', 409: 'reviewing', 407: 'reviewing', 412: 'reviewing', 403: 'merged' });
   });
 });
