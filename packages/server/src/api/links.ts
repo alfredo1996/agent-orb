@@ -54,9 +54,13 @@ export function linksOf(store: Store, content: ContentStore, project: string, ch
     count: paths.length, together: !mergedPr(a) && !mergedPr(b),
   })).sort((x, y) => Number(y.together) - Number(x.together) || y.count - x.count || x.a - y.a || x.b - y.b);
 
-  // A mention shows when both issues do. One to an issue not on this board is the issue page's (#64).
-  const mentions = [...shown.keys()].sort((x, y) => x - y).flatMap((a) =>
-    (JSON.parse(open.get(a)?.mentions ?? '[]') as number[]).filter((b) => b !== a && shown.has(b)).map((b) => ({ kind: 'mention' as const, a, b })));
+  // A mention shows when both issues do. One to an issue not on this board is the issue page's (#64). Two issues that name each other are one link, the lower number first, with `both`
+  // (#70: one line on the Map, not two); one the other does not name back keeps its direction, `a` naming `b`.
+  const named = (n: number) => [...new Set(JSON.parse(open.get(n)?.mentions ?? '[]') as number[])].filter((m) => m !== n && shown.has(m)); // the ingest keeps the list as sent: a number twice is one mention
+  const mentions = [...shown.keys()].sort((x, y) => x - y).flatMap((a) => named(a).flatMap((b) => {
+    if (!named(b).includes(a)) return [{ kind: 'mention' as const, a, b }];
+    return a < b ? [{ kind: 'mention' as const, a, b, both: true as const }] : []; // the pair once, from its lower number
+  }));
 
   return { project, milestone, links: [...files, ...mentions] };
 }

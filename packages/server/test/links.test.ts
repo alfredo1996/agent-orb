@@ -49,7 +49,7 @@ const send = async (...events: unknown[]) => {
   const r = await app.inject({ method: 'POST', url: '/ingest', headers: { authorization: `Bearer ${TOKEN}` }, payload: { events: flat } });
   expect(r.json()).toMatchObject({ accepted: flat.length, rejected: 0 });
 };
-type Link = { kind: 'file'; a: number; b: number; files: string[]; count: number; together: boolean } | { kind: 'mention'; a: number; b: number };
+type Link = { kind: 'file'; a: number; b: number; files: string[]; count: number; together: boolean } | { kind: 'mention'; a: number; b: number; both?: true };
 type Links = { project: string; milestone: string | null; links: Link[] };
 const links = async (q: Record<string, string> = {}): Promise<Links> => {
   const r = await app.inject({ url: `/api/links?${new URLSearchParams({ project: 'mobile-app', ...q })}` });
@@ -133,9 +133,14 @@ describe('GET /api/links: one issue mentions another', () => {
     expect((await links()).links).toEqual([{ kind: 'mention', a: 417, b: 409 }]);
   });
 
-  it('two issues that mention each other are two links, and a pair can be tied by a file too: file links first', async () => {
-    await send(on(409, 'src/a.ts'), on(412, 'src/a.ts'), read(NOW - MIN, [], [{ number: 409, milestone: M, mentions: [412] }, { number: 412, milestone: M, mentions: [409] }]));
-    expect((await links()).links).toEqual([file(409, 412, ['src/a.ts']), { kind: 'mention', a: 409, b: 412 }, { kind: 'mention', a: 412, b: 409 }]);
+  it('two issues that mention each other are one link, the lower number first, with `both` (#70: one line on the Map); one named back by none keeps its direction; a pair can be tied by a file too: file links first', async () => {
+    await send(on(409, 'src/a.ts'), on(412, 'src/a.ts'), read(NOW - MIN, [], [{ number: 409, milestone: M, mentions: [412] }, { number: 412, milestone: M, mentions: [409] }, { number: 415, milestone: M, mentions: [409] }]));
+    expect((await links()).links).toEqual([file(409, 412, ['src/a.ts']), { kind: 'mention', a: 409, b: 412, both: true }, { kind: 'mention', a: 415, b: 409 }]);
+  });
+
+  it('a mention stored twice (the ingest keeps the list as the plugin sent it) is one link, and a pair that names each other twice over is one `both` link', async () => {
+    await send(read(NOW - MIN, [], [{ number: 409, milestone: M, mentions: [412, 412] }, { number: 412, milestone: M }, { number: 415, milestone: M, mentions: [409, 409] }, { number: 417, milestone: M, mentions: [415, 415] }, { number: 420, milestone: M, mentions: [421, 421] }, { number: 421, milestone: M, mentions: [420, 420] }]));
+    expect((await links()).links).toEqual([{ kind: 'mention', a: 409, b: 412 }, { kind: 'mention', a: 415, b: 409 }, { kind: 'mention', a: 417, b: 415 }, { kind: 'mention', a: 420, b: 421, both: true }]);
   });
 
   it('an event with no mentions (a plugin from before #66) leaves the column null, and the route still answers', async () => {
