@@ -141,13 +141,17 @@ const OPEN = JSON.stringify([
       { oid: 'aaaaaaa'.padEnd(40, '0'), committedDate: '2026-11-01T14:00:00Z', messageHeadline: 'first try' },
       { oid: HEAD, committedDate: '2026-11-01T15:04:42Z', messageHeadline: 'fix: the retry' },
     ],
+    files: [
+      { path: 'src/auth/refresh.ts', additions: 40, deletions: 3 }, { path: 'pnpm-lock.yaml', additions: 900, deletions: 12 }, { path: 'docs/img/retry.png', additions: 0, deletions: 0 },
+      { path: 'src/net/client.ts', additions: 2, deletions: 1 },
+    ],
   },
   { number: 405, headRefName: 'feat/403-banner', headRefOid: 'c0d1e2f'.padEnd(40, '2'), mergeStateStatus: 'CLEAN', statusCheckRollup: [], comments: [], reviews: [], commits: [] },
 ]);
 
 describe('the open-PR read', () => {
   it('asks gh for at most 40 open PRs with the fields ready() needs, and the commits for the head\'s time: 50 passes GitHub\'s 500,000-node limit, and gh fails', () => {
-    expect(openPrsArgv).toEqual(['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']);
+    expect(openPrsArgv).toEqual(['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body,files']);
   });
 
   it('keeps numbers, the branch, the head, the merge state, each check\'s name and result, and each bot\'s latest comment time: never a comment\'s text', () => {
@@ -157,6 +161,7 @@ describe('the open-PR read', () => {
         number: 416, head: 'fix/409-token-retry', issue: 409, head_oid: HEAD, merge_state: 'UNSTABLE', last_commit_at: Date.parse('2026-11-01T15:04:42Z'),
         checks: [{ name: 'Unit tests', state: 'pass', ci: true }, { name: 'E2E', state: 'pending' }, { name: 'Lint', state: 'fail' }, { name: 'Docs', state: 'pass' }, { name: 'SonarCloud Code Analysis', state: 'pass' }, { name: 'coverage', state: 'pending' }],
         bots: [{ author: 'coderabbitai', at: Date.parse('2026-11-01T15:40:00Z') }, { author: 'sonarqubecloud', at: Date.parse('2026-11-01T15:23:10Z') }, { author: 'dependabot[bot]', at: Date.parse('2026-11-01T15:30:00Z') }],
+        files: ['src/auth/refresh.ts', 'src/net/client.ts'], // #68: the paths it changes, a lockfile and an image left out
       },
       { number: 405, head: 'feat/403-banner', issue: 403, head_oid: 'c0d1e2f'.padEnd(40, '2'), merge_state: 'CLEAN', checks: [], bots: [] }, // no commit listed for the head: its time is unknown
     ]);
@@ -193,6 +198,31 @@ describe('the open-PR read', () => {
     expect(prs.map((p) => p.number)).toEqual(Array.from({ length: prs.length }, (_, i) => 1000 - i));
     expect(JSON.stringify(prs).length).toBeLessThanOrEqual(250_000);
     expect(JSON.stringify(build.projectOpenPrs(ctx, prs)).length).toBeLessThan(1_000_000 / 3); // UTF-8 at most 3 bytes a character: under the server's 1 MB
+  });
+
+  it('#68: a PR\'s paths are at most 100, each at most 300 characters (a longer one is left out, never cut); gh\'s output with no files gives none', () => {
+    const one = (files: unknown) => parseOpenPrs(JSON.stringify([{ number: 7, headRefOid: HEAD, mergeStateStatus: 'CLEAN', statusCheckRollup: [], comments: [], reviews: [], commits: [], files }]))![0]!;
+    const paths = Array.from({ length: 101 }, (_, i) => ({ path: `src/f${i}.ts`, additions: 1, deletions: 0 }));
+    expect(one(paths).files).toEqual(paths.slice(0, 100).map((f) => f.path));
+    expect(one([{ path: `src/${'d'.repeat(293)}.ts` }, { path: `src/${'d'.repeat(294)}.ts` }, { path: '' }, { path: 7 }, null]).files).toEqual([`src/${'d'.repeat(293)}.ts`]); // 300 characters, then 301
+    expect('files' in one(undefined)).toBe(false);
+    expect(one([]).files).toEqual([]); // read, and it changes no file
+  });
+
+  it('#68: paths never cost a PR its place: past 250,000 characters the longest lists go first, and every PR still arrives', () => {
+    // 40 PRs, PR i with 2(i + 1) paths of about 280 characters: some 460,000 characters of paths
+    const many = Array.from({ length: 40 }, (_, i) => ({
+      number: 1000 - i, headRefOid: 'a'.repeat(40), mergeStateStatus: 'CLEAN', statusCheckRollup: [], comments: [], reviews: [], commits: [],
+      files: Array.from({ length: 2 * (i + 1) }, (_, k) => ({ path: `src/${String(i).padStart(2, '0')}/${'p'.repeat(260)}-${k}.ts`, additions: 1, deletions: 1 })),
+    }));
+    const prs = parseOpenPrs(JSON.stringify(many))!;
+    expect(prs.map((p) => p.number)).toEqual(many.map((p) => p.number));
+    expect(JSON.stringify(prs).length).toBeLessThanOrEqual(250_000);
+    const kept = prs.map((p) => p.files?.length ?? 0);
+    const cut = kept.findIndex((n) => n === 0);
+    expect(cut).toBeGreaterThan(0);
+    expect(kept).toEqual(many.map((p, i) => (i < cut ? p.files.length : 0))); // the shorter lists whole, the longest ones none at all
+    expect(prs.slice(cut).every((p) => !('files' in p))).toBe(true);
   });
 
   it('an excluded project sends no branch names', () => {

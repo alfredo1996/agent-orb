@@ -838,15 +838,30 @@ export function parseFindings(report: string, text: (s: string) => string | unde
 }
 
 export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };
-// created_at is when the PR opened and issue the one it closes (#28): the body is read for `Closes #N` and goes no further.
-export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; created_at?: number; issue?: number; checks: Check[]; bots: { author: string; at: number }[] };
+// created_at is when the PR opened and issue the one it closes (#28): the body is read for `Closes #N` and goes no further. files (#68): the paths it changes, for the Map's links.
+export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; created_at?: number; issue?: number; checks: Check[]; bots: { author: string; at: number }[]; files?: string[] };
 export type OpenIssue = { number: number; milestone?: string; title?: string; created_at?: number; mentions?: number[] };
 // gh's `commits` asks GitHub for 100 commits of 100 authors a PR, and GitHub refuses a query of more than 500,000 nodes before running it: 50 PRs fail, on every repo.
 const OPEN_PRS_MAX = 40;
 const OPEN_PRS_BUDGET = 250_000; // characters of JSON, as PRS_BUDGET: 100 PRs of 200 checks would pass the server's 1 MB request, and a refused event is lost
 
-/** The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time; and (#28) when the PR opened and its body, for the issue it closes. */
-export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', String(OPEN_PRS_MAX), '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body'];
+/**
+ * The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time; and (#28) when the PR opened and its body, for the issue
+ * it closes; and (#68) the files it changes, for the Map. gh asks for 100 files a PR: 4,000 nodes on 40 PRs, beside the commits' 400,000 (measured on two repos, 20 Nov: answered in 2 s).
+ */
+export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', String(OPEN_PRS_MAX), '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body,files'];
+const PR_PATHS_MAX = 100; // gh's own: it lists at most 100 files a PR
+const PATH_MAX = 300; // as shared/src/event.ts
+
+/**
+ * #68: the paths an open PR changes, less `UNCOUNTED` (a lockfile, an image, build output): two issues tied by the lockfile are not tied. At most 100, and a path past 300 characters is left
+ * out, never cut, since a cut path names no file. They travel for every project, an excluded one too: project-relative paths, as files_touched sends. None when gh gave no list.
+ */
+function pathsOf(files: unknown): string[] | undefined {
+  if (!Array.isArray(files)) return undefined;
+  return (files as Record<string, unknown>[]).map((f) => f?.path)
+    .filter((p): p is string => typeof p === 'string' && p.length > 0 && p.length <= PATH_MAX && !UNCOUNTED.test(p)).slice(0, PR_PATHS_MAX);
+}
 /**
  * The open issues' numbers and milestones (#28): what a milestone's budget default is matched to. #32: and their titles, which only name a row of the board and leave only with Content on full.
  * #66: and their bodies, read here for the issues each mentions and sent no further. gh lists at most 200 here; a read keeps at most 500.
@@ -921,7 +936,8 @@ const checkOf = (c: Record<string, unknown>): Check | undefined => {
  * The open PRs in `openPrsArgv`'s output. Only numbers, the branch (none for an excluded project), the head, the merge state, each check's name and result, and each bot's
  * latest comment or review time are kept: a comment's text, a title and a body are never read into the event. The head's time is its commit's in the list; a PR whose
  * head is not among them (gh lists at most 100 commits) has none. Nothing when the output is not gh's list; an empty list is a read of no open PRs.
- * At most 250 KB of JSON: gh lists the newest first, and the PRs past it are left out.
+ * At most 250 KB of JSON. #68: a PR's paths go before any PR does, the longest list first, since a PR left out would leave the merge check; past that, gh lists the newest
+ * first, and the PRs past it are left out.
  */
 export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined {
   let list: unknown;
@@ -949,14 +965,22 @@ export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined
       const t = at(c?.createdAt ?? c?.submittedAt);
       if (typeof login === 'string' && login && login.length <= 100 && isBot(login) && t > 0 && t > (bots.get(login) ?? 0)) bots.set(login, t);
     }
+    const files = pathsOf(p.files);
     prs.push({
       number: p.number, ...(head ? { head } : {}), head_oid: p.headRefOid, merge_state: state, ...(committed > 0 ? { last_commit_at: committed } : {}),
       ...(opened > 0 ? { created_at: opened } : {}), ...(issue ? { issue } : {}),
-      checks, bots: [...bots].slice(0, 50).map(([author, t]) => ({ author, at: t })),
+      checks, bots: [...bots].slice(0, 50).map(([author, t]) => ({ author, at: t })), ...(files ? { files } : {}),
     });
   }
+  const length = (x: unknown) => JSON.stringify(x).length;
+  let total = prs.reduce((n, p) => n + length(p) + 1, 0);
+  for (const p of prs.toSorted((a, b) => length(b.files ?? []) - length(a.files ?? []))) {
+    if (total <= OPEN_PRS_BUDGET || !p.files) break;
+    total -= length(p) - length({ ...p, files: undefined });
+    delete p.files;
+  }
   let size = 0;
-  return prs.filter((p) => (size += JSON.stringify(p).length + 1) <= OPEN_PRS_BUDGET);
+  return prs.filter((p) => (size += length(p) + 1) <= OPEN_PRS_BUDGET);
 }
 
 /**

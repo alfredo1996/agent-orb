@@ -226,10 +226,12 @@ function writeRows(db: Store, ev: Event[], source: Source) {
     if (!Number(run(db, 'UPDATE projects SET prs_read_at = :ts WHERE id = :project AND (prs_read_at IS NULL OR prs_read_at < :ts)', { project, ts: e.ts }).changes)) continue;
     run(db, 'DELETE FROM open_prs WHERE project_id = :project', { project });
     for (const p of e.data.prs) {
-      run(db, `INSERT INTO open_prs (project_id, number, head, head_oid, merge_state, last_commit_at, checks, bots) VALUES (:project, :number, :head, :oid, :state, :at, :checks, :bots)
+      // #68: the paths it changes, for the Map's links; null when the read carried none
+      run(db, `INSERT INTO open_prs (project_id, number, head, head_oid, merge_state, last_commit_at, checks, bots, files) VALUES (:project, :number, :head, :oid, :state, :at, :checks, :bots, :files)
                ON CONFLICT (project_id, number) DO UPDATE SET head = excluded.head, head_oid = excluded.head_oid, merge_state = excluded.merge_state, last_commit_at = excluded.last_commit_at,
-                 checks = excluded.checks, bots = excluded.bots`,
-      { project, number: p.number, head: p.head, oid: p.head_oid, state: p.merge_state, at: p.last_commit_at, checks: JSON.stringify(p.checks), bots: JSON.stringify(p.bots) });
+                 checks = excluded.checks, bots = excluded.bots, files = excluded.files`,
+      { project, number: p.number, head: p.head, oid: p.head_oid, state: p.merge_state, at: p.last_commit_at, checks: JSON.stringify(p.checks), bots: JSON.stringify(p.bots),
+        files: p.files ? JSON.stringify(p.files) : null });
       // #28: when it opened and the issue it closes, kept on the PR (which outlives the snapshot above) for the cost windows. Neither is ever erased by a read that lacks it.
       run(db, `INSERT INTO pull_requests (id, number, created_at, issue) VALUES (:id, :number, :created_at, :issue)
                ON CONFLICT (id) DO UPDATE SET created_at = coalesce(excluded.created_at, pull_requests.created_at), issue = coalesce(excluded.issue, pull_requests.issue)`,
