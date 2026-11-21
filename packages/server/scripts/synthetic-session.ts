@@ -29,7 +29,7 @@ const ROLES: Record<string, string> = { implementer: 'developer', 'adversarial-r
 const MODELS = ['claude-opus-5', 'claude-sonnet-5-5', 'claude-haiku-5'];
 const FAILURES: [errorClass: string, share: number][] = [['exit_code', 0.8], ['permission', 0.08], ['interrupted', 0.07], ['other', 0.05]];
 
-export type Seeded = { project: string; session: string; agent: string; calls: number };
+export type Seeded = { project: string; session: string; agent: string; calls: number; issue: number };
 
 /**
  * Seeds `store` with one project and its big session (`shape`), plus fourteen small sessions beside it, so the lists and the windows have more than one row.
@@ -132,6 +132,10 @@ export function seedSyntheticSession(store: Store, { shape = BIGGEST, now = Date
     });
     run(store, 'INSERT INTO session_prs (session_id, pr_id) VALUES (:session, :pr)', { session: i % 3 === 0 ? 'soak-big' : `soak-${i % 14}`, pr: `${projectId}:${i}` });
   }
+  run(store, "UPDATE sessions SET branch = 'fix/3-soak' WHERE id = 'soak-big'"); // #106: the big session is on issue 3 (PR 3 is in the history)
+  // ...and the plugin has read issue 3 as open: reachOf keeps a session only for an issue the plugin read or one touched this week, and this one is sixty days old, so without the row GET /api/issue
+  // drops it (no session, a one-line story) instead of reading all its calls.
+  run(store, "INSERT INTO open_issues (project_id, number, milestone, title) VALUES (:project, 3, 'soak', 'soak issue')", { project: projectId });
   store.exec('COMMIT');
-  return { project, session: 'soak-big', agent: 'main', calls: big.calls + 14 * 120 };
+  return { project, session: 'soak-big', agent: 'main', calls: big.calls + 14 * 120, issue: 3 };
 }

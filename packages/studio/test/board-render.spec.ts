@@ -30,8 +30,8 @@ const data = (over: Partial<BoardData> = {}): BoardData => ({
 });
 // 417 and 419 have no spend and so no entry, as in /api/budget's list of issues with spend; 398 is in no milestone with a default
 const COSTS = new Map([ic(415, 64, 150), ic(398, 27, null), ic(409, 132, 150, 'at80'), ic(407, 96, 80, 'at100'), ic(412, 118, 150), ic(403, 41, 150)].map((c) => [c.number, c]));
-const band = (d: BoardData, live: string[] = ['s-415', 's-398', 's-409a', 's-409b', 's-407', 's-412'], open: number[] = [411, 416, 414, 418], extra: Partial<Parameters<typeof BoardBand>[0]> = {}) =>
-  renderToStaticMarkup(createElement(BoardBand, { data: d, live: new Set(live), openable: new Set(open), cost: COSTS, notOnIssue: { usd: 1240, partial: false }, onOpen: () => {}, ...extra }));
+const band = (d: BoardData, live: string[] = ['s-415', 's-398', 's-409a', 's-409b', 's-407', 's-412'], extra: Partial<Parameters<typeof BoardBand>[0]> = {}) =>
+  renderToStaticMarkup(createElement(BoardBand, { data: d, live: new Set(live), cost: COSTS, notOnIssue: { usd: 1240, partial: false }, ...extra }));
 const body = (html: string) => html.split('<div class="notissue"')[0]!; // the rows, without the lines under them
 const rows = (html: string) => body(html).split('<div class="brow').slice(1).map((r) => plain(`<div class="brow${r}`));
 const rowOf = (html: string, n: number) => '<div class="brow' + body(html).split('<div class="brow').slice(1).find((r) => r.includes(`data-issue="${n}"`));
@@ -86,7 +86,7 @@ describe('the Board band', () => {
   });
 
   it('a project name with a space or a slash travels in the link whole', () => {
-    const html = renderToStaticMarkup(createElement(BoardBand, { data: data({ project: 'my app/v2', issues: [ALL[1]!] }), live: new Set(['s-415']), openable: new Set<number>(), onOpen: () => {} }));
+    const html = renderToStaticMarkup(createElement(BoardBand, { data: data({ project: 'my app/v2', issues: [ALL[1]!] }), live: new Set(['s-415']) }));
     expect(html).toContain('href="#/live?session=s-415&amp;project=my%20app%2Fv2"');
   });
 
@@ -120,24 +120,26 @@ describe('the Board band', () => {
     expect(rowOf(html, 412)).toContain('class="bar"');
     expect(rowOf(html, 398)).not.toContain('class="bar');
     expect(plain(rowOf(html, 398))).toContain('$27.00 No budget set');
-    const partial = band(data({ issues: [issue(5)] }), [], [], { cost: new Map([[5, ic(5, 12, 150, null, true)]]) });
+    const partial = band(data({ issues: [issue(5)] }), [], { cost: new Map([[5, ic(5, 12, 150, null, true)]]) });
     expect(plain(partial)).toContain('≥ $12.00 of $150.00');
   });
 
   it('until the budget has been read the cost cells and the "not on an issue" line are left out, rather than saying "nothing spent" for what is not known', () => {
-    const html = band(data(), undefined, undefined, { cost: undefined, notOnIssue: undefined });
+    const html = band(data(), undefined, { cost: undefined, notOnIssue: undefined });
     expect(plain(html)).not.toContain('Cost, estimate Nothing spent');
     expect(plain(body(html))).not.toMatch(/\$\d|Nothing spent|No budget/);
     expect(plain(html)).not.toContain('Not on an issue');
     expect(plain(rowOf(html, 409))).toContain('Fixing Ready 2 findings open: 1 major, 1 minor Sessions Live s-409a Live s-409b'); // the rest of the row stands
   });
 
-  it('an issue with an open PR opens the PR\'s sheet; one with none, or a merged one, is only text', () => {
-    const html = band(data(), undefined, [405, 411, 416, 414, 418]); // 405 is held too, as a number: only an open PR has a sheet
-    expect(rowOf(html, 409)).toContain('<button type="button" class="open"');
-    expect(rowOf(html, 415)).not.toContain('<button');
-    expect(rowOf(html, 403)).not.toContain('<button');
-    expect(rowOf(band(data(), undefined, []), 409)).not.toContain('<button'); // the PR is not among the open ones the page holds
+  // #106: every row opens its issue's page, queued and merged ones too: the sheet is for a PR with no issue
+  it('every row\'s name is a link to its issue\'s page: one in flight, a merged one and a queued one, with the project in the link', () => {
+    const html = band(data({ project: 'my app/v2' }));
+    expect(rowOf(html, 409)).toContain('<a class="open" href="#/issue?project=my+app%2Fv2&amp;issue=409" aria-label="Issue #409: open its page">');
+    expect(rowOf(html, 403)).toContain('href="#/issue?project=my+app%2Fv2&amp;issue=403"');
+    expect(rowOf(html, 417)).toContain('href="#/issue?project=my+app%2Fv2&amp;issue=417"');
+    expect(body(html).match(/<a class="open"/g)).toHaveLength(7); // one a row, and no button opens a sheet from the board any more
+    expect(body(html)).not.toContain('<button');
   });
 
   it('the header says how many issues, and how many are in flight outside the milestone; the milestone is named', () => {
@@ -150,7 +152,7 @@ describe('the Board band', () => {
 
   it('"not on an issue" is the line slice 2 computes: this month\'s, a floor when a request had no price', () => {
     expect(plain(band(data()))).toContain('Not on an issue: $1240.00 this month');
-    expect(plain(band(data(), undefined, undefined, { notOnIssue: { usd: 15, partial: true } }))).toContain('Not on an issue: ≥ $15.00 this month');
+    expect(plain(band(data(), undefined, { notOnIssue: { usd: 15, partial: true } }))).toContain('Not on an issue: ≥ $15.00 this month');
     expect(plain(band(data()))).toContain("Sessions with no PR, and turns after a session's last PR. Cost is an estimate by time windows.");
   });
 
@@ -223,7 +225,7 @@ describe('the milestone picker', () => {
 });
 
 describe('the Board band when the board could not be read (R8)', () => {
-  const noBoard = (error: string, extra: Partial<Parameters<typeof BoardBand>[0]> = {}) => renderToStaticMarkup(createElement(BoardBand, { error, live: new Set<string>(), openable: new Set<number>(), cost: COSTS, notOnIssue: { usd: 1240, partial: false }, onOpen: () => {}, ...extra }));
+  const noBoard = (error: string, extra: Partial<Parameters<typeof BoardBand>[0]> = {}) => renderToStaticMarkup(createElement(BoardBand, { error, live: new Set<string>(), cost: COSTS, notOnIssue: { usd: 1240, partial: false }, ...extra }));
 
   it('says so, and still shows what this month spent on no issue, which is the budget read\'s and not the board\'s', () => {
     const t = plain(noBoard('The server answered 500.'));
@@ -233,13 +235,13 @@ describe('the Board band when the board could not be read (R8)', () => {
   });
 
   it('shows the error above the last good rows of the milestone asked for, rather than hiding it', () => {
-    const html = renderToStaticMarkup(createElement(BoardBand, { data: data(), error: 'The server answered 502.', live: new Set<string>(), openable: new Set<number>(), cost: COSTS, onOpen: () => {} }));
+    const html = renderToStaticMarkup(createElement(BoardBand, { data: data(), error: 'The server answered 502.', live: new Set<string>(), cost: COSTS }));
     expect(plain(html)).toContain('The board could not be read: The server answered 502.');
     expect(rows(html)).toHaveLength(ALL.length);
   });
 
   it('an empty board that also failed says the error, not "none in flight"', () => {
-    const html = renderToStaticMarkup(createElement(BoardBand, { data: data({ issues: [] }), error: 'x', live: new Set<string>(), openable: new Set<number>(), onOpen: () => {} }));
+    const html = renderToStaticMarkup(createElement(BoardBand, { data: data({ issues: [] }), error: 'x', live: new Set<string>() }));
     expect(plain(html)).not.toContain('none in flight');
   });
 });

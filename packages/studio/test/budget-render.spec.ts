@@ -86,7 +86,7 @@ describe('the budget card', () => {
     const h = card(data({ milestones: [{ name: 'v0.4 Factory', budget: 150 }], issues: [cost({ number: 409, budget: 4, source: 'issue' }), cost({ number: 412 })] }));
     expect(h).toContain('aria-label="Default for v0.4 Factory"');
     expect(h).toContain('value="150"');
-    expect(plain(h)).toContain('One issue has its own budget: #409, $4.00. Set it on the PR\'s sheet.');
+    expect(plain(h)).toContain('One issue has its own budget: #409, $4.00. Set it on the issue\'s page.');
     expect(plain(h)).not.toContain('No budget is set');
   });
 
@@ -99,7 +99,7 @@ describe('the budget card', () => {
   });
 
   it('with no milestone to set a default on, it says where a budget can still be set', () => {
-    expect(plain(card(data({ milestones: [] })))).toContain('No open issue has a milestone, so there is no default to set. An issue\'s own budget is on its PR\'s sheet.');
+    expect(plain(card(data({ milestones: [] })))).toContain('No open issue has a milestone, so there is no default to set. An issue\'s own budget is on its page.');
   });
 
   it('leaves what was spent on no issue to the board (#32), which shows it under its rows', () => {

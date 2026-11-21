@@ -68,6 +68,23 @@ describe('Needs you', () => {
   });
 });
 
+describe('Needs you opens an issue\'s page, or the sheet for a PR with no issue (#106)', () => {
+  const withIssue = { ...P416, issue: 409 };
+  it('a PR that closes an issue links to its issue\'s page, in the project\'s name', () => {
+    const html = renderToStaticMarkup(createElement(NeedsYou, { prs: [withIssue], project: 'my app', onOpen: () => {} }));
+    expect(html).toContain('<a class="btn" href="#/issue?project=my+app&amp;issue=409">See findings</a>');
+    expect(html).not.toContain('<button');
+  });
+
+  it('a PR that closes none (Dependabot, say) still opens the sheet, with the checks and findings', () => {
+    const none = { ...P414, issue: null };
+    const html = renderToStaticMarkup(createElement(NeedsYou, { prs: [none], project: 'mobile-app', onOpen: () => {} }));
+    expect(html).toContain('<button type="button" class="btn">See checks</button>');
+    expect(html).not.toContain('href="#/issue');
+    expect(plain(sheet(none))).toContain('Can it merge? ✓ No finding is open Reported, none found');
+  });
+});
+
 describe('how old the GitHub data is', () => {
   const asof = (readAt: number | null) => renderToStaticMarkup(createElement(Asof, { readAt, now: NOW }));
   it('in minutes; past 10 minutes it says why it is old', () => {
