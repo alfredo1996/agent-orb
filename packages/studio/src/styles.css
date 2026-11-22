@@ -948,6 +948,8 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 
 /* Home (v0.5 slice 3, #107; design/home-issue.html, the Home board): a card per project, built from the Board band's rows (.board .brow) with its own four columns. */
 .home { display: grid; gap: 16px; align-content: start; }
+.home .hm-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.home .hm-head h2 { padding: 0; border: 0; }
 .home .asof { font-size: 13px; font-weight: 400; color: var(--muted); }
 .home .asof.stale { color: var(--wait); font-weight: 600; }
 .home .hm-ms { margin-left: 10px; font-weight: 400; color: var(--muted); }
@@ -964,7 +966,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .home .hm-now .sub { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .home .hm-now .model { justify-self: start; }
 .home .hm-with { font-size: 13px; font-weight: 500; color: var(--muted); }
-.home .hm-with.together { color: var(--wait); }
+.home .hm-with .together { color: var(--wait); }
 .home .hm-also { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
 .home .hm-also b { color: var(--ink); font-weight: 600; }
 .home .hm-also code { font: 12px var(--mono); }
@@ -979,6 +981,6 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .home details.hm-quiet .hm-also { border-top: 1px solid var(--line); }
 @container (max-width: 700px) {
   .home .board .brow.hm-row { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 16px; }
-  .home .hm-prog, .home .hm-also, .home .hm-foot { padding-left: 16px; padding-right: 16px; }
+  .home .hm-prog, .home .hm-also, .home .hm-foot, .home .hm-head { padding-left: 16px; padding-right: 16px; }
   .home details.hm-quiet summary { padding: 0 16px; }
 }

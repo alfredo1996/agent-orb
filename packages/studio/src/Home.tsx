@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { ageText, count, issueHref, outsideNote, REFRESH_MS, STAGE_LABEL, Track, type BoardIssue } from './Factory.tsx';
-import { modelLabel, usd } from './format.ts';
+import { Fragment, useEffect, useState } from 'react';
+import { ageText, count, EXCLUDED_NOTE, issueHref, outsideNote, REFRESH_MS, STAGE_LABEL, titlesNote, Track, type BoardData, type BoardIssue } from './Factory.tsx';
+import { ago, modelLabel, usd } from './format.ts';
 import { homeSentence, ranked, STATES } from './home-view.ts';
 import { Loading, PageHeader, Reading } from './kit.tsx';
 import type { Session } from './Live.tsx';
@@ -13,17 +13,19 @@ import { factoryHash, hashWith } from './project-choice.ts';
 // so a card stays short. The sentence on top is counted from the rows and the stream, and no model writes it. Read only: a row opens its issue's page, and the card links to the milestone's Map and board.
 // Since you last looked (slice 4) is not here yet.
 
-/** A row of GET /api/home: the board's own row for an issue in flight, with the issues it shares files with (`together`: both in flight), a PR's open findings, and its budget when one is set (`mark` is /api/budget's). */
-export type HomeRow = BoardIssue & { shares: { issue: number; together: boolean }[]; openFindings?: true; budget?: { usd: number; budget: number; mark: 'at80' | 'at100' | null; partial: boolean } };
+/** A row of GET /api/home: the board's own row for an issue in flight, with the branch of its newest session, the issues it shares files with (`together`: both in flight), a PR's open findings, and its budget when one is set (`mark` is /api/budget's). */
+export type HomeRow = BoardIssue & { branch?: string; shares: { issue: number; together: boolean }[]; openFindings?: true; budget?: { usd: number; budget: number; mark: 'at80' | 'at100' | null; partial: boolean } };
 export type HomeProject = {
-  name: string; last: number; milestone: string | null; counts: { merged: number; flight: number; queued: number; outside: number }; rows: HomeRow[]; readAt: number | null;
+  name: string; last: number; milestone: string | null; content: BoardData['content']; counts: { merged: number; flight: number; queued: number; outside: number }; rows: HomeRow[]; readAt: number | null;
   notOnIssue: { count: number; sessions: { id: string; branch: string | null; at: number }[] }; month: string; goal: number | null; spent: number; costPartial: boolean;
 };
 export type HomeData = { projects: HomeProject[]; quiet: { name: string; last: number }[] };
 
 const tz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; // not toLocaleDateString: ICU spells September "Sept" in some builds
-const day = (ms: number) => `${new Date(ms).getDate()} ${MONTHS[new Date(ms).getMonth()]}`;
+const DAY = 86_400_000;
+/** `3 Oct`, with the year when it is not this one. */
+const day = (ms: number, now: number) => `${new Date(ms).getDate()} ${MONTHS[new Date(ms).getMonth()]}${new Date(ms).getFullYear() === new Date(now).getFullYear() ? '' : ` ${new Date(ms).getFullYear()}`}`;
 const modelOf = (tone: string) => (tone === 'other' ? '' : ` · ${tone[0]!.toUpperCase()}${tone.slice(1)}`);
 
 /** The page's link to the project's Factory: the Map or the board, for the milestone the card shows. */
@@ -33,44 +35,45 @@ function Row({ row, state, project, sessions, now }: { row: HomeRow; state: keyo
   const s = STATES[state];
   const { who } = nowOn(row, sessions);
   const doing = doingOn(row, sessions, now);
-  const hot = row.shares.some((x) => x.together);
-  const names = row.shares.map((x) => `#${x.issue}`);
   const spent = row.budget && row.budget.mark ? ` · ${usd(row.budget.usd, row.budget.partial)} of ${usd(row.budget.budget)}` : '';
-  const none = row.ready === false && row.reason ? ` ${row.reason}` : row.ready ? ' Ready for your ok.' : '';
+  const why = row.ready === false && row.reason ? row.reason : undefined;
+  const text = doing ? `${doing}${why ? ` · ${why}` : ''}` : `No session is on it.${why ? ` ${why}` : row.ready ? ' Ready for your ok.' : ''}`;
   return (
     <div className="brow hm-row" data-issue={row.number}>
       <div className="bissue">
         <a className="open" href={issueHref(project.name, row.number)} aria-label={`Issue #${row.number}: open its page`}><b>{`#${row.number}${row.title ? ` ${row.title}` : ''}`}</b></a>
-        <small>{row.pr ? `PR #${row.pr.number}` : 'No PR'}{outsideNote(row, project.milestone)}</small>
-        {names.length > 0 && <span className={hot ? 'hm-with together' : 'hm-with'}>Same files as {names.join(', ').replace(/, ([^,]*)$/, ' and $1')}</span>}
+        <small>{row.pr ? `PR #${row.pr.number}` : (row.branch ?? 'No PR')}{outsideNote(row, project.milestone)}</small>
+        {row.shares.length > 0 && <span className="hm-with">Same files as {row.shares.map((x, i) => <Fragment key={x.issue}>{i === 0 ? '' : i === row.shares.length - 1 ? ' and ' : ', '}<span className={x.together ? 'together' : undefined}>#{x.issue}</span></Fragment>)}</span>}
       </div>
-      <div className="stagecell"><span>{STAGE_LABEL[row.stage]}</span><Track stage={row.stage} bad={row.bad} /></div>
+      <div className="stagecell"><span>{STAGE_LABEL[row.stage]}</span><Track stage={row.stage} bad={row.bad} {...(state === 'stalled' ? { stalled: true as const } : {})} /></div>
       <div className="hm-now"><span className="lab">Now</span>
         {who && <span className={`model ${who.tone}`}>{who.name}{modelOf(who.tone)}</span>}
-        <span className="sub">{doing ?? `No session is on it.${none}`}{spent}</span>
+        <span className="sub">{text}{spent}</span>
       </div>
       <span className={`state ${s.tone}`}>{s.label}</span>
     </div>
   );
 }
 
-/** The running sessions of the project on no issue, by agent and branch (the server names those of the past 30 days; only a running one is in the stream), then how many more there were. */
+/** The sessions of the project on no issue that the server names: a running one (the stream has it) by agent and branch and what it is doing, an ended one by branch and when, then how many more there were in the past 30 days. */
 function NotOnIssue({ project, sessions, now }: { project: HomeProject; sessions: readonly Session[]; now: number }) {
   const { count: total, sessions: named } = project.notOnIssue;
   if (!total) return null;
-  const ids = new Set(named.map((s) => s.id));
-  const running = sessions.filter((s) => !s.endedAt && s.project === project.name && ids.has(s.id));
-  const more = total - running.length;
+  const more = total - named.length;
   return (
     <div className="hm-also">
       <b>Not on an issue</b>
-      {running.map((s) => {
-        const main = s.agents.find((a) => a.depth === 0) ?? s.agents[0];
+      {named.map((n) => {
+        const s = sessions.find((x) => !x.endedAt && x.project === project.name && x.id === n.id);
+        const main = s && (s.agents.find((a) => a.depth === 0) ?? s.agents[0]);
         const tone = modelLabel(main?.model).tone || 'other';
         const verb = main && sentence(main, [], now).verb;
-        return <span key={s.id}>{main && <span className={`model ${tone}`}>{agentName(main.type)}{modelOf(tone)}</span>} on <code>{named.find((n) => n.id === s.id)?.branch ?? 'no branch'}</code>{verb && `, ${verb[0]!.toLowerCase()}${verb.slice(1)}`}</span>;
+        const branch = <code>{n.branch ?? 'no branch'}</code>;
+        return s
+          ? <span key={n.id}>{main && <span className={`model ${tone}`}>{agentName(main.type)}{modelOf(tone)}</span>} on {branch}{verb && `, ${verb[0]!.toLowerCase()}${verb.slice(1)}`}</span>
+          : <span key={n.id}>on {branch}, {now - n.at < DAY ? ago(now - n.at) : day(n.at, now)}</span>;
       })}
-      {more > 0 && <span>{running.length ? `${more} more` : count(more, 'session')} in the past 30 days</span>}
+      {more > 0 && <span>{more} more in the past 30 days</span>}
     </div>
   );
 }
@@ -80,11 +83,17 @@ function Card({ project: p, sessions, now }: { project: HomeProject; sessions: r
   const bar = [...'m'.repeat(p.counts.merged), ...'f'.repeat(p.counts.flight), ...'q'.repeat(p.counts.queued)];
   const here = sessions.some((s) => !s.endedAt && s.project === p.name); // the plugin is what reads GitHub: with no session running here, the data is as old as the last one
   const age = p.readAt === null ? 'No GitHub data yet' : ageText(p.readAt, now);
+  // why there is no milestone, or why the issues have no title: the Factory page's words
+  const excluded = p.milestone === null && p.content === 'excluded';
+  const notes = [excluded ? EXCLUDED_NOTE : p.milestone === null ? 'No milestone has open issues.' : null, excluded ? null : titlesNote({ content: p.content, issues: p.rows })].filter((n) => n !== null);
   const pct = p.goal ? Math.min(100, Math.round((100 * p.spent) / p.goal)) : 0;
   return (
     <section className="card board home-card" aria-label={p.name}>
-      <h2><span>{p.name}{p.milestone !== null && <span className="hm-ms">{p.milestone}</span>}</span>{here ? <span className="asof">{age}</span> : <span className="asof stale">{age}: no session runs here</span>}</h2>
-      {p.milestone === null && <p className="nothing">No milestone has open issues.</p>}
+      <div className="hm-head">
+        <h2>{p.name}{p.milestone !== null && <span className="hm-ms">{p.milestone}</span>}</h2>
+        {here ? <span className="asof">{age}</span> : <span className="asof stale">{age}: no session runs here</span>}
+      </div>
+      {notes.map((n) => <p key={n} className="nothing">{n}</p>)}
       {total > 0 && (
         <div className="hm-prog">
           <div className="hm-bar" role="img" aria-label={`${p.counts.merged} of ${total} issues merged, ${p.counts.flight} in flight, ${p.counts.queued} queued`}>{bar.map((k, i) => <i key={i} className={k} />)}</div>
@@ -118,12 +127,14 @@ export function HomeView({ data, sessions, now }: { data: HomeData; sessions: re
       {data.quiet.length > 0 && (
         <details className="card hm-quiet">
           <summary>{data.quiet.length} quiet {data.quiet.length === 1 ? 'project' : 'projects'}, with no session in the past 30 days</summary>
-          {data.quiet.map((q) => <div key={q.name} className="hm-also"><b>{q.name}</b><span>last session on {day(q.last)}</span></div>)}
+          {data.quiet.map((q) => <div key={q.name} className="hm-also"><b>{q.name}</b><span>last session on {day(q.last, now)}</span></div>)}
         </details>
       )}
     </>
   );
 }
+
+export const HomeError = ({ message }: { message: string }) => <div className="empty" role="alert"><b>Home could not load.</b><span>{message}</span></div>;
 
 /** `sessions`: the ones Live shows, for who is on each issue and the running count. Asked for again every 30 seconds, as the Factory board is. */
 export function Home({ now, sessions }: { now: number; sessions: readonly Session[] }) {
@@ -151,7 +162,7 @@ export function Home({ now, sessions }: { now: number; sessions: readonly Sessio
   return (
     <main className="home">
       <PageHeader title="Home" sub="What's going on, across your projects" />
-      {error && <div className="empty"><b>Home could not load.</b><span>{error}</span></div>}
+      {error && <HomeError message={error} />}
       {!data && !error && <Loading>Reading your projects…</Loading>}
       {data && <HomeView data={data} sessions={sessions} now={now} />}
     </main>
