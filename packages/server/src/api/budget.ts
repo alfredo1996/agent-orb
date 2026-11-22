@@ -17,8 +17,8 @@ const Put = z.union([
   z.strictObject({ project: z.string().min(1), issue: z.number().int().positive().max(999_999_999), usd }),
 ]);
 
-/** A PR the session linked: when it opened, and the issue it closes (none: it closes no issue). */
-export type Link = { at: number; issue: number | null };
+/** A PR the session linked: when it opened, the issue it closes (none: it closes no issue), and when that issue was opened (null: no read gave it, #69). */
+export type Link = { at: number; issue: number | null; openedAt: number | null };
 
 /**
  * The issue a PR is for: the one the open-PR read stored, else (#63) the number its head names, which only the merged list gives, so a PR merged before any read saw it open still has one. #69: not
@@ -34,17 +34,24 @@ export function prIssue(issue: number | null, head: string | null, mergedAt: num
 
 /** The PRs a session linked, by opening time: the PR's own `created_at` where the read gave one, else when the session first linked it. The board (#32) and the Map (#66) reach issues through the same list. */
 export const sessionLinks = (store: Store, id: string, open: Map<number, OpenIssue>): Link[] => all(store, `SELECT coalesce(r.created_at, sp.ts) AS at, r.issue AS issue, r.head AS head, r.merged_at AS mergedAt
-  FROM session_prs sp JOIN pull_requests r ON r.id = sp.pr_id WHERE sp.session_id = :id AND coalesce(r.created_at, sp.ts) IS NOT NULL ORDER BY at`, { id }).map((r) => ({ at: r.at, issue: prIssue(r.issue, r.head, r.mergedAt, open) }));
+  FROM session_prs sp JOIN pull_requests r ON r.id = sp.pr_id WHERE sp.session_id = :id AND coalesce(r.created_at, sp.ts) IS NOT NULL ORDER BY at`, { id }).map((r) => {
+    const issue = prIssue(r.issue, r.head, r.mergedAt, open);
+    return { at: r.at, issue, openedAt: issue === null ? null : (open.get(issue)?.openedAt ?? null) };
+  });
 
 /**
  * The issue a request belongs to in a session that is on no issue branch: the first PR the session opened at or after it (the PR's window runs from the session's previous PR up to
- * its opening), so a request in the very second of the opening is that PR's. `links` are by opening time. Past the last PR, or before a PR that closes no issue: none.
+ * its opening), so a request in the very second of the opening is that PR's. `links` are by opening time. Past the last PR, or before a PR that closes no issue: none. Nor before the PR's
+ * issue was opened (#110): a window can start at the session's previous PR, hours before the issue existed. An issue whose opening no read gave keeps its whole window.
  * ponytail: a linear scan of the session's PRs (the busiest real session links 201, the average is 15); a binary search if a route over many such sessions ever shows.
  */
 export function windowIssue(links: Link[], ts: number): number | null {
-  for (const l of links) if (l.at >= ts) return l.issue;
+  for (const l of links) if (l.at >= ts) return l.openedAt !== null && ts < l.openedAt ? null : l.issue;
   return null;
 }
+
+/** Whether a PR's window can give its issue anything: every request in it is at or before the PR's opening, so not when the issue was opened after that (#110). The board's reach asks the same. */
+export const windowGives = (l: Link) => l.openedAt === null || l.at >= l.openedAt;
 
 /**
  * An issue as the last reads left it. `goneAt` is null while the plugin's read lists it as open, else when it left the list (closed, or past gh's limit of 200): its milestone and title are kept (#32).

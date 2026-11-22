@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ContentStore } from '../content-store.ts';
 import { each, get, type Store } from '../store/store.ts';
-import { openIssues, prIssue, sessionLinks, windowIssue, type Link } from './budget.ts';
+import { openIssues, prIssue, sessionLinks, windowGives, windowIssue, type Link } from './budget.ts';
 import { openPrs } from './factory.ts';
 
 // v0.4 slice 6 (#32, Factory; PROJECT.md §15, 2026-11-03): each issue of a milestone, followed from queued to merged on one board.
@@ -62,7 +62,7 @@ export function reachOf(store: Store, content: ContentStore, project: string, ch
     const links = own === null && s.links ? sessionLinks(store, s.id, open) : [];
     const issues = new Set<number>();
     if (own !== null) issues.add(own);
-    else for (const l of links) if (l.issue !== null) issues.add(l.issue);
+    else for (const l of links) if (l.issue !== null && windowGives(l)) issues.add(l.issue);
     for (const issue of issues) if (isOpen(issue)) touched.set(issue, Math.max(touched.get(issue) ?? 0, s.at));
     if ([...issues].some((issue) => open.has(issue) || s.at >= week)) reaches.push({ id: s.id, branch: s.branch, at: s.at, own, links, issues });
   }

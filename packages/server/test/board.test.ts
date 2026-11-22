@@ -230,7 +230,7 @@ describe('GET /api/board: a merged PR whose branch names an issue opened after i
 
   it('the time is checked only for a PR reached by its branch: one whose read stored the issue keeps it', async () => {
     await send(old(), read(MERGED - MIN, [pr(71, { head: 'fix/62-host-check', issue: 62 })]), read(NOW0 - MIN, [], [{ number: 62, milestone: M, created_at: OPENED }]));
-    expect(await row(62)).toMatchObject({ stage: 'merged', pr: { number: 71, merged: true }, sessionCount: 1 });
+    expect(await row(62)).toMatchObject({ stage: 'merged', pr: { number: 71, merged: true }, sessionCount: 0 }); // the PR is kept; the session's window ended before #62 existed (#110)
   });
 });
 
@@ -253,6 +253,12 @@ describe('GET /api/board: Merged, and what the store knows of it', () => {
     await send(start('s-dev', 'dev'), write('s-dev', T0 + MIN), link('s-dev', T0 + 5 * MIN, 405), read(NOW0 - MIN, [], issues(403)),
       merged(NOW0 - 5 * MIN, [{ number: 405, merged_at: T0 + 9 * MIN, head: 'fix/403-banner' }]));
     expect(await row(403)).toMatchObject({ stage: 'merged', sessionCount: 1, sessions: [{ id: 's-dev' }] });
+  });
+
+  it('a window that gives the issue nothing, for the issue was opened after the PR\'s work, does not reach it (#110)', async () => {
+    await send(start('s-dev', 'dev'), write('s-dev', T0 + MIN), link('s-dev', T0 + 5 * MIN, 418),
+      read(NOW0 - MIN, [pr(418, { head: 'feat/queue', issue: 412, created_at: T0 + 5 * MIN })], [{ number: 412, milestone: M, created_at: T0 + 10 * MIN }]));
+    expect(await row(412)).toMatchObject({ stage: 'building', sessionCount: 0, sessions: [] }); // the PR line is Building; no session is on it
   });
 
   it('a PR that left the open list and is not known merged is not Merged, and has no Gate or Ready: it may have been closed', async () => {

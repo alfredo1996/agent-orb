@@ -240,6 +240,30 @@ describe('GET /api/budget: a PR merged before any read saw it open (#63)', () =>
     expect((await budget()).notOnIssue.usd).toBe(2);
   });
 
+  it('a window gives its issue nothing from before the issue was opened; an issue whose opening no read gave keeps the whole window (#110)', async () => {
+    await send(start('s-1', 'dev'), spend('s-1', T0 + MIN, 2), spend('s-1', T0 + 5 * MIN, 3), spend('s-1', T0 + 8 * MIN, 4), link('s-1', T0 + 10 * MIN, 418),
+      start('s-2', 'dev'), spend('s-2', T0 + MIN, 6), link('s-2', T0 + 10 * MIN, 416),
+      read(T0 + 11 * MIN, [pr(418, { created_at: T0 + 10 * MIN, issue: 412 }), pr(416, { created_at: T0 + 10 * MIN, issue: 409 })], [{ number: 412, milestone: 'v1', created_at: T0 + 5 * MIN }]));
+    expect(await issue(412)).toMatchObject({ usd: 7, windows: 7 }); // $3 in the very minute #412 was opened and $4 after; the $2 before it is on no issue
+    expect(await issue(409)).toMatchObject({ usd: 6, windows: 6 }); // #409's opening was never read: as before
+    expect((await budget()).notOnIssue.usd).toBe(2);
+  });
+
+  it('with two PRs, a request before the issue was opened is on no issue, not on the session\'s next PR\'s (#110)', async () => {
+    await send(start('s-1', 'dev'), spend('s-1', T0 + MIN, 2), link('s-1', T0 + 8 * MIN, 416), spend('s-1', T0 + 9 * MIN, 3), link('s-1', T0 + 10 * MIN, 418),
+      read(T0 + 11 * MIN, [pr(416, { created_at: T0 + 8 * MIN, issue: 412 }), pr(418, { created_at: T0 + 10 * MIN, issue: 409 })], [{ number: 412, milestone: 'v1', created_at: T0 + 7 * MIN }, { number: 409, milestone: 'v1', created_at: T0 }]));
+    expect(await issue(412)).toMatchObject({ usd: 0 }); // opened at +7: the $2 at +1 is not its, and not 409's either
+    expect(await issue(409)).toMatchObject({ usd: 3 });
+    expect((await budget()).notOnIssue.usd).toBe(2);
+  });
+
+  it('the opening of an issue the PR\'s head names (no issue from the read) cuts the window too (#110)', async () => {
+    await send(start('s-1', 'dev'), spend('s-1', T0 + MIN, 2), spend('s-1', T0 + 8 * MIN, 3), link('s-1', T0 + 10 * MIN, 48),
+      merged(T0 + 15 * MIN, [{ number: 48, merged_at: T0 + 10 * MIN, head: 'fix/90-deploy-hardening' }]), read(T0 + 16 * MIN, [], [{ number: 90, milestone: 'v1', created_at: T0 + 5 * MIN }]));
+    expect(await issue(90)).toMatchObject({ usd: 3 });
+    expect((await budget()).notOnIssue.usd).toBe(2);
+  });
+
   it('a PR with no issue whose head names none stays on no issue', async () => {
     await send(start('s-1', 'dev'), spend('s-1', T0 + MIN, 2), link('s-1', T0 + 10 * MIN, 57), merged(T0 + 15 * MIN, [{ number: 57, merged_at: T0 + 10 * MIN, head: 'chore/release-0.4.1' }]),
       spend('s-1', T0 + 20 * MIN, 3), link('s-1', T0 + 25 * MIN, 58)); // and a PR no read has given a head
