@@ -169,7 +169,9 @@ describe('a project card', () => {
 
   it('with no session running, Not on an issue still gives the branches, and a session of another year says the year', () => {
     const none = project('scratch', { notOnIssue: { count: 3, sessions: [{ id: 'a', branch: 'main', at: NOW - 20 * MIN }, { id: 'b', branch: null, at: Date.parse('2025-12-30T12:00:00Z') }] } });
-    expect(plain(card(page({ projects: [none], quiet: [] }, []), 'scratch').match(/<div class="hm-also"><b>Not on an issue.*?<\/div>/s)![0])).toBe('Not on an issue on main, 20m ago on no branch, 30 Dec 2025 1 more in the past 30 days');
+    const line = card(page({ projects: [none], quiet: [] }, []), 'scratch').match(/<div class="hm-also"><b>Not on an issue.*?<\/div>/s)![0];
+    expect(plain(line)).toBe('Not on an issue on main, 20m ago on no branch, 30 Dec 2025 1 more in the past 30 days');
+    expect(line.match(/<code>[^<]*<\/code>/g)).toEqual(['<code>main</code>']); // a branch is code; "no branch" is words, not a branch named "no branch"
   });
 
   it('this month against the goal, or no goal set', () => {

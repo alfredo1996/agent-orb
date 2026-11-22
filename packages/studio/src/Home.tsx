@@ -68,7 +68,7 @@ function NotOnIssue({ project, sessions, now }: { project: HomeProject; sessions
         const main = s && (s.agents.find((a) => a.depth === 0) ?? s.agents[0]);
         const tone = modelLabel(main?.model).tone || 'other';
         const verb = main && sentence(main, [], now).verb;
-        const branch = <code>{n.branch ?? 'no branch'}</code>;
+        const branch = n.branch ? <code>{n.branch}</code> : 'no branch';
         return s
           ? <span key={n.id}>{main && <span className={`model ${tone}`}>{agentName(main.type)}{modelOf(tone)}</span>} on {branch}{verb && `, ${verb[0]!.toLowerCase()}${verb.slice(1)}`}</span>
           : <span key={n.id}>on {branch}, {now - n.at < DAY ? ago(now - n.at) : day(n.at, now)}</span>;
