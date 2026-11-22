@@ -1,7 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DatabaseSync } from 'node:sqlite';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event } from '@agent-orb/shared';
 import { buildApp } from '../src/app.ts';
+import { budgetOf } from '../src/api/budget.ts';
+
+// the budget pass is the one thing a test cannot see from outside, so it is counted: the real function, wrapped
+vi.mock('../src/api/budget.ts', async (orig) => {
+  const m = await orig<typeof import('../src/api/budget.ts')>();
+  return { ...m, budgetOf: vi.fn(m.budgetOf) };
+});
 
 // v0.5 slice 3 (#107, Follow; the plan is #64): GET /api/home, each project with a session in the past 30 days: its milestone, the counts of merged, in flight and queued, the rows in flight,
 // the issues each shares files with, this month's spend and goal. The tests send the plugin's events to /ingest and compare what Home says with what /api/board, /api/links and /api/goal say
@@ -22,8 +28,9 @@ const BILLING: Project = { cwd: '/Users/a/billing-db', name: 'billing-db', git_r
 let n = 0;
 const ev = (project: Project, session: string, ts: number, kind: string, data: object, extra: object = {}): Event =>
   ({ v: 1, id: `00000000-0000-4000-b107-${String(++n).padStart(12, '0')}`, ts, host: 'mbp', user_id: 'local', session_id: session, project, kind, data, ...extra }) as Event;
-const start = (project: Project, session: string, branch: string | undefined, ts = T0) =>
-  ev({ ...project, ...(branch ? { git_branch: branch } : {}) } as Project, session, ts, 'session.start', { model: SONNET, source: 'interactive', claude_version: '2.1.316', plugin_version: '0.4.6' }, {});
+const start = (project: Project, session: string, branch: string | undefined, ts = T0, content?: string, host = 'mbp') =>
+  ev({ ...project, ...(branch ? { git_branch: branch } : {}) } as Project, session, ts, 'session.start', { model: SONNET, source: 'interactive', claude_version: '2.1.316', plugin_version: '0.4.6', ...(content ? { content } : {}) }, { host });
+const end = (project: Project, session: string, ts: number) => ev(project, session, ts, 'session.end', { reason: 'exit' }, {});
 /** A file written by the session's main agent at `ts`: the call and its result, which is what files_touched hangs on. */
 const write = (project: Project, session: string, ts: number, path = 'src/a.ts'): Event[] => {
   const turn = { turn_id: `t-${session}-${ts}-${path}` };
@@ -54,9 +61,9 @@ const send = async (...events: unknown[]) => {
   expect(r.json()).toMatchObject({ accepted: flat.length, rejected: 0 });
 };
 type Share = { issue: number; together: boolean };
-type HomeRow = { number: number; title?: string; stage: string; outside: boolean; shares: Share[]; openFindings?: true; budget?: { usd: number; budget: number; mark: string | null } };
+type HomeRow = { number: number; title?: string; branch?: string; stage: string; outside: boolean; shares: Share[]; openFindings?: true; budget?: { usd: number; budget: number; mark: string | null } };
 type HomeProject = {
-  name: string; last: number; milestone: string | null; counts: { merged: number; flight: number; queued: number; outside: number }; rows: HomeRow[]; readAt: number | null;
+  name: string; last: number; milestone: string | null; content: string | null; counts: { merged: number; flight: number; queued: number; outside: number }; rows: HomeRow[]; readAt: number | null;
   notOnIssue: { count: number; sessions: { id: string; branch: string | null; at: number }[] }; month: string; goal: number | null; spent: number; costPartial: boolean;
 };
 type Home = { projects: HomeProject[]; quiet: { name: string; last: number }[] };
@@ -82,7 +89,7 @@ describe('GET /api/home: the rows in flight', () => {
     expect(p.milestone).toBe(M);
     expect(board.issues.map((i: { number: number; stage: string }) => [i.number, i.stage])).toEqual([[415, 'building'], [409, 'fixing'], [403, 'merged'], [419, 'queued'], [417, 'queued']]);
     const inFlight = board.issues.filter((i: { stage: string }) => i.stage !== 'merged' && i.stage !== 'queued');
-    expect(p.rows.map(({ shares: _s, openFindings: _o, budget: _b, ...r }) => r)).toEqual(inFlight);
+    expect(p.rows.map(({ shares: _s, openFindings: _o, budget: _b, branch: _r, ...r }) => r)).toEqual(inFlight);
     expect(p.counts).toEqual({ merged: 1, flight: 2, queued: 2, outside: 0 });
   });
 
@@ -118,6 +125,26 @@ describe('GET /api/home: which projects', () => {
     expect((await home()).projects.map((p) => [p.name, p.last])).toEqual([['mobile-app', NOW - 2 * DAY], ['field-notes', NOW - 5 * DAY], ['billing-db', NOW - 9 * DAY]]);
   });
 
+  it('the 30 days are counted from the last time a session was seen, not from when it started', async () => {
+    await send(start(BILLING, 's-b', undefined, NOW - 31 * DAY), write(BILLING, 's-b', NOW - DAY));
+    const h = await home();
+    expect(h.projects.map((p) => [p.name, p.last])).toEqual([['billing-db', NOW - DAY]]);
+    expect(h.quiet).toEqual([]);
+  });
+
+  it('exactly 30 days is a card, and a millisecond more is quiet', async () => {
+    await send(start(BILLING, 's-b', undefined, NOW - 30 * DAY), start(FIELD, 's-f', undefined, NOW - 30 * DAY - 1));
+    const h = await home();
+    expect(h.projects.map((p) => p.name)).toEqual(['billing-db']);
+    expect(h.quiet).toEqual([{ name: 'field-notes', last: NOW - 30 * DAY - 1 }]);
+  });
+
+  it('one project name on two hosts is one card, as recent as its newest session', async () => {
+    const laptop = { ...MOBILE, cwd: '/home/b/mobile-app' };
+    await send(start(MOBILE, 's-a', undefined, NOW - 3 * DAY), start(laptop, 's-b', undefined, NOW - DAY, undefined, 'laptop'));
+    expect((await home()).projects.map((p) => [p.name, p.last])).toEqual([['mobile-app', NOW - DAY]]);
+  });
+
   it('a project with no milestone has no milestone and lists its issues in flight', async () => {
     await send(start(FIELD, 's-86', 'fix/86-pdf'), write(FIELD, 's-86', T0 + MIN));
     const p = await homeOf('field-notes');
@@ -126,11 +153,20 @@ describe('GET /api/home: which projects', () => {
     expect(p.counts).toEqual({ merged: 0, flight: 0, queued: 0, outside: 1 });
   });
 
-  it("an excluded project's rows carry numbers and no title; a project that sends titles keeps them", async () => {
-    await send(MILESTONE(), start(FIELD, 's-86', 'fix/86-pdf'), write(FIELD, 's-86', T0 + MIN), read(FIELD, NOW - MIN, [], [{ number: 86, milestone: 'v1.1 Export' }]));
-    expect((await homeOf('field-notes')).rows).toEqual([expect.objectContaining({ number: 86, stage: 'building' })]);
-    expect((await homeOf('field-notes')).rows[0]).not.toHaveProperty('title');
+  it("an excluded project has no milestone and its rows carry numbers and no title, and says it is excluded; a project that sends titles keeps them", async () => {
+    // the plugin sends an excluded project's open issues with a number only (no milestone, no title)
+    await send(MILESTONE(), start(FIELD, 's-86', 'fix/86-pdf', T0, 'excluded'), write(FIELD, 's-86', T0 + MIN), read(FIELD, NOW - MIN, [], [{ number: 86 }, { number: 87 }]));
+    const field = await homeOf('field-notes');
+    expect(field).toMatchObject({ content: 'excluded', milestone: null });
+    expect(field.rows).toEqual([expect.objectContaining({ number: 86, stage: 'building' })]);
+    expect(field.rows[0]).not.toHaveProperty('title');
+    expect(await homeOf('mobile-app')).toMatchObject({ content: null });
     expect((await homeOf('mobile-app')).rows.map((r) => r.title)).toEqual(['Issue 415', 'Issue 409']);
+  });
+
+  it("a row with no PR gives the branch of its newest session, and a row of a PR gives it too", async () => {
+    await send(MILESTONE());
+    expect((await homeOf('mobile-app')).rows.map((r) => [r.number, r.branch])).toEqual([[415, 'fix/415-sync'], [409, 'fix/409-retry']]);
   });
 });
 
@@ -142,11 +178,28 @@ describe('GET /api/home: sessions on no issue', () => {
   });
 
   it('only the past 30 days count; the list is the newest few and the count is all of them', async () => {
-    const many = Array.from({ length: 7 }, (_, i) => start(MOBILE, `s-x${i}`, 'main', NOW - (i + 1) * DAY));
+    const many = Array.from({ length: 7 }, (_, i) => [start(MOBILE, `s-x${i}`, 'main', NOW - (i + 1) * DAY), end(MOBILE, `s-x${i}`, NOW - (i + 1) * DAY)]);
     await send(MILESTONE(), many, start(MOBILE, 's-old', 'main', NOW - 40 * DAY));
     const { notOnIssue } = await homeOf('mobile-app');
     expect(notOnIssue.count).toBe(7);
     expect(notOnIssue.sessions.map((s) => s.id)).toEqual(['s-x0', 's-x1', 's-x2', 's-x3', 's-x4']);
+  });
+});
+
+describe('GET /api/home: sessions on no issue, running ones', () => {
+  it('every running session on no issue is named, however many ended after it, so none turns into "N more"', async () => {
+    const ended = Array.from({ length: 6 }, (_, i) => [start(MOBILE, `s-e${i}`, 'main', NOW - (i + 1) * MIN), end(MOBILE, `s-e${i}`, NOW - (i + 1) * MIN)]);
+    await send(MILESTONE(), start(MOBILE, 's-run', 'main', NOW - 10 * DAY), write(MOBILE, 's-run', NOW - 9 * DAY, 'src/x.ts'), ended);
+    const { notOnIssue } = await homeOf('mobile-app');
+    expect(notOnIssue.count).toBe(7);
+    expect(notOnIssue.sessions.map((s) => s.id)).toEqual(['s-e0', 's-e1', 's-e2', 's-e3', 's-e4', 's-run']); // the five newest ended ones, and the running one though it is the oldest
+  });
+
+  it('a session on main that opened a PR of an issue reached that issue, so it is not on no issue', async () => {
+    await send(MILESTONE(), start(MOBILE, 's-pr', 'main', NOW - 2 * MIN), ev(MOBILE, 's-pr', NOW - 2 * MIN, 'session.pr', { number: 416 }, {}), write(MOBILE, 's-pr', NOW - MIN, 'src/x.ts'));
+    const p = await homeOf('mobile-app');
+    expect(p.notOnIssue).toEqual({ count: 0, sessions: [] });
+    expect(p.rows.find((r) => r.number === 409)).toMatchObject({ sessionCount: 2 });
   });
 });
 
@@ -169,15 +222,16 @@ describe('GET /api/home: the issues a row shares files with', () => {
 
 describe("GET /api/home: this month's spend", () => {
   it("equals /api/goal's for the same project and zone, with the goal", async () => {
-    await send(MILESTONE(), spend(MOBILE, 's-415', NOW - 2 * DAY, 2.5), spend(MOBILE, 's-409', NOW - 3 * DAY, 1.25), spend(MOBILE, 's-409', NOW - 40 * DAY, 9));
+    // $2 at 13:00 UTC on 31 Oct is 02:00 on 1 Nov in Auckland: this month there, last month in UTC
+    await send(MILESTONE(), spend(MOBILE, 's-415', NOW - 2 * DAY, 2.5), spend(MOBILE, 's-409', NOW - 3 * DAY, 1.25), spend(MOBILE, 's-409', Date.parse('2026-10-31T13:00:00Z'), 2), spend(MOBILE, 's-409', NOW - 40 * DAY, 9));
     await app.inject({ method: 'PUT', url: '/api/goal', payload: { project: 'mobile-app', usd: 100 } });
     for (const tz of ['UTC', 'Pacific/Auckland']) {
       const goal = await getJson(`/api/goal?project=mobile-app&tz=${tz}`);
       const p = (await home(tz)).projects.find((x) => x.name === 'mobile-app')!;
       expect({ month: p.month, goal: p.goal, spent: p.spent, costPartial: p.costPartial }).toEqual({ month: goal.month, goal: goal.goal, spent: goal.spent, costPartial: goal.costPartial });
     }
-    const p = await homeOf('mobile-app');
-    expect(p).toMatchObject({ month: '2026-11', goal: 100, spent: 3.75 });
+    expect(await homeOf('mobile-app')).toMatchObject({ month: '2026-11', goal: 100, spent: 3.75 });
+    expect((await home('Pacific/Auckland')).projects.find((x) => x.name === 'mobile-app')).toMatchObject({ month: '2026-11', goal: 100, spent: 5.75 });
   });
 
   it('no goal set is a null goal', async () => {
@@ -187,32 +241,23 @@ describe("GET /api/home: this month's spend", () => {
 });
 
 describe('GET /api/home: over budget', () => {
-  const costPasses = () => {
-    const seen: string[] = [];
-    const prepare = DatabaseSync.prototype.prepare;
-    DatabaseSync.prototype.prepare = function (this: DatabaseSync, sql: string) {
-      seen.push(sql);
-      return prepare.call(this, sql);
-    };
-    return { seen, stop: () => (DatabaseSync.prototype.prepare = prepare) };
-  };
-  let spy: ReturnType<typeof costPasses> | undefined;
-  afterEach(() => spy?.stop());
+  /** The projects the cost pass ran for since `vi.mocked(budgetOf)` was last cleared. */
+  const passes = () => vi.mocked(budgetOf).mock.calls.map((c) => c[1]);
 
   it('with no budget set anywhere the cost pass is not run and no row has a budget', async () => {
     await send(MILESTONE(), spend(MOBILE, 's-409', T0 + 5 * MIN, 4));
-    spy = costPasses();
+    vi.mocked(budgetOf).mockClear();
     const p = await homeOf('mobile-app');
-    expect(spy.seen.filter((sql) => sql.includes('GROUP BY a.session_id'))).toEqual([]);
+    expect(passes()).toEqual([]);
     for (const r of p.rows) expect(r).not.toHaveProperty('budget');
   });
 
   it("a budget set on an issue and reached marks its row at100, with the budget code's own figures; a row with none has no budget", async () => {
     await send(MILESTONE(), spend(MOBILE, 's-409', T0 + 5 * MIN, 4), spend(MOBILE, 's-415', T0 + 5 * MIN, 1));
     await app.inject({ method: 'PUT', url: '/api/budget', payload: { project: 'mobile-app', issue: 409, usd: 4 } });
-    spy = costPasses();
+    vi.mocked(budgetOf).mockClear();
     const p = await homeOf('mobile-app');
-    expect(spy.seen.filter((sql) => sql.includes('GROUP BY a.session_id'))).toHaveLength(1);
+    expect(passes()).toEqual(['mobile-app']);
     expect(p.rows.map((r) => [r.number, r.budget])).toEqual([[415, undefined], [409, expect.objectContaining({ usd: 4, budget: 4, mark: 'at100' })]]);
   });
 
@@ -225,8 +270,8 @@ describe('GET /api/home: over budget', () => {
   it("another project's budget does not start this project's pass", async () => {
     await send(MILESTONE(), start(FIELD, 's-86', 'fix/86-pdf'), write(FIELD, 's-86', T0 + MIN), read(FIELD, NOW - MIN, [], [{ number: 86, milestone: 'v1.1 Export' }]));
     await app.inject({ method: 'PUT', url: '/api/budget', payload: { project: 'mobile-app', issue: 409, usd: 4 } });
-    spy = costPasses();
+    vi.mocked(budgetOf).mockClear();
     await home();
-    expect(spy.seen.filter((sql) => sql.includes('GROUP BY a.session_id'))).toHaveLength(1); // mobile-app's, not field-notes'
+    expect(passes()).toEqual(['mobile-app']); // not field-notes' too
   });
 });

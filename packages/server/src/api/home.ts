@@ -18,7 +18,7 @@ import { linksOf } from './links.ts';
 
 const Query = z.object({ tz: zone.default('UTC') });
 const RECENT_MS = 30 * 86_400_000;
-const NOT_ON_ISSUE_SHOWN = 5; // the newest sessions on no issue a card names; the count is all of them
+const NOT_ON_ISSUE_SHOWN = 5; // the newest ended sessions on no issue a card names, and every running one besides; the count is all of them
 
 export function homeOf(store: Store, content: ContentStore, tz: string, now: number) {
   const names = all(store, `SELECT p.name AS name, max(coalesce(s.seen_at, s.ended_at, s.started_at, 0)) AS last FROM projects p JOIN sessions s ON s.project_id = p.id
@@ -45,30 +45,38 @@ export function homeOf(store: Store, content: ContentStore, tz: string, now: num
     const held = (r: (typeof flying)[number]) => set.some((b) => (b.kind === 'issue' ? Number(b.key) === r.number : r.milestone != null && b.key === r.milestone));
     const costs = flying.some(held) ? new Map(budgetOf(store, name, tz, now, reach.open).issues.map((i) => [i.number, i])) : undefined;
 
+    // The branch of the newest session on each row, which says what an issue with no PR is being built on.
+    const branches = new Map<number, string>();
+    for (const x of reach.reaches.toSorted((a, b) => a.at - b.at)) if (x.branch) for (const i of x.issues) branches.set(i, x.branch);
+
     const rows = flying.map((r) => {
       const c = costs?.get(r.number);
       return {
         ...r,
+        ...(branches.has(r.number) ? { branch: branches.get(r.number) } : {}),
         shares: (shares.get(r.number) ?? []).toSorted((a, b) => a.issue - b.issue),
         ...(newest(reach.openOf.get(r.number))?.conditions.findings.ok === false ? { openFindings: true as const } : {}),
         ...(c && c.budget !== null ? { budget: { usd: c.usd, budget: c.budget, mark: c.mark, partial: c.partial } } : {}),
       };
     });
 
-    // The sessions of the past 30 days on no issue: no branch that names one, and none the board reached an issue by. ponytail: a session that linked a PR of an issue long closed is counted here too.
+    // The sessions of the past 30 days on no issue: no branch that names one, and none the board reached an issue by. The newest few that ended are named, and every one still running (it has no end yet), so none is lost
+    // to "N more". ponytail: a session that linked a PR of an issue long closed is counted here too.
     const reached = new Set(reach.reaches.map((r) => r.id));
     const none: { id: string; branch: string | null; at: number }[] = [];
     let count = 0;
-    for (const s of each(store, `SELECT s.id AS id, s.branch AS branch, coalesce(s.seen_at, s.ended_at, s.started_at, 0) AS at FROM sessions s JOIN projects p ON p.id = s.project_id
+    let named = 0; // the ended ones named
+    for (const s of each(store, `SELECT s.id AS id, s.branch AS branch, coalesce(s.seen_at, s.ended_at, s.started_at, 0) AS at, s.ended_at AS ended FROM sessions s JOIN projects p ON p.id = s.project_id
       WHERE p.name = :project AND coalesce(s.seen_at, s.ended_at, s.started_at, 0) >= :since ORDER BY at DESC, s.id`, { project: name, since })) {
       if (reached.has(s.id) || branchIssue(s.branch) !== null) continue;
       count++;
-      if (none.length < NOT_ON_ISSUE_SHOWN) none.push({ id: s.id, branch: s.branch, at: s.at });
+      if (s.ended != null && named++ >= NOT_ON_ISSUE_SHOWN) continue;
+      none.push({ id: s.id, branch: s.branch, at: s.at });
     }
 
     const { month, goal, spent, costPartial } = goalOf(store, name, tz, now);
     return {
-      name, last, milestone: board.milestone,
+      name, last, milestone: board.milestone, content: board.content,
       counts: { merged: inside('merged'), flight: flying.filter((r) => !r.outside).length, queued: inside('queued'), outside: flying.filter((r) => r.outside).length },
       rows, readAt: reach.readAt, notOnIssue: { count, sessions: none }, month, goal, spent, costPartial,
     };
