@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Event } from '@agent-orb/shared';
 import { buildApp } from '../src/app.ts';
 import { budgetOf } from '../src/api/budget.ts';
+import { openStore } from '../src/store/store.ts';
 
 // the budget pass is the one thing a test cannot see from outside, so it is counted: the real function, wrapped
 vi.mock('../src/api/budget.ts', async (orig) => {
@@ -193,6 +194,18 @@ describe('GET /api/home: sessions on no issue, running ones', () => {
     const { notOnIssue } = await homeOf('mobile-app');
     expect(notOnIssue.count).toBe(7);
     expect(notOnIssue.sessions.map((s) => s.id)).toEqual(['s-e0', 's-e1', 's-e2', 's-e3', 's-e4', 's-run']); // the five newest ended ones, and the running one though it is the oldest
+  });
+
+  it("running is what Live holds: a session that never sent its end, from before a restart, is one of the ended, and one seen since the restart is running", async () => {
+    const store = openStore(':memory:');
+    app = buildApp({ token: TOKEN, now: () => NOW, store });
+    const ended = Array.from({ length: 5 }, (_, i) => [start(MOBILE, `s-e${i}`, 'main', NOW - (i + 1) * MIN), end(MOBILE, `s-e${i}`, NOW - (i + 1) * MIN)]);
+    await send(MILESTONE(), start(MOBILE, 's-gone', 'main', NOW - 20 * DAY), write(MOBILE, 's-gone', NOW - 19 * DAY, 'src/x.ts'), ended);
+    app = buildApp({ token: TOKEN, now: () => NOW, store }); // the server restarts: Live starts empty, and s-gone never ended
+    await send(start(MOBILE, 's-live', 'main', NOW - 30 * DAY + DAY), write(MOBILE, 's-live', NOW - 29 * DAY, 'src/y.ts'));
+    const { notOnIssue } = await homeOf('mobile-app');
+    expect(notOnIssue.count).toBe(7);
+    expect(notOnIssue.sessions.map((s) => s.id)).toEqual(['s-e0', 's-e1', 's-e2', 's-e3', 's-e4', 's-live']); // s-gone is the oldest of six with no running agent: past the five, so "N more"
   });
 
   it('a session on main that opened a PR of an issue reached that issue, so it is not on no issue', async () => {

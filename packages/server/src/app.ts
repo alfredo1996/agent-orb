@@ -72,7 +72,8 @@ export function buildApp({ store = openStore(':memory:'), token, logger = false,
   // The studio's build (packages/studio/dist) at /, when there is one.
   if (studioDir && existsSync(studioDir)) app.register(fastifyStatic, { root: studioDir });
 
-  const broadcast = stream(app, newLive(store));
+  const live = newLive(store); // what /stream shows, and what Home (#107) calls running
+  const broadcast = stream(app, live);
   ingest(app, { store, token, content, onWritten: broadcast });
   ledger(app, { store, analysis: reports });
   trends(app, { store });
@@ -88,7 +89,7 @@ export function buildApp({ store = openStore(':memory:'), token, logger = false,
   board(app, { store, content, now }); // v0.4 slice 6 (#32): each issue of a milestone from queued to merged, its stage read from what the agents did
   links(app, { store, content, now }); // v0.5 slice 1 (#66): how the board's issues touch each other, a file two of them wrote or a mention, worked out on read for the Map
   issue(app, { store, content, now }); // v0.5 slice 2 (#106): the page of one issue, its story and when it reached each stage, worked out on read
-  home(app, { store, content, now }); // v0.5 slice 3 (#107): Home, each recent project's rows in flight, who shares files and what the month spent, worked out on read
+  home(app, { store, content, live, now }); // v0.5 slice 3 (#107): Home, each recent project's rows in flight, who shares files and what the month spent, worked out on read
   machine(app, { store, now }); // v0.4 slice 3 (#29): the Mac's latest sample per host, its containers grouped and flagged
   stop(app, { store, token, now }); // v0.4 slice 5 (#31): Live's Stop, queued here and taken by the session's plugin; the clock is the one a stop's ten minutes run by
   return app;

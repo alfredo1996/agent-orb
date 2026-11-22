@@ -2,6 +2,7 @@ import { branchIssue } from '@agent-orb/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ContentStore } from '../content-store.ts';
+import type { LiveState } from '../live.ts';
 import { all, each, type Store } from '../store/store.ts';
 import { boardOf, newest, reachOf } from './board.ts';
 import { budgetOf } from './budget.ts';
@@ -20,7 +21,7 @@ const Query = z.object({ tz: zone.default('UTC') });
 const RECENT_MS = 30 * 86_400_000;
 const NOT_ON_ISSUE_SHOWN = 5; // the newest ended sessions on no issue a card names, and every running one besides; the count is all of them
 
-export function homeOf(store: Store, content: ContentStore, tz: string, now: number) {
+export function homeOf(store: Store, content: ContentStore, live: LiveState, tz: string, now: number) {
   const names = all(store, `SELECT p.name AS name, max(coalesce(s.seen_at, s.ended_at, s.started_at, 0)) AS last FROM projects p JOIN sessions s ON s.project_id = p.id
     GROUP BY p.name ORDER BY last DESC, name`);
   const since = now - RECENT_MS;
@@ -60,17 +61,18 @@ export function homeOf(store: Store, content: ContentStore, tz: string, now: num
       };
     });
 
-    // The sessions of the past 30 days on no issue: no branch that names one, and none the board reached an issue by. The newest few that ended are named, and every one still running (it has no end yet), so none is lost
-    // to "N more". ponytail: a session that linked a PR of an issue long closed is counted here too.
+    // The sessions of the past 30 days on no issue: no branch that names one, and none the board reached an issue by. The newest few that ended are named, and every one still running, so none is lost to "N more".
+    // Running is what Live holds with no end: a session that never sent its end (it crashed, or ran before a restart) is one of the ended, or it would be named for 30 days. ponytail: a session that linked a PR of an issue long closed is counted here too.
     const reached = new Set(reach.reaches.map((r) => r.id));
     const none: { id: string; branch: string | null; at: number }[] = [];
     let count = 0;
     let named = 0; // the ended ones named
-    for (const s of each(store, `SELECT s.id AS id, s.branch AS branch, coalesce(s.seen_at, s.ended_at, s.started_at, 0) AS at, s.ended_at AS ended FROM sessions s JOIN projects p ON p.id = s.project_id
+    for (const s of each(store, `SELECT s.id AS id, s.branch AS branch, coalesce(s.seen_at, s.ended_at, s.started_at, 0) AS at FROM sessions s JOIN projects p ON p.id = s.project_id
       WHERE p.name = :project AND coalesce(s.seen_at, s.ended_at, s.started_at, 0) >= :since ORDER BY at DESC, s.id`, { project: name, since })) {
       if (reached.has(s.id) || branchIssue(s.branch) !== null) continue;
       count++;
-      if (s.ended != null && named++ >= NOT_ON_ISSUE_SHOWN) continue;
+      const running = live.sessions.get(s.id);
+      if ((!running || running.endedAt) && named++ >= NOT_ON_ISSUE_SHOWN) continue;
       none.push({ id: s.id, branch: s.branch, at: s.at });
     }
 
@@ -84,10 +86,10 @@ export function homeOf(store: Store, content: ContentStore, tz: string, now: num
   return { projects, quiet: names.filter((p) => p.last < since) };
 }
 
-export function home(app: FastifyInstance, { store, content, now = Date.now }: { store: Store; content: ContentStore; now?: () => number }) {
+export function home(app: FastifyInstance, { store, content, live, now = Date.now }: { store: Store; content: ContentStore; live: LiveState; now?: () => number }) {
   app.get('/api/home', async (req, reply) => {
     const q = Query.safeParse(req.query);
     if (!q.success) return reply.code(400).send({ error: 'give a time zone that exists', issues: q.error.issues });
-    return homeOf(store, content, q.data.tz, now());
+    return homeOf(store, content, live, q.data.tz, now());
   });
 }
