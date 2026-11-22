@@ -160,6 +160,18 @@ describe('GET /api/issue: the story', () => {
     expect(b.story.reduce((n, l) => n + (l.usd ?? 0), 0)).toBe(2);
   });
 
+  it('a window session\'s work from before the issue was opened is not in its story: Building is never earlier than Queued (#110)', async () => {
+    // s-long is on no issue branch and linked only PR 418 (#412), at +20; #412 was opened at +5.
+    await send(
+      start('s-long', 'dev'), ...call('s-long', T0 + MIN, { write: 'src/a.ts' }), spend('s-long', T0 + MIN, 1), ...call('s-long', T0 + 8 * MIN, { write: 'src/b.ts' }), spend('s-long', T0 + 8 * MIN, 2), link('s-long', T0 + 20 * MIN, 418),
+      read(NOW - MIN, [pr(418, { head: 'feat/queue', issue: 412, created_at: T0 + 20 * MIN })], [{ number: 412, milestone: M, created_at: T0 + 5 * MIN }]),
+    );
+    const b = await page(412);
+    expect(b.story.filter((l) => l.kind === 'run').map((l) => [(l.agent as { id: string }).id, l.at, l.wrote, l.usd])).toEqual([['s-long:main', T0 + 8 * MIN, { paths: ['src/b.ts'], count: 1 }, 2]]);
+    expect(b.stages.slice(0, 2)).toEqual([{ stage: 'queued', at: T0 + 5 * MIN, again: [] }, { stage: 'building', at: T0 + 8 * MIN, again: [] }]);
+    expect(b.cost!.usd).toBe(2);
+  });
+
   it('a line\'s stage is the stage after the run\'s own last event: a fixer that writes after the PR opened is Fixing on its own line, and the PR line is Reviewing', async () => {
     await send(
       start('s-409', 'fix/409-retry'), ...call('s-409', T0 + MIN, { write: 'src/a.ts' }), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }),

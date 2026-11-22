@@ -93,6 +93,15 @@ describe('GET /api/links: two issues wrote the same file', () => {
     expect((await links()).links).toEqual([file(409, 412, ['src/before.ts'])]);
   });
 
+  it('a write inside the window but before the issue was opened is not that issue\'s (#110)', async () => {
+    await send(
+      start('s-x', 'main'), write('s-x', T0 + MIN, 'src/early.ts'), write('s-x', T0 + 3 * MIN, 'src/late.ts'), link('s-x', T0 + 5 * MIN, 416), // #409 was opened at +2
+      on(412, 'src/early.ts', 'src/late.ts'),
+      read(NOW - MIN, [pr(416, { head: 'feat/retry', issue: 409, created_at: T0 + 5 * MIN })], [{ number: 409, milestone: M, created_at: T0 + 2 * MIN }, ...issues(412)]),
+    );
+    expect((await links()).links).toEqual([file(409, 412, ['src/late.ts'])]);
+  });
+
   it('a session that opened a PR for each of two issues gives each the writes of its own window', async () => {
     await send(
       start('s-x', 'main'), write('s-x', T0 + MIN, 'src/one.ts'), link('s-x', T0 + 5 * MIN, 416), write('s-x', T0 + 6 * MIN, 'src/two.ts'), link('s-x', T0 + 9 * MIN, 418),
