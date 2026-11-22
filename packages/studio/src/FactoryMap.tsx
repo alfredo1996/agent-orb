@@ -1,9 +1,8 @@
 import { Fragment } from 'react';
 import { STAGES, STAGE_LABEL, titlesNote, type BoardData, type BoardIssue } from './Factory.tsx';
-import { modelLabel } from './format.ts';
 import type { Said } from './kit.tsx';
 import type { Session } from './Live.tsx';
-import { agentName, DELEGATES } from './live-cards.ts';
+import { nowOn } from './now-on.ts';
 import { layoutMap } from './map-layout.ts';
 
 // The Map (v0.5 slice 1, #66; the plan is #64), drawn as approved in design/home-issue.html, the Map board: a second view of the Factory board, for the same project and milestone. The board's
@@ -26,21 +25,6 @@ const FILES_SHOWN = 3; // as the server's links.ts: the paths a row, and the not
 const paths = (all: readonly string[], more = false) => all.map((f, i) => <Fragment key={f}>{i === 0 ? '' : i === all.length - 1 && !more ? ' and ' : ', '}<code>{f}</code></Fragment>);
 const MARK_WORDS = { bad: 'stalled', wait: 'waits on you', ok: 'ready' };
 const hot = (l: IssueLink) => l.kind === 'file' && l.together;
-
-/**
- * Who is on an issue now and the card's mark, from what the page already reads: the sessions Live shows (a running one that reached the issue, by the board's own list) and the board's row.
- * The agent named is the one that needs you, else one that is working (a main agent that only waits on the agents it dispatched comes last). The mark is `bad` when an agent on the issue is
- * stalled, `wait` when one waits for your OK to run a tool (the two that Live's Needs you lists), `ok` when the issue's PR is ready for your ok.
- */
-export function nowOn(issue: BoardIssue, sessions: readonly Session[]): { who?: { name: string; tone: string }; mark?: 'bad' | 'wait' | 'ok' } {
-  const mine = new Set(issue.sessions.map((s) => s.id));
-  const agents = sessions.filter((s) => !s.endedAt && mine.has(s.id)).flatMap((s) => s.agents).filter((a) => a.state !== 'done' && a.state !== 'error');
-  const asks = (a: (typeof agents)[number]) => a.state === 'waiting' && a.waitingFor === 'permission';
-  const rank = (a: (typeof agents)[number]) => (a.state === 'stalled' ? 0 : asks(a) ? 1 : a.state === 'working' && !(a.tool && DELEGATES.has(a.tool.name)) ? 2 : 3);
-  const on = agents.toSorted((a, b) => rank(a) - rank(b) || b.lastTs - a.lastTs)[0];
-  const mark = agents.some((a) => a.state === 'stalled') ? 'bad' : agents.some(asks) ? 'wait' : issue.ready ? 'ok' : undefined;
-  return { ...(on ? { who: { name: agentName(on.type), tone: modelLabel(on.model).tone || 'other' } } : {}), ...(mark ? { mark } : {}) };
-}
 
 /** The links whose two issues are both on the board: an answer read a moment before or after the board's may name one that is not. */
 const onBoard = (board: BoardData, links: readonly IssueLink[]) => {

@@ -35,8 +35,12 @@ afterEach(() => {
 });
 
 describe('a page with nothing to show yet says what it is reading', () => {
+  it('Home, before its read answers, says it is reading your projects', () => {
+    expect(waits(at(''))).toEqual({ home: 'Reading your projects…' });
+  });
+
   it('Live, before the stream has spoken, is connecting, not "nothing to show"', () => {
-    const html = at('');
+    const html = at('#/live');
     expect(waits(html)).toEqual({ live: 'Connecting to the server…' });
     expect(read(html)).not.toContain('Nothing to show yet.');
   });

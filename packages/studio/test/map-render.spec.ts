@@ -2,7 +2,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Factory, type BoardData, type BoardIssue } from '../src/Factory.tsx';
-import { MapBand, mapReading, nowOn, type IssueLink, type LinksData } from '../src/FactoryMap.tsx';
+import { MapBand, mapReading, type IssueLink, type LinksData } from '../src/FactoryMap.tsx';
+import { nowOn } from '../src/now-on.ts';
 import { ProjectContext, Reading } from '../src/kit.tsx';
 import type { Agent, Session } from '../src/Live.tsx';
 
