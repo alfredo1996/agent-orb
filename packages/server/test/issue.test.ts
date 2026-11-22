@@ -160,7 +160,7 @@ describe('GET /api/issue: the story', () => {
     expect(b.story.reduce((n, l) => n + (l.usd ?? 0), 0)).toBe(2);
   });
 
-  it('a window session\'s work from before the issue was opened is not in its story: Building is never earlier than Queued (#110)', async () => {
+  it('a window session\'s work from before the issue was opened is not in its story, its stages or its cost (#110)', async () => {
     // s-long is on no issue branch and linked only PR 418 (#412), at +20; #412 was opened at +5.
     await send(
       start('s-long', 'dev'), ...call('s-long', T0 + MIN, { write: 'src/a.ts' }), spend('s-long', T0 + MIN, 1), ...call('s-long', T0 + 8 * MIN, { write: 'src/b.ts' }), spend('s-long', T0 + 8 * MIN, 2), link('s-long', T0 + 20 * MIN, 418),
