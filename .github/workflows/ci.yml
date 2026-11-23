@@ -36,7 +36,13 @@ jobs:
       - run: pnpm exec tsc -p packages/mod
       - run: pnpm test # no container: the server's tests run on temp SQLite files
       - name: Memory soak (the server's RSS stays under its limit on a session the size of the biggest)
-        run: pnpm soak
+        # In the Dockerfile's own node:22-alpine, the musl the server ships on. On the runner's Node (glibc) the RSS sits 25-35 MB higher and
+        # jumped 30-70 MB between rounds on unchanged code, failing PRs with no leak (#113). The image is the Dockerfile's last stage, the one the
+        # server runs in (the build stages carry --platform), so Dependabot's digest bumps move it too. The repo's node_modules work in the
+        # container: nothing on the soak's path is native (node:sqlite is built in).
+        run: |
+          docker run --rm --memory 1500m -v "$PWD":/repo:ro -w /repo "$(awk '/^FROM / { image = $2 } END { print image }' packages/server/Dockerfile)" \
+            node --expose-gc packages/server/scripts/soak.ts
       - name: Studio build
         run: pnpm --filter @agent-orb/studio build
 

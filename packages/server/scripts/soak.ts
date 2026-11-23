@@ -13,6 +13,8 @@
 // In Linux, on the server's base image (Node 22; the repo bind-mounted, the db's directory writable for WAL):
 //   docker run --rm --memory 1500m -v "$PWD":/repo:ro -w /repo node:22-alpine node --expose-gc packages/server/scripts/soak.ts
 //   docker run --rm --memory 1500m -v "$PWD":/repo:ro -v /path/to/dir:/data -w /repo node:22-alpine node --expose-gc packages/server/scripts/soak.ts --db /data/history.db
+// CI runs the first, with the Dockerfile's own image (#113): on glibc (the runner's own Node, or node:22-slim) the RSS sits 25-35 MB above musl's and jumped
+// 30-70 MB between rounds on unchanged code, failing PRs with no leak. The server ships on musl, so that is the allocator the limit is about.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
