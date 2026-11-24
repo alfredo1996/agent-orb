@@ -88,6 +88,7 @@ describe('the card', () => {
       const find = (n: unknown): ReactElement | undefined => (Array.isArray(n) ? n.map(find).find(Boolean) : !isValidElement(n) ? undefined : (n as ReactElement<{ children?: unknown }>).type === 'button' ? (n as ReactElement) : find((n as ReactElement<{ children?: unknown }>).props.children));
       (find(tree)!.props as { onClick: () => void }).onClick();
       expect(focus).toHaveBeenCalledTimes(1);
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true }); // as Live and Factory move focus: the page stays where it was
     } finally {
       vi.unstubAllGlobals();
     }

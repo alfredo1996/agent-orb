@@ -126,7 +126,7 @@ export function SinceCard({ since, projects, sessions, now }: { since: Since; pr
   // Caught up removes its own button, so the heading takes the focus (a keyboard user is not dropped on the page).
   const caught = () => {
     since.onCaughtUp();
-    globalThis.document?.getElementById('since-h')?.focus();
+    globalThis.document?.getElementById('since-h')?.focus({ preventScroll: true });
   };
   return (
     <section className="card hm-side" aria-label="Since you last looked">
