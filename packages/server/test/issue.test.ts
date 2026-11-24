@@ -41,7 +41,7 @@ const link = (session: string, ts: number, number: number) => ev(session, ts, 's
 const FIXED = { id: 'F1', severity: 'major', file: 'src/a.ts', fate: 'fixed' };
 const OPEN = { id: 'F2', severity: 'minor', file: 'src/b.ts', fate: 'open' };
 /** A findings report by an agent of a session of its own (a reviewer's: it wrote no file there). */
-const report = (ts: number, ref: { branch: string } | { pr: number }, list: object[] = [FIXED], by = 'rev') =>
+const report = (ts: number, ref: { branch: string } | { pr: number }, list: object[] = [], by = 'rev') =>
   ev(`s-${by}`, ts, 'findings.report', { ...ref, findings: list, dropped: 0 }, { agent_id: by, turn_id: `t-${by}-${ts}` });
 const gate = (ts: number, result: 'pass' | 'fail', commit = 'a1b2c3d') => ev('s-gate', ts, 'gate.report', { result, commit }, { agent_id: `g-${ts}`, turn_id: `tg-${ts}` });
 const pr = (number: number, over: object = {}) => ({ number, head: `fix/${number}`, head_oid: HEAD, merge_state: 'CLEAN', last_commit_at: T0, checks: [], bots: [], ...over });
@@ -96,7 +96,7 @@ describe('GET /api/issue: the story', () => {
     start('s-409', 'fix/409-retry'), ...call('s-409', T0 + MIN, { write: 'src/a.ts' }), ...call('s-409', T0 + 2 * MIN, { write: 'pnpm-lock.yaml' }),
     ...call('s-409', T0 + 3 * MIN, { test: 'fail' }), ...call('s-409', T0 + 4 * MIN, { test: 'pass' }), spend('s-409', T0 + MIN, 1),
     spawn('s-409', T0 + 20 * MIN, 'fx'), ...call('s-409', T0 + 21 * MIN, { agent: 'fx', write: 'src/b.ts' }), spend('s-409', T0 + 21 * MIN, 0.5, 'fx'),
-    report(T0 + 15 * MIN, { pr: 416 }, [FIXED, OPEN]),
+    report(T0 + 15 * MIN, { pr: 416 }, [OPEN]),
     read(T0 + 10 * MIN, [pr(416, { head: 'fix/409-retry', issue: 409, created_at: T0 + 10 * MIN })], issues(409)),
     read(NOW - MIN, [], issues(409)), merged(NOW - 5 * MIN, [{ number: 416, merged_at: T0 + 30 * MIN, head: 'fix/409-retry' }]),
   ];
@@ -115,7 +115,7 @@ describe('GET /api/issue: the story', () => {
   });
 
   it('a stage is first reached when its event happened, and a stage left and entered again is a later round: review, write, review', async () => {
-    await send(start('s-409', 'fix/409-retry'), ...call('s-409', T0 + 3 * MIN, { write: 'src/a.ts' }), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }), report(T0 + 4 * MIN, { branch: 'fix/409-retry' }, [FIXED], 'rev2'), read(NOW - MIN, [], issues(409)));
+    await send(start('s-409', 'fix/409-retry'), ...call('s-409', T0 + 3 * MIN, { write: 'src/a.ts' }), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }), report(T0 + 4 * MIN, { branch: 'fix/409-retry' }, [], 'rev2'), read(NOW - MIN, [], issues(409)));
     const p = await page(409);
     // the first review (+2) came before any write: Reviewing; the write at +3 is Fixing; the second review (+4): Reviewing again
     expect(Object.fromEntries(p.stages.map((s) => [s.stage, [s.at, s.again]]))).toEqual({
@@ -123,6 +123,16 @@ describe('GET /api/issue: the story', () => {
     });
     expect(p.stages.map((s) => s.stage)).toEqual(['queued', 'building', 'reviewing', 'fixing', 'gate', 'ready', 'merged']);
     expect(p.issue.stage).toBe('reviewing');
+  });
+
+  it('#118: a review and a fix that name the PR\'s branch (no PR when the review ran) reach the issue: Reviewing, then Fixing, and the fixer\'s Bash-only round is not a second review', async () => {
+    await send(start('s-409', 'fix/409-retry'), ...call('s-409', T0 + 3 * MIN, { write: 'src/a.ts' }),
+      report(T0 + 2 * MIN, { branch: 'fix/409-retry' }, [OPEN]), report(T0 + 4 * MIN, { branch: 'fix/409-retry' }, [{ ...OPEN, fate: 'fixed' }], 'fx'),
+      read(NOW - MIN, [pr(416, { head: 'fix/409-retry', issue: 409 })], issues(409)));
+    const p = await page(409);
+    expect(Object.fromEntries(p.stages.map((s) => [s.stage, [s.at, s.again]]))).toMatchObject({ reviewing: [T0 + 2 * MIN, []], fixing: [T0 + 3 * MIN, []] });
+    expect(p.issue.stage).toBe('fixing');
+    expect(p.story.filter((l: any) => l.agent === 's-rev:rev' || l.agent === 's-fx:fx').map((l: any) => [l.agent, l.reviewer, l.open])).toEqual([['s-rev:rev', true, 1], ['s-fx:fx', false, 0]]);
   });
 
   it('Gate and Ready each show one time, when their last condition was met, and are never reached again', async () => {

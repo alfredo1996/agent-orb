@@ -876,7 +876,7 @@ describe('finding_rounds (#106): every findings report, not the latest only', ()
   const F = (id: string, fate: string) => ({ id, severity: 'major', file: 'src/a.ts', fate });
 
   it('one row per report with its agent, reviewer mark, open count and dropped lines; finding_reports keeps the latest as it always did', () => {
-    plugin([start('plugin'), rep(T + 1000, [F('F1', 'open'), F('F2', 'fixed')]), rep(T + 5000, [F('F1', 'fixed')])]);
+    plugin([start('plugin'), rep(T + 1000, [F('F1', 'open')]), rep(T + 5000, [])]);
     expect(q('SELECT ref, ts, agent_id, reviewer, open, dropped FROM finding_rounds ORDER BY ts')).toEqual([
       { ref: 'fix/409-retry', ts: T + 1000, agent_id: 's-1:rev', reviewer: 1, open: 1, dropped: 1 },
       { ref: 'fix/409-retry', ts: T + 5000, agent_id: 's-1:rev', reviewer: 1, open: 0, dropped: 1 },
@@ -888,6 +888,38 @@ describe('finding_rounds (#106): every findings report, not the latest only', ()
     plugin([start('plugin'), ev('tool.call', { tool_use_id: 'w', tool: 'Edit', input_size: 1 }, { agent: 'dev', turn: 'td' }),
       ev('tool.result', { tool_use_id: 'w', success: true, duration_ms: 1, output_size: 1, files_touched: [{ path: 'a.ts', mode: 'write' }] }, { agent: 'dev', turn: 'td' }), rep(T + 9000, [F('F1', 'fixed')], { agent: 'dev' })]);
     expect(q('SELECT agent_id, reviewer FROM finding_rounds')).toEqual([{ agent_id: 's-1:dev', reviewer: 0 }]);
+  });
+
+  describe('#118: a report with a fixed or dismissed finding is a fixer\'s, whatever files its agent wrote', () => {
+    const reviewed = () => q('SELECT reviewed_at FROM finding_reports')[0]!.reviewed_at;
+    const marks = () => q('SELECT agent_id, reviewer FROM finding_rounds ORDER BY ts');
+    const review = rep(T + 1000, [F('F1', 'open')], { agent: 'rev' });
+
+    it('no role and no file written (a fixer that edited through Bash): a fixed finding is not the review, and reviewed_at does not move', () => {
+      plugin([start('plugin'), review, rep(T + 5000, [F('F1', 'fixed')], { agent: 'fx' })]);
+      expect(marks()).toEqual([{ agent_id: 's-1:rev', reviewer: 1 }, { agent_id: 's-1:fx', reviewer: 0 }]);
+      expect(reviewed()).toBe(T + 1000);
+    });
+
+    it('one dismissed finding is enough, and so is one fixed among open ones', () => {
+      plugin([start('plugin'), review, rep(T + 5000, [F('F1', 'open'), F('F2', 'dismissed')], { agent: 'fx' }), rep(T + 6000, [F('F1', 'open'), F('F3', 'open'), F('F4', 'fixed')], { agent: 'fy' })]);
+      expect(marks()).toEqual([{ agent_id: 's-1:rev', reviewer: 1 }, { agent_id: 's-1:fx', reviewer: 0 }, { agent_id: 's-1:fy', reviewer: 0 }]);
+      expect(reviewed()).toBe(T + 1000);
+    });
+
+    it('only open findings, or none, from an agent with no role and no file is still the review', () => {
+      plugin([start('plugin'), review, rep(T + 5000, [F('F1', 'open'), F('F2', 'open')], { agent: 'rv2' })]);
+      expect(marks()).toEqual([{ agent_id: 's-1:rev', reviewer: 1 }, { agent_id: 's-1:rv2', reviewer: 1 }]);
+      expect(reviewed()).toBe(T + 5000);
+    });
+
+    it('a role set at spawn wins: a reviewer is a review even when it marks a fix fixed, a developer is not even with only open findings', () => {
+      plugin([start('plugin'), ev('agent.spawn', { tool_use_id: 'toolu_a', agent_type: 'general-purpose', model: 'claude-opus-5-5', prompt_length: 10, declared_role: 'reviewer' }, { agent: 'a1' }),
+        ev('agent.spawn', { tool_use_id: 'toolu_b', agent_type: 'general-purpose', model: 'claude-opus-5-5', prompt_length: 10, declared_role: 'developer' }, { agent: 'a2' }),
+        rep(T + 1000, [F('F1', 'fixed')], { agent: 'a1' }), rep(T + 5000, [F('F1', 'open')], { agent: 'a2' })]);
+      expect(marks()).toEqual([{ agent_id: 's-1:a1', reviewer: 1 }, { agent_id: 's-1:a2', reviewer: 0 }]);
+      expect(reviewed()).toBe(T + 1000);
+    });
   });
 
   it('the same report again, as the same event or as another event of the same moment, is one row', () => {

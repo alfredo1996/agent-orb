@@ -255,12 +255,13 @@ function writeRows(db: Store, ev: Event[], source: Source) {
     }
   }
   // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it
-  // handled, not what the review found. The role is the reporting agent's, from its spawn; with none (#34: orb-role is optional), an agent that wrote no file is the reviewer.
-  // ponytail: a fixer that changed code through Bash alone (sed, a script) wrote no file here and counts as a reviewer. Read its Bash calls if that is ever seen.
+  // handled, not what the review found. The role is the reporting agent's, from its spawn; with none (#34: orb-role is optional), an agent that wrote no file and reports no finding
+  // `fixed` or `dismissed` is the reviewer (#118: a reviewer lists what is open; a fixer that edited through Bash wrote no file, but its report says what it fixed).
+  // ponytail: a reviewer that marks a fix it verified `fixed` reads as a fixer, and a fixer whose report lists only `open` findings (it fixed none) reads as a reviewer. Upgrade: the role at spawn, which wins.
   for (const e of only(ev, 'findings.report')) {
     const key = { project: projectId(e), ref: findingRef(e.data), ts: e.ts }; // its PR when the fence named one, else its branch
     const role = get(db, 'SELECT role FROM agents WHERE id = :id', { id: agentKey(e) })?.role;
-    const reviewer = role === 'reviewer' || (role !== 'developer' && !get(db, `SELECT 1 AS x FROM turns t JOIN tool_calls c ON c.turn_id = t.id
+    const reviewer = role === 'reviewer' || (role !== 'developer' && e.data.findings.every((f) => f.fate === 'open') && !get(db, `SELECT 1 AS x FROM turns t JOIN tool_calls c ON c.turn_id = t.id
       JOIN files_touched f ON f.tool_use_id = c.tool_use_id AND f.mode = 'write' WHERE t.agent_id = :id LIMIT 1`, { id: agentKey(e) }));
     run(db, `INSERT INTO finding_reports (project_id, ref, ts, dropped) VALUES (:project, :ref, :ts, :dropped)
              ON CONFLICT (project_id, ref) DO UPDATE SET ts = excluded.ts,

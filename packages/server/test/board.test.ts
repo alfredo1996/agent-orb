@@ -45,9 +45,9 @@ const spend = (session: string, ts: number, usd: number) =>
   ev(session, ts, 'turn.step', { model: SONNET, usage: { input: 0, output: Math.round(usd * 100_000), cache_read: 0, cache_creation: 0 }, stop_reason: 'end_turn', tool_use_ids: [] }, { turn_id: `t-spend-${session}-${ts}` });
 const link = (session: string, ts: number, number: number) => ev(session, ts, 'session.pr', { number });
 const FIXED = { id: 'F1', severity: 'major', file: 'src/a.ts', fate: 'fixed' };
-const report = (ts: number, ref: { branch: string } | { pr: number }, list: object[] = [FIXED], by = 'rev') => ev(`s-${by}`, ts, 'findings.report', { ...ref, findings: list, dropped: 0 }, { agent_id: by, turn_id: `t-${by}-${ts}` });
+const report = (ts: number, ref: { branch: string } | { pr: number }, list: object[] = [], by = 'rev') => ev(`s-${by}`, ts, 'findings.report', { ...ref, findings: list, dropped: 0 }, { agent_id: by, turn_id: `t-${by}-${ts}` });
 /** A findings report by a session's own main agent, which wrote code in it: the implementer or fixer reporting what it did, not a reviewer's. */
-const ownReport = (session: string, ts: number, ref: { branch: string } | { pr: number }, list: object[] = [FIXED]) => ev(session, ts, 'findings.report', { ...ref, findings: list, dropped: 0 }, { turn_id: `t-own-${session}-${ts}` });
+const ownReport = (session: string, ts: number, ref: { branch: string } | { pr: number }, list: object[] = []) => ev(session, ts, 'findings.report', { ...ref, findings: list, dropped: 0 }, { turn_id: `t-own-${session}-${ts}` });
 const gate = (ts: number, result: 'pass' | 'fail', commit = 'a1b2c3d') => ev('s-gate', ts, 'gate.report', { result, commit }, { agent_id: `g-${ts}`, turn_id: `tg-${ts}` });
 const pr = (number: number, over: object = {}) => ({ number, head: `fix/${number}`, head_oid: HEAD, merge_state: 'CLEAN', last_commit_at: T0, checks: [], bots: [], ...over });
 const read = (ts: number, prs: object[], issues?: object[], project: Project = MOBILE) => ev(project === MOBILE ? 'reader' : `reader-${project.cwd}`, ts, 'project.open_prs', { prs, ...(issues ? { issues } : {}) }, {}, project);
@@ -555,7 +555,7 @@ describe('GET /api/board: what it reads (R9, R11)', () => {
     const get = vi.fn(real.get);
     const spied = buildApp({ token: TOKEN, now: () => NOW, content: { ...real, get } });
     const send2 = (events: Event[]) => spied.inject({ method: 'POST', url: '/ingest', headers: { authorization: `Bearer ${TOKEN}` }, payload: { events } });
-    await send2([start('s-409', 'fix/409-retry'), ...write('s-409', T0 + MIN), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }, [{ ...FIXED, title: 'A title' }]), read(NOW0 - MIN, [pr(416, { head: 'fix/409-retry', issue: 409 })], issues(409))].flat() as Event[]);
+    await send2([start('s-409', 'fix/409-retry'), ...write('s-409', T0 + MIN), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }, [{ ...FIXED, fate: 'open', title: 'A title' }]), read(NOW0 - MIN, [pr(416, { head: 'fix/409-retry', issue: 409 })], issues(409))].flat() as Event[]);
     const b = (await spied.inject({ url: '/api/board?project=mobile-app' })).json() as Board;
     expect(b.issues[0]).toMatchObject({ number: 409, stage: 'reviewing', ready: false });
     expect(get).not.toHaveBeenCalled();
