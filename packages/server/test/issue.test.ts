@@ -115,7 +115,7 @@ describe('GET /api/issue: the story', () => {
   });
 
   it('a stage is first reached when its event happened, and a stage left and entered again is a later round: review, write, review', async () => {
-    await send(start('s-409', 'fix/409-retry'), ...call('s-409', T0 + 3 * MIN, { write: 'src/a.ts' }), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }), report(T0 + 4 * MIN, { branch: 'fix/409-retry' }, [FIXED], 'rev2'), read(NOW - MIN, [], issues(409)));
+    await send(start('s-409', 'fix/409-retry'), ...call('s-409', T0 + 3 * MIN, { write: 'src/a.ts' }), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }), report(T0 + 4 * MIN, { branch: 'fix/409-retry' }, [OPEN], 'rev2'), read(NOW - MIN, [], issues(409)));
     const p = await page(409);
     // the first review (+2) came before any write: Reviewing; the write at +3 is Fixing; the second review (+4): Reviewing again
     expect(Object.fromEntries(p.stages.map((s) => [s.stage, [s.at, s.again]]))).toEqual({
@@ -123,6 +123,16 @@ describe('GET /api/issue: the story', () => {
     });
     expect(p.stages.map((s) => s.stage)).toEqual(['queued', 'building', 'reviewing', 'fixing', 'gate', 'ready', 'merged']);
     expect(p.issue.stage).toBe('reviewing');
+  });
+
+  it('#118: a review and a fix that name the PR\'s branch (no PR when the review ran) reach the issue: Reviewing, then Fixing from the fixer\'s own round (it edited through Bash: no file write is recorded), which is not a second review', async () => {
+    await send(start('s-409', 'fix/409-retry'), ...call('s-409', T0 + MIN, { test: 'pass' }),
+      report(T0 + 2 * MIN, { branch: 'fix/409-retry' }, [OPEN]), report(T0 + 4 * MIN, { branch: 'fix/409-retry' }, [{ ...OPEN, fate: 'fixed' }], 'fx'),
+      read(NOW - MIN, [pr(416, { head: 'fix/409-retry', issue: 409 })], issues(409)));
+    const p = await page(409);
+    expect(Object.fromEntries(p.stages.map((s) => [s.stage, [s.at, s.again]]))).toMatchObject({ reviewing: [T0 + 2 * MIN, []], fixing: [T0 + 4 * MIN, []] });
+    expect(p.issue.stage).toBe('fixing');
+    expect(p.story.filter((l: any) => l.agent === 's-rev:rev' || l.agent === 's-fx:fx').map((l: any) => [l.agent, l.reviewer, l.open])).toEqual([['s-rev:rev', true, 1], ['s-fx:fx', false, 0]]);
   });
 
   it('Gate and Ready each show one time, when their last condition was met, and are never reached again', async () => {

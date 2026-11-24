@@ -491,7 +491,7 @@ export function FindingsSection({ pr, level = 4 }: { pr: FactoryPr; level?: Head
   return (
     <section className="dsec">
       <H>Findings</H>
-      {pr.dropped > 0 && <p className="dnote">{count(pr.dropped, 'line')} of the last report didn't parse: ask the reviewer to report it again.</p>}
+      {pr.dropped > 0 && <p className="dnote">{count(pr.dropped, 'line')} of the last report didn't parse: ask the reviewer to report it again, with a finding it has not listed before (a report that only confirms fixes cannot clear it).</p>}
       {unreported && <p className="dnote">No <code>orb-findings</code> block has reached this PR's branch yet, so ready can't be proved.</p>}
       {!pr.findings.length && !unreported && <p className="dnote">Reported, none found.</p>}
       {open.length > 0 && <div className="fgroup"><G>Open ({open.length})</G>{open.map((f) => <Row key={f.id} f={f} />)}</div>}

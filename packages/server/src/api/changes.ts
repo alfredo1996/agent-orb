@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ContentStore } from '../content-store.ts';
 import { all, each, type Store } from '../store/store.ts';
-import { lastWrites, newest, reachOf, readyAt, refsOf, reviewedAtOf } from './board.ts';
+import { lastWrites, newest, reachOf, readyAt, refsOf, reviewedAtOf, fixedAtOf } from './board.ts';
 import { projectsByRecent, RECENT_MS } from './home.ts';
 
 // v0.5 slice 4 (#108, Follow; the plan is #64): what changed across the projects Home shows (a session in the past 30 days) since a time, worked out on read from times already stored. Nothing is kept for it.
@@ -80,9 +80,11 @@ export function changesOf(store: Store, content: ContentStore, since: number, no
     const reachedGate = withGate.filter(([, p]) => p.gate!.result === 'pass' && p.gate!.ts > since);
     const written = reachedGate.length ? lastWrites(store, reaches, (i) => reachedGate.some(([x]) => x === i)) : new Map<number, number>();
     const reviewed = reachedGate.length ? reviewedAtOf(store, name) : new Map<string, number>();
+    const fixed = reachedGate.length ? fixedAtOf(store, name) : new Map<string, number>();
     for (const [issue, p] of reachedGate) {
-      const review = Math.max(0, ...refsOf(issue, prsOf, openOf, reaches.filter((r) => r.issues.has(issue))).map((r) => reviewed.get(r) ?? 0));
-      if (p.gate!.ts >= Math.max(written.get(issue) ?? 0, review) && readyNow.get(issue) !== p.gate!.ts) add({ at: p.gate!.ts, kind: 'gate', issue, pr: p.number, sha: p.headOid.slice(0, 7) });
+      const refs = refsOf(issue, prsOf, openOf, reaches.filter((r) => r.issues.has(issue)));
+      const review = Math.max(0, ...refs.map((r) => reviewed.get(r) ?? 0));
+      if (p.gate!.ts >= Math.max(written.get(issue) ?? 0, ...refs.map((r) => fixed.get(r) ?? 0), review) && readyNow.get(issue) !== p.gate!.ts) add({ at: p.gate!.ts, kind: 'gate', issue, pr: p.number, sha: p.headOid.slice(0, 7) });
     }
 
     // Picked up: a session that started after the mark and reaches an issue; one on no issue is not a change.

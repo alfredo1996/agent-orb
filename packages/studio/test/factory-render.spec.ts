@@ -129,7 +129,7 @@ describe('the findings sheet', () => {
     const unreported = { ...P414, reason: 'No findings reported yet', conditions: { ...P414.conditions, findings: cond(null, 'No findings reported yet') } };
     expect(plain(sheet(unreported))).toContain('No orb-findings block has reached this PR\'s branch yet, so ready can\'t be proved.');
     expect(plain(sheet(P414))).toContain('Reported, none found.');
-    expect(plain(sheet({ ...P418, dropped: 1 }))).toContain('1 line of the last report didn\'t parse: ask the reviewer to report it again.');
+    expect(plain(sheet({ ...P418, dropped: 1 }))).toContain('1 line of the last report didn\'t parse: ask the reviewer to report it again, with a finding it has not listed before (a report that only confirms fixes cannot clear it).');
   });
 });
 

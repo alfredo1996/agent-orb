@@ -766,10 +766,18 @@ export function prNumbersIn(text: string, remote: string | undefined): number[] 
 export const FATES = ['fixed', 'dismissed', 'open'] as const;
 export type Fate = (typeof FATES)[number];
 export type Finding = { id: string; severity: string; file: string; fate: Fate; title?: string; why?: string };
-export type Findings = { findings: Finding[]; dropped: number; pr?: number }; // pr: the PR the fence line named, ```orb-findings #416
+export type Findings = { findings: Finding[]; dropped: number; pr?: number; branch?: string }; // pr: the PR the fence line named, ```orb-findings #416; branch: the branch it named, ```orb-findings feat/108-since
 export type Gate = { result: 'pass' | 'fail'; commit: string };
 const FINDINGS_MAX = 500;
 // `id severity file fate`: an id of letters, digits and `._#-`, a lower-case severity, a path with no space, and one of the three fates. Anything else is dropped, not guessed.
+/**
+ * #118: a branch the fence may name, as git would take it (the spirit of `git check-ref-format`): one token, none of the characters git refuses, no `..` or `@{`, no leading `-` or `/`, no
+ * trailing `/`, `.` or `.lock`. Not `#` first (a malformed PR number) and not digits alone (`416` without its `#`): both name nothing, as before. Only what can never be a branch is refused here:
+ * whether this repository has it is asked of git when the report is sent (sendReport), so a word like `none` or `origin/feat/x` falls back to the checkout's branch there.
+ */
+function isBranch(s: string): boolean {
+  return s.length > 0 && !/[\s\x00-\x1f\x7f~^:?*[\\]/.test(s) && !/\.\.|@\{|\/\/|^[-/#.]|[/.]$|\.lock$|\.lock\/|\/\.|^\d+$/.test(s) && s !== '@';
+}
 const FINDING = /^([A-Za-z0-9][\w.#-]{0,39}) ([a-z]{1,20}) (\S{1,300}) (fixed|dismissed|open)$/;
 
 /**
@@ -782,7 +790,7 @@ export const FINDINGS_ASK = [
   '',
   'agent-orb, a plugin that records this session, asks one thing, only if your task was to review code or to fix review findings: end your final report with an',
   '`orb-findings` block, one finding a line, `id severity file fate | title`, then ` | why` for a dismissed one: fate is fixed, dismissed or open, severity one',
-  "lower-case word, file a path with no space. Put the PR's number for #N, or leave #N out if you don't know it. Keep the ids a review gave you, and write an",
+  "lower-case word, file a path with no space. Put the PR's number for #N or, with no PR yet, your branch's name. Keep the ids a review gave you, and write an",
   'empty block if your review found nothing. For example:',
   '```orb-findings #N',
   'F1 major src/auth/refresh.ts open | Two refreshes can run at once',
@@ -815,8 +823,9 @@ export function parseFindings(report: string, text: (s: string) => string | unde
   const block = lastBlock(report, 'orb-findings');
   if (!block) return undefined;
   const { body, info } = block;
-  // The fence may name the PR (owner, 2026-11-03, #27): `#416` exactly. Anything else there is no number, and the block still counts.
+  // The fence may name the PR (owner, 2026-11-03, #27): `#416` exactly; or (#118) the branch the work is on, for a review that runs before its PR exists. Anything else there names neither, and the block still counts.
   const pr = /^#[1-9]\d{0,8}$/.test(info) ? Number(info.slice(1)) : undefined;
+  const branch = !pr && isBranch(info) ? info : undefined;
   const findings: Finding[] = [];
   let dropped = 0;
   for (const raw of body.split('\n')) {
@@ -834,7 +843,7 @@ export function parseFindings(report: string, text: (s: string) => string | unde
     // the file is the agent's own words too: a URL can carry a secret
     findings.push({ id: m[1]!, severity: m[2]!, file: mask(m[3]!).slice(0, 300), fate, ...(t ? { title: t } : {}), ...(w ? { why: w } : {}) });
   }
-  return { findings, dropped, ...(pr ? { pr } : {}) };
+  return { findings, dropped, ...(pr ? { pr } : {}), ...(branch ? { branch } : {}) };
 }
 
 export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };

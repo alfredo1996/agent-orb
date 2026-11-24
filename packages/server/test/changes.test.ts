@@ -92,14 +92,14 @@ describe('GET /api/changes: one case per kind', () => {
 
   it('a reviewer\'s first round is a review with its open findings, and the next round of the same ref is a review again', async () => {
     await send(start('s-409', 'fix/409-retry', BEFORE - DAY), read(NOW - MIN, [], issues(409)),
-      report(BEFORE, 'fix/409-retry', [OPEN, FIXED]), report(AFTER, 'fix/409-retry', [OPEN, { ...OPEN, id: 'F3' }]), report(AFTER + 10 * MIN, 'fix/409-retry', [FIXED]));
+      report(BEFORE, 'fix/409-retry', [OPEN]), report(AFTER, 'fix/409-retry', [OPEN, { ...OPEN, id: 'F3' }]), report(AFTER + 10 * MIN, 'fix/409-retry', [FIXED, { ...OPEN, id: 'F4' }])); // a re-review: it verifies F1 and finds F4, a new id
     expect((await changes(SINCE)).filter((c) => c.kind.startsWith('review'))).toEqual([
-      { at: AFTER + 10 * MIN, kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Issue 409', open: 0 },
+      { at: AFTER + 10 * MIN, kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Issue 409', open: 1 },
       { at: AFTER, kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Issue 409', open: 2 },
     ]);
     // from before the first round, the first is a review and not "again"
     expect((await changes(BEFORE - 1)).filter((c) => c.kind.startsWith('review')).map((c) => [c.at, c.kind, c.open])).toEqual([
-      [AFTER + 10 * MIN, 'reviewed-again', 0], [AFTER, 'reviewed-again', 2], [BEFORE, 'reviewed', 1],
+      [AFTER + 10 * MIN, 'reviewed-again', 1], [AFTER, 'reviewed-again', 2], [BEFORE, 'reviewed', 1],
     ]);
     await edge('reviewed-again', AFTER);
   });
@@ -132,12 +132,20 @@ describe('GET /api/changes: one case per kind', () => {
     expect((await of('gate')).map((c) => c.at)).toEqual([AFTER + 8 * MIN]);
   });
 
+  it('#118: a fixer that edited through Bash and reported after the test run changed the code since: that run is not reaching the gate, the next pass is', async () => {
+    await send(read(NOW - MIN, [pr(416, { head: 'fix/409-retry', issue: 409, merge_state: 'BLOCKED' })], issues(409)), start('s-409', 'fix/409-retry', BEFORE - DAY), // not ready, so a gate is listed as one
+      report(BEFORE, 'fix/409-retry', [OPEN]), gate(AFTER), report(AFTER + MIN, 'fix/409-retry', [{ ...OPEN, fate: 'fixed' }], 'fix'));
+    expect(await of('gate')).toEqual([]);
+    await send(gate(AFTER + 2 * MIN));
+    expect((await of('gate')).map((c) => c.at)).toEqual([AFTER + 2 * MIN]);
+  });
+
   const READY = [start('s-412', 'fix/412-queue', BEFORE - DAY), write('s-412', BEFORE), report(BEFORE + MIN, 'fix/412-queue'), gate(AFTER)];
   it('ready is listed only when the issue is ready now, at the latest of its gate and its findings report', async () => {
     await send(...READY, read(NOW - MIN, [pr(418, { head: 'fix/412-queue', issue: 412 })], issues(412)));
     expect(await of('ready')).toEqual([{ at: AFTER, kind: 'ready', project: 'mobile-app', issue: 412, title: 'Issue 412', pr: 418 }]);
     await edge('ready', AFTER);
-    await send(report(AFTER + 20 * MIN, 'fix/412-queue')); // a report after the test run: ready from then, and the gate is no longer the last word
+    await send(report(AFTER + 20 * MIN, 'fix/412-queue', [{ ...OPEN, fate: 'fixed' }])); // a report (naming a new id: a review) after the test run: ready from then, and the gate is no longer the last word
     expect((await of('ready')).map((c) => c.at)).toEqual([AFTER + 20 * MIN]);
     expect(await of('gate')).toEqual([]);
   });
@@ -178,6 +186,12 @@ describe('GET /api/changes: one case per kind', () => {
     await send(start('s-409', 'fix/409-retry', BEFORE - DAY), read(NOW - MIN, [pr(416, { head: 'fix/409-retry', issue: 409 })], issues(409)),
       report(BEFORE, 'fix/409-retry', [OPEN]), ev('s-rev', AFTER, 'findings.report', { pr: 416, findings: [FIXED], dropped: 0 }, { agent_id: 'rev', turn_id: 't-rev-pr' }));
     expect((await changes(BEFORE - 1)).filter((c) => c.kind.startsWith('review')).map((c) => [c.at, c.kind])).toEqual([[AFTER, 'reviewed-again'], [BEFORE, 'reviewed']]);
+  });
+
+  it('#118: a fixer\'s round on the PR\'s branch (it marks findings fixed, wrote no file) is no review: one "reviewed", no "reviewed again"', async () => {
+    await send(start('s-409', 'fix/409-retry', BEFORE - DAY), read(NOW - MIN, [pr(416, { head: 'fix/409-retry', issue: 409 })], issues(409)),
+      report(BEFORE, 'fix/409-retry', [OPEN]), report(AFTER, 'fix/409-retry', [{ ...OPEN, fate: 'fixed' }], 'fx'));
+    expect((await changes(BEFORE - 1)).filter((c) => c.kind.startsWith('review'))).toEqual([{ at: BEFORE, kind: 'reviewed', project: 'mobile-app', issue: 409, title: 'Issue 409', pr: 416, open: 1 }]);
   });
 
   it('a session that started after the mark on an issue is picked up, with its branch; one before the mark is not', async () => {

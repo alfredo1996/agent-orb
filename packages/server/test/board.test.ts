@@ -45,6 +45,8 @@ const spend = (session: string, ts: number, usd: number) =>
   ev(session, ts, 'turn.step', { model: SONNET, usage: { input: 0, output: Math.round(usd * 100_000), cache_read: 0, cache_creation: 0 }, stop_reason: 'end_turn', tool_use_ids: [] }, { turn_id: `t-spend-${session}-${ts}` });
 const link = (session: string, ts: number, number: number) => ev(session, ts, 'session.pr', { number });
 const FIXED = { id: 'F1', severity: 'major', file: 'src/a.ts', fate: 'fixed' };
+/** A finding the earlier rounds never had: a report that names it is a review (#118), and the same ids with a fix are a fixer's. */
+const NEW = { id: 'F9', severity: 'minor', file: 'src/b.ts', fate: 'open' };
 const report = (ts: number, ref: { branch: string } | { pr: number }, list: object[] = [FIXED], by = 'rev') => ev(`s-${by}`, ts, 'findings.report', { ...ref, findings: list, dropped: 0 }, { agent_id: by, turn_id: `t-${by}-${ts}` });
 /** A findings report by a session's own main agent, which wrote code in it: the implementer or fixer reporting what it did, not a reviewer's. */
 const ownReport = (session: string, ts: number, ref: { branch: string } | { pr: number }, list: object[] = [FIXED]) => ev(session, ts, 'findings.report', { ...ref, findings: list, dropped: 0 }, { turn_id: `t-own-${session}-${ts}` });
@@ -108,7 +110,16 @@ describe('GET /api/board: the stage of each issue, from what the agents did', ()
     expect(await stageOf(409)).toBe('reviewing');
     await send(write('s-409', T0 + 5 * MIN));
     expect(await stageOf(409)).toBe('fixing');
-    await send(report(T0 + 6 * MIN, { branch: 'fix/409-retry' })); // the fixer's own report, or a re-review: the latest report is after the last write again
+    await send(report(T0 + 6 * MIN, { branch: 'fix/409-retry' }, [FIXED, NEW])); // a re-review (it names a new id): the latest review is after the last write again
+    expect(await stageOf(409)).toBe('reviewing');
+  });
+
+  it('#118: a fixer\'s round (it edited through Bash, so no file write is recorded) is the write after the review: Fixing, until a review that names a new id', async () => {
+    await send(start('s-409', 'fix/409-retry'), write('s-409', T0 + MIN), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }, [NEW]), read(NOW0 - MIN, [], issues(409)));
+    expect(await stageOf(409)).toBe('reviewing');
+    await send(report(T0 + 4 * MIN, { branch: 'fix/409-retry' }, [{ ...NEW, fate: 'fixed' }], 'fx'));
+    expect(await stageOf(409)).toBe('fixing');
+    await send(report(T0 + 6 * MIN, { branch: 'fix/409-retry' }, [{ ...NEW, fate: 'fixed' }, { ...NEW, id: 'F8' }], 'rev2'));
     expect(await stageOf(409)).toBe('reviewing');
   });
 
@@ -404,7 +415,7 @@ describe('GET /api/board: whose report counts as the review (R2)', () => {
   });
 
   it('the reviewer\'s latest report is the one that counts, and an older one arriving late does not move it back', async () => {
-    await send(start('s-409', 'fix/409-retry'), write('s-409', T0 + MIN), report(T0 + 5 * MIN, { branch: 'fix/409-retry' }), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }, [FIXED], 'rev2'), write('s-409', T0 + 4 * MIN), OPEN());
+    await send(start('s-409', 'fix/409-retry'), write('s-409', T0 + MIN), report(T0 + 5 * MIN, { branch: 'fix/409-retry' }, [NEW]), report(T0 + 2 * MIN, { branch: 'fix/409-retry' }, [FIXED], 'rev2'), write('s-409', T0 + 4 * MIN), OPEN());
     expect(await stageOf(409)).toBe('reviewing'); // the review at +5 is after the write at +4
   });
 });
