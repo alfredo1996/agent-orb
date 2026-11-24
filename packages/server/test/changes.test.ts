@@ -55,7 +55,7 @@ const send = async (...events: unknown[]) => {
   const r = await app.inject({ method: 'POST', url: '/ingest', headers: { authorization: `Bearer ${TOKEN}` }, payload: { events: flat } });
   expect(r.json()).toMatchObject({ accepted: flat.length, rejected: 0 });
 };
-type Change = { at: number; kind: string; project: string; issue: number; title?: string; pr?: number; who?: string; open?: number; sha?: string; branch?: string };
+type Change = { at: number; kind: string; project: string; issue: number; title?: string; pr?: number; open?: number; sha?: string; branch?: string };
 const changes = async (since: number): Promise<Change[]> => {
   const r = await app.inject({ url: `/api/changes?since=${since}` });
   expect(r.statusCode).toBe(200);
@@ -94,8 +94,8 @@ describe('GET /api/changes: one case per kind', () => {
     await send(start('s-409', 'fix/409-retry', BEFORE - DAY), read(NOW - MIN, [], issues(409)),
       report(BEFORE, 'fix/409-retry', [OPEN, FIXED]), report(AFTER, 'fix/409-retry', [OPEN, { ...OPEN, id: 'F3' }]), report(AFTER + 10 * MIN, 'fix/409-retry', [FIXED]));
     expect((await changes(SINCE)).filter((c) => c.kind.startsWith('review'))).toEqual([
-      { at: AFTER + 10 * MIN, kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Issue 409', who: 'rev', open: 0 },
-      { at: AFTER, kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Issue 409', who: 'rev', open: 2 },
+      { at: AFTER + 10 * MIN, kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Issue 409', open: 0 },
+      { at: AFTER, kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Issue 409', open: 2 },
     ]);
     // from before the first round, the first is a review and not "again"
     expect((await changes(BEFORE - 1)).filter((c) => c.kind.startsWith('review')).map((c) => [c.at, c.kind, c.open])).toEqual([

@@ -6,19 +6,21 @@ import { lastWrites, newest, reachOf, readyAt, refsOf, reviewedAtOf } from './bo
 import { projectsByRecent, RECENT_MS } from './home.ts';
 
 // v0.5 slice 4 (#108, Follow; the plan is #64): what changed across the projects Home shows (a session in the past 30 days) since a time, worked out on read from times already stored. Nothing is kept for it.
-//   GET /api/changes?since=<ms>  newest first, at most 50, and how many there were: { total, changes: [{ at, kind, project, issue, title?, pr?, who?, open?, sha?, branch? }] }
+//   GET /api/changes?since=<ms>  newest first, at most 50, and how many there were: { total, changes: [{ at, kind, project, issue, title?, pr?, open?, sha?, branch? }] }
 // kinds and their times: opened (the PR's created_at, else the first time a session linked it), merged (merged_at), reviewed and reviewed-again (a reviewer's finding_rounds row; again when it is not the ref's first),
 // gate (a passing test run on the open PR's head, not older than the issue's last write or review), ready (ready now: the later of its gate and its findings report), picked-up (a session that started on an issue).
 // `open`, `sha` and `branch` are what the studio's sub line says, from rows the query already has. A stall is not here: it is in /stream only, and the studio adds it.
 // A title is the one the plugin sent with Content on, so a project without it is listed by number, as on the board. A change is after the mark: `at > since`.
 // ponytail: an issue that became ready and stopped being ready before the owner looked is not listed (no readiness history is kept), and ready's time is the later of the gate and the report, not of the read that saw
 // the other two conditions. Upgrade: record when ready() first holds for each head.
+// ponytail: opened and merged are timed by GitHub and read every 5 minutes, only while a session runs, so a merge read just after the owner's mark can carry a time before it and is never listed. Ceiling: the spec's
+// "after the mark" is GitHub's clock, not ours. Upgrade: list by when a read first saw it (store that time), not GitHub's.
 // ponytail: each ask redoes Home's pass over the sessions (reachOf) and reads every finding round and session-PR link of the projects; measured on a 160 MB history, 8 ms warm and 17 ms cold, so kept. The rounds cannot be
 // bounded by `since` (whether one is a review again needs the earlier ones). Upgrade if it grows: share Home's reachOf pass with /api/home, or keep each issue's first review time.
 
 const Query = z.object({ since: z.string().regex(/^\d{1,16}$/).transform(Number) });
 const LIMIT = 50;
-export type Change = { at: number; kind: string; project: string; issue: number; title?: string; pr?: number; who?: string; open?: number; sha?: string; branch?: string };
+export type Change = { at: number; kind: string; project: string; issue: number; title?: string; pr?: number; open?: number; sha?: string; branch?: string };
 
 export function changesOf(store: Store, content: ContentStore, since: number, now: number) {
   const out: Change[] = [];
@@ -53,14 +55,14 @@ export function changesOf(store: Store, content: ContentStore, since: number, no
       for (const ref of refsOf(issue, prsOf, openOf, reaches.filter((r) => r.issues.has(issue)))) if (!issueOfRef.has(ref)) issueOfRef.set(ref, issue);
     }
     const seen = new Set<number>(); // the issues whose first reviewer round has come by, whichever ref it named
-    for (const r of all(store, `SELECT r.ref AS ref, r.ts AS ts, r.open AS open, substr(r.agent_id, instr(r.agent_id, ':') + 1) AS who FROM finding_rounds r JOIN projects p ON p.id = r.project_id
+    for (const r of all(store, `SELECT r.ref AS ref, r.ts AS ts, r.open AS open FROM finding_rounds r JOIN projects p ON p.id = r.project_id
       WHERE p.name = :project AND r.reviewer = 1 ORDER BY r.ts, r.agent_id`, { project: name })) {
       const issue = issueOfRef.get(r.ref);
       if (issue === undefined) continue;
       const again = seen.has(issue);
       seen.add(issue);
       const pr = r.ref.startsWith('pr:') ? Number(r.ref.slice(3)) : prOfRef.get(r.ref);
-      add({ at: r.ts, kind: again ? 'reviewed-again' : 'reviewed', issue, ...(pr !== undefined ? { pr } : {}), who: r.who, open: r.open });
+      add({ at: r.ts, kind: again ? 'reviewed-again' : 'reviewed', issue, ...(pr !== undefined ? { pr } : {}), open: r.open });
     }
 
     // Ready: as the issue page has it, with or without a test run of the plugin's. When the report came before the test run, ready is the one change: the board shows Ready, not the gate.
