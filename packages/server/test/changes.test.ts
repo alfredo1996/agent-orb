@@ -132,6 +132,14 @@ describe('GET /api/changes: one case per kind', () => {
     expect((await of('gate')).map((c) => c.at)).toEqual([AFTER + 8 * MIN]);
   });
 
+  it('#118: a fixer that edited through Bash and reported after the test run changed the code since: that run is not reaching the gate, the next pass is', async () => {
+    await send(read(NOW - MIN, [pr(416, { head: 'fix/409-retry', issue: 409, merge_state: 'BLOCKED' })], issues(409)), start('s-409', 'fix/409-retry', BEFORE - DAY), // not ready, so a gate is listed as one
+      report(BEFORE, 'fix/409-retry', [OPEN]), gate(AFTER), report(AFTER + MIN, 'fix/409-retry', [{ ...OPEN, fate: 'fixed' }], 'fix'));
+    expect(await of('gate')).toEqual([]);
+    await send(gate(AFTER + 2 * MIN));
+    expect((await of('gate')).map((c) => c.at)).toEqual([AFTER + 2 * MIN]);
+  });
+
   const READY = [start('s-412', 'fix/412-queue', BEFORE - DAY), write('s-412', BEFORE), report(BEFORE + MIN, 'fix/412-queue'), gate(AFTER)];
   it('ready is listed only when the issue is ready now, at the latest of its gate and its findings report', async () => {
     await send(...READY, read(NOW - MIN, [pr(418, { head: 'fix/412-queue', issue: 412 })], issues(412)));
