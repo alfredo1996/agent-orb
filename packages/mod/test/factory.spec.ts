@@ -86,11 +86,11 @@ describe('parseFindings', () => {
       expect(parseFindings(`\`\`\`orb-findings ${b}${body}`), b).toEqual({ branch: b, dropped: 0, findings: one });
     }
     expect(parseFindings(`\`\`\`orb-findings #416${body}`)).toEqual({ pr: 416, dropped: 0, findings: one }); // a PR is not a branch
-    // a space (two tokens), a leading -, /, or #, `..`, `@{`, a trailing / . or .lock, a control or ref-special character, a number with no #, or past the schema's 200
-    for (const b of ['feat/108 since', '-x', '/x', 'a..b', 'a@{u}', 'x.lock', 'x/', 'x.', 'a//b', 'a/.b', 'a~1', 'a^', 'a:b', 'a?', 'a*', 'a[1]', 'a\\b', 'a\x01b', '@', '#4x', '416', 'f'.repeat(201)]) {
+    // a space (two tokens), a leading -, /, # or ., `..`, `@{`, a trailing / . or .lock, a control or ref-special character, or a number with no #
+    for (const b of ['feat/108 since', '-x', '/x', 'a..b', 'a@{u}', 'x.lock', 'x/', 'x.', 'a//b', 'a/.b', 'a~1', 'a^', 'a:b', 'a?', 'a*', 'a[1]', 'a\\b', 'a\x01b', '@', '#4x', '416', '.hidden']) {
       expect(parseFindings(`\`\`\`orb-findings ${b}${body}`), b).toEqual({ dropped: 0, findings: one });
     }
-    expect(parseFindings(`\`\`\`orb-findings ${'f'.repeat(200)}${body}`)!.branch).toBe('f'.repeat(200));
+    expect(parseFindings(`\`\`\`orb-findings ${'f'.repeat(201)}${body}`)!.branch).toBe('f'.repeat(201)); // whether it is a branch is git's to say, and the report cuts it to 200
   });
 
   it('the last block counts: a report that quotes an earlier one ends with its own', () => {
@@ -107,7 +107,7 @@ describe('parseFindings', () => {
 describe('the findings paragraph (#34)', () => {
   it('asks for the format parseFindings reads: its own example parses whole, every fate, a dismissal with its reason, and #N on the fence is no number', () => {
     const r = parseFindings(FINDINGS_ASK, (s) => s);
-    expect(FINDINGS_ASK).toMatch(/the branch you worked on/); // #118: with no PR yet
+    expect(FINDINGS_ASK).toMatch(/your branch/); // #118: with no PR yet
     expect(r).toEqual({ dropped: 0, findings: [
       { id: 'F1', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open', title: expect.any(String) },
       { id: 'F2', severity: 'minor', file: 'src/net/client.ts', fate: 'dismissed', title: expect.any(String), why: expect.any(String) },

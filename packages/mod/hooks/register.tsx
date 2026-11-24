@@ -381,8 +381,10 @@ async function sendReport($: $, w: { agentId: string; turnId: string }, answer: 
   if (!ctx || excluded) return
   const f = parseFindings(answer, text)
   if (!f) return
-  // #118: a fence that names a branch (a review before its PR exists, in a worktree the session's checkout is not on) sends it in place of the checkout's, and git is not asked.
-  const branch = f.branch ?? await $.process.run(['git', '-C', checkout, 'branch', '--show-current']).then((r: { exitCode: number; stdout: string }) => (r.exitCode === 0 ? r.stdout.trim().slice(0, 200) : '')).catch(() => '') // cut as parseOpenPrs cuts a head, so the two still join
+  // #118: a fence that names a branch (a review before its PR exists, in a worktree the session's checkout is not on) sends it in place of the checkout's, when this repository has it (a worktree shares
+  // its refs): a word that is no branch (`none`, `origin/feat/x`, `HEAD`) falls back to the checkout's. Cut to 200 as the checkout's is.
+  const named = f.branch && await $.process.run(['git', '-C', checkout, 'rev-parse', '--verify', '--quiet', `refs/heads/${f.branch}`]).then((r: { exitCode: number }) => r.exitCode === 0).catch(() => false) ? f.branch.slice(0, 200) : ''
+  const branch = named || await $.process.run(['git', '-C', checkout, 'branch', '--show-current']).then((r: { exitCode: number; stdout: string }) => (r.exitCode === 0 ? r.stdout.trim().slice(0, 200) : '')).catch(() => '') // cut as parseOpenPrs cuts a head, so the two still join
   // A report that names its PR goes to it from anywhere; one that does not needs the branch to find its PR.
   if ((branch || f.pr) && ctx) push($, build.findingsReport(ctx, w, branch || undefined, f), { agent: label(w.agentId), kind: 'findings.report', detail: `${f.findings.length} on ${f.pr ? `#${f.pr}` : branch}` })
 }

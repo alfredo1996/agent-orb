@@ -772,11 +772,11 @@ const FINDINGS_MAX = 500;
 // `id severity file fate`: an id of letters, digits and `._#-`, a lower-case severity, a path with no space, and one of the three fates. Anything else is dropped, not guessed.
 /**
  * #118: a branch the fence may name, as git would take it (the spirit of `git check-ref-format`): one token, none of the characters git refuses, no `..` or `@{`, no leading `-` or `/`, no
- * trailing `/`, `.` or `.lock`. Not `#` first (a malformed PR number) and not digits alone (`416` without its `#`): both name nothing, as before. The schema's 200 characters.
+ * trailing `/`, `.` or `.lock`. Not `#` first (a malformed PR number) and not digits alone (`416` without its `#`): both name nothing, as before. Only what can never be a branch is refused here:
+ * whether this repository has it is asked of git when the report is sent (sendReport), so a word like `none` or `origin/feat/x` falls back to the checkout's branch there.
  */
-const BRANCH_MAX = 200;
 function isBranch(s: string): boolean {
-  return s.length > 0 && s.length <= BRANCH_MAX && !/[\s\x00-\x1f\x7f~^:?*[\\]/.test(s) && !/\.\.|@\{|\/\/|^[-/#]|[/.]$|\.lock$|\.lock\/|\/\.|^\d+$/.test(s) && s !== '@';
+  return s.length > 0 && !/[\s\x00-\x1f\x7f~^:?*[\\]/.test(s) && !/\.\.|@\{|\/\/|^[-/#.]|[/.]$|\.lock$|\.lock\/|\/\.|^\d+$/.test(s) && s !== '@';
 }
 const FINDING = /^([A-Za-z0-9][\w.#-]{0,39}) ([a-z]{1,20}) (\S{1,300}) (fixed|dismissed|open)$/;
 
@@ -790,7 +790,7 @@ export const FINDINGS_ASK = [
   '',
   'agent-orb, a plugin that records this session, asks one thing, only if your task was to review code or to fix review findings: end your final report with an',
   '`orb-findings` block, one finding a line, `id severity file fate | title`, then ` | why` for a dismissed one: fate is fixed, dismissed or open, severity one',
-  "lower-case word, file a path with no space. Put the PR's number for #N, else the branch you worked on, else nothing. Keep the ids a review gave you, and write an",
+  "lower-case word, file a path with no space. Put the PR's number for #N or, with no PR yet, your branch's name. Keep the ids a review gave you, and write an",
   'empty block if your review found nothing. For example:',
   '```orb-findings #N',
   'F1 major src/auth/refresh.ts open | Two refreshes can run at once',

@@ -48,7 +48,9 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
   // `git -C <dir> branch --show-current` answers per directory (the main checkout and a worktree are on different branches).
   const tree = { toplevel: '/repo', exitCode: 0, branches: {} as Record<string, string>, calls: [] as string[][],
     // #34: `git -C <dir> rev-parse HEAD` answers `head`, and `git -C <dir> status --porcelain --untracked-files=no` answers `status` (empty: a clean tree)
-    head: 'a1b2c3d'.padEnd(40, '9'), status: '', reads: [] as string[][] }
+    head: 'a1b2c3d'.padEnd(40, '9'), status: '', reads: [] as string[][],
+    // #118: `git -C <dir> rev-parse --verify --quiet refs/heads/<name>` exits 0 for a branch named in `refs`, 1 for any other
+    refs: [] as string[] }
   // v0.2 slice 3: `git hash-object --stdin-paths` answers one blob id per path on stdin (a stand-in for git's: a function of the file's text).
   const hash = { calls: [] as { argv: readonly string[]; cwd?: string; stdin?: string }[], exitCode: 0, hang: false }
   // v0.3 slice 2 (#42): `gh pr list --state merged ...` answers `gh.out` (a test sets it before the session starts), exits with `gh.exitCode`, never
@@ -126,6 +128,7 @@ function world(on: any, answer: (n: number) => Answer = () => ({ status: 200 }),
       tree.reads.push(e.argv)
       return { value: { exitCode: 0, stdout: e.argv[3] === 'status' ? tree.status : `${tree.head}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     }
+    if (e.argv[0] === 'git' && e.argv[4] === '--verify') return { value: { exitCode: tree.refs.includes(e.argv[6].replace('refs/heads/', '')) ? 0 : 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     if (e.argv[0] === 'git' && e.argv[3] === 'rev-parse') {
       tree.calls.push(e.argv)
       return { value: { exitCode: tree.exitCode, stdout: tree.exitCode ? 'fatal: not a git repository\n' : `${tree.toplevel}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
@@ -1694,21 +1697,26 @@ test('v0.4 slice 1: a fence that names its PR (#416) sends the number, with the 
   expect(reportsSent(w).map((e) => [e.data.pr, e.data.branch, e.data.findings.length])).toEqual([[416, 'feat/412-queue', 3], [416, undefined, 3]])
 })
 
-test('#118: a fence that names a branch sends that branch, not the checkout\'s; a fence that names a PR still sends the PR', opts, async ($: any, on: any) => {
+test('#118: a fence that names a branch the repository has sends it, not the checkout\'s; a word that is no branch, or a branch it lacks, falls back to the checkout\'s; a fence that names a PR still sends the PR', opts, async ($: any, on: any) => {
   on('turn.complete', () => ({ text: 'done' }))
   const w = world(on)
   w.files['/repo/.claude/agents/reviewer.md'] = REVIEWER
+  w.tree.refs.push('feat/108-since-you-looked')
   await boot($)
+  const fence = (name: string) => FINDINGS.replace('```orb-findings', `\`\`\`orb-findings ${name}`)
   // a review in a worktree, before its PR exists: the session's checkout is on another branch
-  await reportBy($, w, 'reviewer', FINDINGS.replace('```orb-findings', '```orb-findings feat/108-since-you-looked'), 'docs/home-issue-mockup')
-  // a fence that names neither (a space) falls back to the checkout's branch
-  w.engine.agentId = 'a-reviewer-2'
-  await $.agent.spawn(spawnArgs({ tool_use_id: 'toolu_r2', subagentType: 'reviewer' }))
-  await $.turn.start({ text: 'go', turnId: 't-r2', agentId: 'a-reviewer-2' })
-  await $.turn.complete({ turnId: 't-r2', agentId: 'a-reviewer-2', answer: FINDINGS.replace('```orb-findings', '```orb-findings feat/108 since'), durationMs: 1, isAborted: false, reason: 'answer' })
-  await w.clock.advance(2_000)
-  await w.clock.advance(2_000)
-  expect(reportsSent(w).map((e) => [e.data.pr, e.data.branch])).toEqual([[undefined, 'feat/108-since-you-looked'], [undefined, 'docs/home-issue-mockup']])
+  await reportBy($, w, 'reviewer', fence('feat/108-since-you-looked'), 'docs/home-issue-mockup')
+  // the ask's own "else nothing", a placeholder, a remote ref, a full ref, a quoted name, HEAD, and a branch this repository lacks: each falls back to the checkout's
+  let n = 0
+  for (const word of ['nothing', 'none', 'N', 'PR', 'unknown', 'n/a', 'origin/feat/108-since-you-looked', 'refs/heads/feat/108-since-you-looked', '`feat/108-since-you-looked`', 'HEAD', 'feat/other']) {
+    w.engine.agentId = `a-reviewer-${++n}`
+    await $.agent.spawn(spawnArgs({ tool_use_id: `toolu_r${n}`, subagentType: 'reviewer' }))
+    await $.turn.start({ text: 'go', turnId: `t-r${n}`, agentId: `a-reviewer-${n}` })
+    await $.turn.complete({ turnId: `t-r${n}`, agentId: `a-reviewer-${n}`, answer: fence(word), durationMs: 1, isAborted: false, reason: 'answer' })
+    await w.clock.advance(2_000)
+    await w.clock.advance(2_000)
+  }
+  expect(reportsSent(w).map((e) => [e.data.pr, e.data.branch])).toEqual([[undefined, 'feat/108-since-you-looked'], ...Array.from({ length: n }, () => [undefined, 'docs/home-issue-mockup'])])
 })
 
 const OPEN_LIST = JSON.stringify([{
