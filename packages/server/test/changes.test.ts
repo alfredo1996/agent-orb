@@ -152,6 +152,34 @@ describe('GET /api/changes: one case per kind', () => {
     expect(await of('ready')).toEqual([]); // ready when GitHub was last read, 11 minutes ago
   });
 
+  it('one PR with a created_at and a session link is opened at its created_at, not at the link', async () => {
+    await send(start('s-a', undefined, BEFORE - HOUR), link('s-a', AFTER + 10 * MIN, 416), read(NOW - MIN, [pr(416, { head: 'fix/409-retry', issue: 409, created_at: AFTER })], issues(409)));
+    expect((await of('opened')).map((c) => c.at)).toEqual([AFTER]);
+  });
+
+  it('a PR the latest read still lists open is not merged, whatever merged_at a later read gave it', async () => {
+    await send(read(NOW - MIN, [pr(405, { head: 'fix/403-banner', issue: 403 })], issues(403)), merged(NOW - 3 * MIN, [{ number: 405, merged_at: AFTER, head: 'fix/403-banner' }]));
+    expect(await of('merged')).toEqual([]);
+  });
+
+  it('a PR ready by its CI checks, with no test run of the plugin\'s, is ready from its findings report, as the issue page says', async () => {
+    const ci = { checks: [{ name: 'Unit tests', state: 'pass', ci: true }] };
+    await send(start('s-412', 'fix/412-queue', BEFORE - DAY), write('s-412', BEFORE), report(AFTER, 'fix/412-queue'), read(NOW - MIN, [pr(418, { head: 'fix/412-queue', issue: 412, created_at: BEFORE, ...ci })], issues(412)));
+    expect(await of('ready')).toEqual([{ at: AFTER, kind: 'ready', project: 'mobile-app', issue: 412, title: 'Issue 412', pr: 418 }]);
+    expect(await of('gate')).toEqual([]);
+  });
+
+  it('a report that came before the test run lists the issue as ready alone, not also as at the gate', async () => {
+    await send(...READY, read(NOW - MIN, [pr(418, { head: 'fix/412-queue', issue: 412 })], issues(412)));
+    expect((await changes(SINCE)).map((c) => [c.at, c.kind])).toEqual([[AFTER, 'ready']]);
+  });
+
+  it('a review of the branch and a later one naming the PR are the same issue\'s first review and a review again', async () => {
+    await send(start('s-409', 'fix/409-retry', BEFORE - DAY), read(NOW - MIN, [pr(416, { head: 'fix/409-retry', issue: 409 })], issues(409)),
+      report(BEFORE, 'fix/409-retry', [OPEN]), ev('s-rev', AFTER, 'findings.report', { pr: 416, findings: [FIXED], dropped: 0 }, { agent_id: 'rev', turn_id: 't-rev-pr' }));
+    expect((await changes(BEFORE - 1)).filter((c) => c.kind.startsWith('review')).map((c) => [c.at, c.kind])).toEqual([[AFTER, 'reviewed-again'], [BEFORE, 'reviewed']]);
+  });
+
   it('a session that started after the mark on an issue is picked up, with its branch; one before the mark is not', async () => {
     await send(start('s-415', 'fix/415-sync', AFTER), start('s-409', 'fix/409-retry', BEFORE), read(NOW - MIN, [], issues(415, 409)));
     expect(await of('picked-up')).toEqual([{ at: AFTER, kind: 'picked-up', project: 'mobile-app', issue: 415, title: 'Issue 415', branch: 'fix/415-sync' }]);
@@ -171,6 +199,7 @@ describe('GET /api/changes: the list', () => {
     const list = await changes(SINCE);
     expect(list.map((c) => c.issue)).toEqual(Array.from({ length: 50 }, (_, i) => 159 - i));
     expect(list.map((c) => c.at)).toEqual(Array.from({ length: 50 }, (_, i) => SINCE + (60 - i) * MIN));
+    expect((await app.inject({ url: `/api/changes?since=${SINCE}` })).json().total).toBe(60); // the list is cut at 50, and says how many there were
   });
 
   it('mixes the kinds by time across the projects Home shows, and leaves out a project with no session in 30 days', async () => {
@@ -190,6 +219,6 @@ describe('GET /api/changes: the list', () => {
 
   it('asks for since, a whole number', async () => {
     for (const q of ['', '?since=', '?since=yesterday', '?since=-5', '?since=1.5']) expect((await app.inject({ url: `/api/changes${q}` })).statusCode).toBe(400);
-    expect((await app.inject({ url: '/api/changes?since=0' })).json()).toEqual({ changes: [] });
+    expect((await app.inject({ url: '/api/changes?since=0' })).json()).toEqual({ changes: [], total: 0 });
   });
 });

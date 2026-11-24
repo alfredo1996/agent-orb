@@ -35,6 +35,9 @@ export const PRS_OF = `SELECT r.number AS number, r.issue AS issue, r.head AS he
 /** A session that reaches issues: `issues` are those it reaches (its branch's alone, else those of the PRs it linked), and `at` its own last event, which is how recently it reached each. */
 export type Reach = { id: string; branch: string | null; at: number; own: number | null; links: Link[]; issues: Set<number> };
 type PrRow = { number: number; head: string | null; mergedAt: number | null; createdAt: number | null };
+/** When an open PR became ready: its test run and findings report, the later, and with no test run (ready by CI checks) the later of its report and when it opened. Shared by the issue page and GET /api/changes. */
+export const readyAt = (p: { gate: { ts: number } | null; reportAt: number | null }, created: number | null) =>
+  p.gate ? Math.max(p.gate.ts, p.reportAt ?? 0) : Math.max(p.reportAt ?? 0, created ?? 0);
 export const newest = <T extends { number: number }>(list: T[] | undefined) => list?.reduce<T | undefined>((a, b) => (a && a.number > b.number ? a : b), undefined);
 
 /**

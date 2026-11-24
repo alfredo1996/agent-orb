@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { ContentStore } from '../content-store.ts';
 import { all, get, type Row, type Store } from '../store/store.ts';
 import { budgetOf, openIssues, windowIssue } from './budget.ts';
-import { boardOf, newest, reachOf, refsOf, stageOf, STAGES, verdict, type Stage, type StageFacts } from './board.ts';
+import { boardOf, newest, readyAt, reachOf, refsOf, stageOf, STAGES, verdict, type Stage, type StageFacts } from './board.ts';
 import { zone } from './ledger.ts';
 import { linksOf } from './links.ts';
 
@@ -100,8 +100,8 @@ export function issueOf(store: Store, content: ContentStore, project: string, nu
   if (openPr?.gate) {
     const g = openPr.gate.ts;
     moment(g, 3, (f) => (f.gate = g));
-    if (openPr.ready) moment(Math.max(g, openPr.reportAt ?? 0), 4, (f) => (f.ready = true));
-  } else if (openPr?.ready) moment(Math.max(openPr.reportAt ?? 0, created ?? 0), 4, (f) => (f.ready = true));
+    if (openPr.ready) moment(readyAt(openPr, created), 4, (f) => (f.ready = true));
+  } else if (openPr?.ready) moment(readyAt(openPr, created), 4, (f) => (f.ready = true));
   if (merged?.mergedAt != null) { const at = merged.mergedAt; moment(at, 5, (f) => (f.merged = true)); }
   // An open PR exists from when it opened; one the read gave no time for, from the earliest moment of the issue (else Reviewing would be reached without Building), or now.
   if (openPr) moment(created ?? moments.reduce((t, m) => Math.min(t, m.ts), now), 0, (f) => (f.exists = true));
