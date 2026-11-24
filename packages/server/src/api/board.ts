@@ -164,12 +164,25 @@ export function reviewedAtOf(store: Store, project: string) {
   return reviewedAt;
 }
 
+/**
+ * The last round each ref has had from a fixer that recorded no file write (#118: it edited through Bash): its report is the only time it wrote, so the stage rule reads it as a write (the board, the issue
+ * page and GET /api/changes all read through this and lastWrites). A fixer with a recorded write is already in lastWrites, and its late report must not undo a test run after the fix.
+ * ponytail: a Bash-only fixer that ran the tests before it reported reads as Fixing until the next test run, its report being the only time known. Upgrade: read its Bash calls.
+ */
+export function fixedAtOf(store: Store, project: string) {
+  const fixedAt = new Map<string, number>();
+  for (const r of each(store, `SELECT r.ref AS ref, max(r.ts) AS ts FROM finding_rounds r JOIN projects p ON p.id = r.project_id WHERE p.name = :project AND r.reviewer = 0
+    AND NOT EXISTS (SELECT 1 FROM turns t JOIN tool_calls c ON c.turn_id = t.id JOIN files_touched f ON f.tool_use_id = c.tool_use_id AND f.mode = 'write' WHERE t.agent_id = r.agent_id) GROUP BY r.ref`, { project })) fixedAt.set(r.ref, r.ts);
+  return fixedAt;
+}
+
 /** `reach` is for a caller that has read it already (the issue page, #106, which gives the stage of the issues it relates to), so the pass over the sessions is made once. */
 export function boardOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number, reach = reachOf(store, content, project, chosenParam, now)) {
   const { open, reaches, counts, milestone, mode, prsOf, openOf, mergedPr, shown } = reach;
 
   const lastWrite = lastWrites(store, reaches, (i) => shown.has(i));
   const reviewedAt = reviewedAtOf(store, project);
+  const fixedAt = fixedAtOf(store, project);
 
   const rows = [...shown].map(([number, outside]) => {
     const sessions = reaches.filter((r) => r.issues.has(number)).toSorted((a, b) => b.at - a.at);
@@ -177,7 +190,7 @@ export function boardOf(store: Store, content: ContentStore, project: string, ch
     const merged = mergedPr(number);
     const refs = refsOf(number, prsOf, openOf, sessions);
     const review = Math.max(0, ...refs.map((r) => reviewedAt.get(r) ?? 0)) || undefined;
-    const written = lastWrite.get(number);
+    const written = Math.max(lastWrite.get(number) ?? 0, ...refs.map((r) => fixedAt.get(r) ?? 0)) || undefined;
 
     const stage = stageOf({ exists: sessions.length > 0 || !!pr, written, review, gate: pr?.gate?.ts, ready: pr?.ready, merged: !!merged });
     const known = open.get(number);

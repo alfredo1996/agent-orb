@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { ContentStore } from '../content-store.ts';
 import { all, get, type Row, type Store } from '../store/store.ts';
 import { budgetOf, openIssues, windowIssue } from './budget.ts';
-import { boardOf, newest, readyAt, reachOf, refsOf, stageOf, STAGES, verdict, type Stage, type StageFacts } from './board.ts';
+import { boardOf, newest, readyAt, reachOf, refsOf, fixedAtOf, stageOf, STAGES, verdict, type Stage, type StageFacts } from './board.ts';
 import { zone } from './ledger.ts';
 import { linksOf } from './links.ts';
 
@@ -40,11 +40,13 @@ export function issueOf(store: Store, content: ContentStore, project: string, nu
     for (const r of all(store, `SELECT f.reviewed_at AS ts FROM finding_reports f JOIN projects p ON p.id = f.project_id WHERE p.name = :project AND f.ref = :ref AND f.reviewed_at IS NOT NULL`, { project, ref })) reviews.push(r.ts);
   }
   for (const r of rounds) if (r.reviewer) reviews.push(r.at);
+  const fixes = [...fixedAtOf(store, project)].filter(([ref]) => refs.includes(ref)).map(([, ts]) => ts); // #118: a Bash-only fixer's last round is a write for the stage, as on the board
 
   // What happened, as moments for the stage rule; and the runs of the sessions on the issue.
   const moments: { ts: number; order: number; apply: (f: StageFacts) => void }[] = [];
   const moment = (ts: number, order: number, apply: (f: StageFacts) => void) => moments.push({ ts, order, apply });
   for (const ts of reviews) moment(ts, 2, (f) => (f.review = Math.max(f.review ?? 0, ts)));
+  for (const ts of fixes) moment(ts, 1, (f) => (f.written = Math.max(f.written ?? 0, ts)));
   type Own = { writes: Row[]; tests: Row[]; costs: Row[]; first: number; last: number }; // an agent's rows on the issue
   type Run = { at: number; last: number; session: string; agent: { id: string; type: string | null; role: string | null; model: string | null }; paths: string[]; tests: { runs: number; failed: number }; usd: number; partial: boolean };
   const runs: Run[] = [];
