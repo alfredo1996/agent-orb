@@ -110,6 +110,15 @@ describe('live state', () => {
     expect(agents(s).find((a: any) => a.id === 'main').stalledSince).toBeUndefined();
   });
 
+  it('#108: a stall also carries the time the plugin raised it (stall.start\'s own time, later than `since`), and it goes with the stall', () => {
+    const s = newLive();
+    const raised = T + 15 * 60_000;
+    applyEvents(s, [...session(), ev('stall.start', { since: T }, {}, raised)]);
+    expect(agents(s).find((a: any) => a.id === 'main')).toMatchObject({ stalledSince: T, stalledAt: raised });
+    applyEvents(s, [ev('stall.end', { since: T }, {}, raised + 1000)]);
+    expect(agents(s).find((a: any) => a.id === 'main').stalledAt).toBeUndefined();
+  });
+
   it('stall.end still clears a stall', () => {
     const s = newLive();
     applyEvents(s, [...session(), stall()]);
