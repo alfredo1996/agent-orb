@@ -33,7 +33,7 @@ export const PRS_OF = `SELECT r.number AS number, r.issue AS issue, r.head AS he
   JOIN pull_requests r ON r.id >= p.id || ':' AND r.id < p.id || ';' AND r.id = p.id || ':' || r.number WHERE p.name = :project`;
 
 /** A session that reaches issues: `issues` are those it reaches (its branch's alone, else those of the PRs it linked), and `at` its own last event, which is how recently it reached each. */
-type Reach = { id: string; branch: string | null; at: number; own: number | null; links: Link[]; issues: Set<number> };
+export type Reach = { id: string; branch: string | null; at: number; own: number | null; links: Link[]; issues: Set<number> };
 type PrRow = { number: number; head: string | null; mergedAt: number | null; createdAt: number | null };
 export const newest = <T extends { number: number }>(list: T[] | undefined) => list?.reduce<T | undefined>((a, b) => (a && a.number > b.number ? a : b), undefined);
 
@@ -130,15 +130,15 @@ export function verdict(stage: Stage, pr: { ready: boolean; reason: string | nul
   return { ...(stage === 'gate' && pr?.conditions.gate.ok === false ? { bad: true as const } : {}), ready: merged || !pr ? null : pr.ready, reason: merged || !pr ? null : pr.reason };
 }
 
-/** `reach` is for a caller that has read it already (the issue page, #106, which gives the stage of the issues it relates to), so the pass over the sessions is made once. */
-export function boardOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number, reach = reachOf(store, content, project, chosenParam, now)) {
-  const { open, reaches, counts, milestone, mode, prsOf, openOf, mergedPr, shown } = reach;
-
-  // The last file written for each shown issue: all of a session's on the issue's branch, else those inside the window of a PR the session linked. GET /api/links (#66) gives an issue its files by the same rule.
+/**
+ * The last file written for each wanted issue: all of a session's on the issue's branch, else those inside the window of a PR the session linked. GET /api/links (#66) gives an issue its files by the same
+ * rule. Shared with GET /api/changes (#108), which asks for the few issues whose gate came after its mark.
+ */
+export function lastWrites(store: Store, reaches: Reach[], wanted: (issue: number) => boolean) {
   const lastWrite = new Map<number, number>();
   const bump = (issue: number, ts: number) => lastWrite.set(issue, Math.max(lastWrite.get(issue) ?? 0, ts));
   for (const r of reaches) {
-    if (![...r.issues].some((i) => shown.has(i))) continue;
+    if (![...r.issues].some(wanted)) continue;
     if (r.own !== null) {
       const last = get(store, `SELECT max(c.ts) AS last ${WRITES}`, { id: r.id })?.last;
       if (last != null) bump(r.own, last);
@@ -149,11 +149,24 @@ export function boardOf(store: Store, content: ContentStore, project: string, ch
       }
     }
   }
-  // The last review each ref (a PR as `pr:416`, or a branch) has had: the reviewer's report, which the writer marks. A report by an agent that wrote code (a fixer saying what it did) is not a review.
+  return lastWrite;
+}
+
+/** The last review each ref (a PR as `pr:416`, or a branch) has had: the reviewer's report, which the writer marks. A report by an agent that wrote code (a fixer saying what it did) is not a review. */
+export function reviewedAtOf(store: Store, project: string) {
   const reviewedAt = new Map<string, number>();
   for (const r of each(store, 'SELECT f.ref AS ref, f.reviewed_at AS ts FROM finding_reports f JOIN projects p ON p.id = f.project_id WHERE p.name = :project AND f.reviewed_at IS NOT NULL', { project })) {
     reviewedAt.set(r.ref, Math.max(reviewedAt.get(r.ref) ?? 0, r.ts));
   }
+  return reviewedAt;
+}
+
+/** `reach` is for a caller that has read it already (the issue page, #106, which gives the stage of the issues it relates to), so the pass over the sessions is made once. */
+export function boardOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number, reach = reachOf(store, content, project, chosenParam, now)) {
+  const { open, reaches, counts, milestone, mode, prsOf, openOf, mergedPr, shown } = reach;
+
+  const lastWrite = lastWrites(store, reaches, (i) => shown.has(i));
+  const reviewedAt = reviewedAtOf(store, project);
 
   const rows = [...shown].map(([number, outside]) => {
     const sessions = reaches.filter((r) => r.issues.has(number)).toSorted((a, b) => b.at - a.at);
