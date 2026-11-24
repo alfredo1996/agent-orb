@@ -255,14 +255,30 @@ function writeRows(db: Store, ev: Event[], source: Source) {
     }
   }
   // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it
-  // handled, not what the review found. The role is the reporting agent's, from its spawn; with none (#34: orb-role is optional), an agent that wrote no file and reports no finding
-  // `fixed` or `dismissed` is the reviewer (#118: a reviewer lists what is open; a fixer that edited through Bash wrote no file, but its report says what it fixed).
-  // ponytail: a reviewer that marks a fix it verified `fixed` reads as a fixer, and a fixer whose report lists only `open` findings (it fixed none) reads as a reviewer. Upgrade: the role at spawn, which wins.
+  // handled, not what the review found. The role is the reporting agent's, from its spawn; with none (#34: orb-role is optional), the owner's rule (#118, 24 Nov) reads the report: one that names a
+  // finding id the issue's earlier rounds never had is a review; otherwise one with a `fixed` or `dismissed` finding is a fixer's (it edited through Bash and wrote no file, but says what it fixed);
+  // otherwise, an agent that wrote no file is the reviewer. "Earlier rounds" are the ids stored with an earlier ts under the report's ref and its linked refs (a `pr:N` and that PR's head branch, both ways).
+  // A first report with no earlier ids is all new ids, so it is a review even with `fixed` ones; an agent that wrote a file with no role is a fixer's whatever it names (as before #118).
+  // ponytail: a re-review that only confirms fixes (no new id) reads as a fixer's, so it cannot clear a "line didn't parse" (`dropped`) count; the role at spawn, which wins, or one new id, does. Upgrade: read the round's text.
+  const linkedRefs = (project: string, ref: string) => {
+    const refs = new Set([ref]);
+    if (ref.startsWith('pr:')) {
+      const n = Number(ref.slice(3));
+      for (const r of [...all(db, 'SELECT head FROM pull_requests WHERE project_id = :project AND number = :n AND head IS NOT NULL', { project, n }), ...all(db, 'SELECT head FROM open_prs WHERE project_id = :project AND number = :n AND head IS NOT NULL', { project, n })]) refs.add(r.head);
+    } else {
+      for (const r of [...all(db, 'SELECT number FROM pull_requests WHERE project_id = :project AND head = :ref', { project, ref }), ...all(db, 'SELECT number FROM open_prs WHERE project_id = :project AND head = :ref', { project, ref })]) refs.add(`pr:${r.number}`);
+    }
+    return [...refs];
+  };
   for (const e of only(ev, 'findings.report')) {
     const key = { project: projectId(e), ref: findingRef(e.data), ts: e.ts }; // its PR when the fence named one, else its branch
     const role = get(db, 'SELECT role FROM agents WHERE id = :id', { id: agentKey(e) })?.role;
-    const reviewer = role === 'reviewer' || (role !== 'developer' && e.data.findings.every((f) => f.fate === 'open') && !get(db, `SELECT 1 AS x FROM turns t JOIN tool_calls c ON c.turn_id = t.id
-      JOIN files_touched f ON f.tool_use_id = c.tool_use_id AND f.mode = 'write' WHERE t.agent_id = :id LIMIT 1`, { id: agentKey(e) }));
+    let reviewer = role === 'reviewer';
+    if (!reviewer && role !== 'developer' && !get(db, `SELECT 1 AS x FROM turns t JOIN tool_calls c ON c.turn_id = t.id
+      JOIN files_touched f ON f.tool_use_id = c.tool_use_id AND f.mode = 'write' WHERE t.agent_id = :id LIMIT 1`, { id: agentKey(e) })) {
+      const known = new Set(linkedRefs(key.project, key.ref).flatMap((ref) => all(db, 'SELECT id FROM findings WHERE project_id = :project AND ref = :ref AND ts < :ts', { project: key.project, ref, ts: e.ts }).map((r) => r.id)));
+      reviewer = e.data.findings.some((f) => !known.has(f.id)) || e.data.findings.every((f) => f.fate === 'open');
+    }
     run(db, `INSERT INTO finding_reports (project_id, ref, ts, dropped) VALUES (:project, :ref, :ts, :dropped)
              ON CONFLICT (project_id, ref) DO UPDATE SET ts = excluded.ts,
                dropped = CASE WHEN :reviewer THEN excluded.dropped ELSE max(finding_reports.dropped, excluded.dropped) END WHERE excluded.ts >= finding_reports.ts`,

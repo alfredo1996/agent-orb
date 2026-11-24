@@ -876,10 +876,10 @@ describe('finding_rounds (#106): every findings report, not the latest only', ()
   const F = (id: string, fate: string) => ({ id, severity: 'major', file: 'src/a.ts', fate });
 
   it('one row per report with its agent, reviewer mark, open count and dropped lines; finding_reports keeps the latest as it always did', () => {
-    plugin([start('plugin'), rep(T + 1000, [F('F1', 'open')]), rep(T + 5000, [])]);
+    plugin([start('plugin'), rep(T + 1000, [F('F1', 'open'), F('F2', 'fixed')]), rep(T + 5000, [F('F1', 'fixed'), F('F3', 'open')])]);
     expect(q('SELECT ref, ts, agent_id, reviewer, open, dropped FROM finding_rounds ORDER BY ts')).toEqual([
       { ref: 'fix/409-retry', ts: T + 1000, agent_id: 's-1:rev', reviewer: 1, open: 1, dropped: 1 },
-      { ref: 'fix/409-retry', ts: T + 5000, agent_id: 's-1:rev', reviewer: 1, open: 0, dropped: 1 },
+      { ref: 'fix/409-retry', ts: T + 5000, agent_id: 's-1:rev', reviewer: 1, open: 1, dropped: 1 },
     ]);
     expect(q('SELECT ref, ts, dropped, reviewed_at FROM finding_reports')).toEqual([{ ref: 'fix/409-retry', ts: T + 5000, dropped: 1, reviewed_at: T + 5000 }]);
   });
@@ -893,7 +893,7 @@ describe('finding_rounds (#106): every findings report, not the latest only', ()
   describe('#118: a report with a fixed or dismissed finding is a fixer\'s, whatever files its agent wrote', () => {
     const reviewed = () => q('SELECT reviewed_at FROM finding_reports')[0]!.reviewed_at;
     const marks = () => q('SELECT agent_id, reviewer FROM finding_rounds ORDER BY ts');
-    const review = rep(T + 1000, [F('F1', 'open')], { agent: 'rev' });
+    const review = rep(T + 1000, [F('F1', 'open'), F('F2', 'open'), F('F3', 'open'), F('F4', 'open')], { agent: 'rev' });
 
     it('no role and no file written (a fixer that edited through Bash): a fixed finding is not the review, and reviewed_at does not move', () => {
       plugin([start('plugin'), review, rep(T + 5000, [F('F1', 'fixed')], { agent: 'fx' })]);
@@ -911,6 +911,40 @@ describe('finding_rounds (#106): every findings report, not the latest only', ()
       plugin([start('plugin'), review, rep(T + 5000, [F('F1', 'open'), F('F2', 'open')], { agent: 'rv2' })]);
       expect(marks()).toEqual([{ agent_id: 's-1:rev', reviewer: 1 }, { agent_id: 's-1:rv2', reviewer: 1 }]);
       expect(reviewed()).toBe(T + 5000);
+    });
+
+    const onPr = (ts: number, findings: object[], agent: string, dropped = 0) => ev('findings.report', { pr: 416, findings, dropped }, { agent, ts });
+    const openPr = (head = 'fix/409-retry') => ev('project.open_prs', { prs: [{ number: 416, head, head_oid: 'a'.repeat(40), merge_state: 'CLEAN', last_commit_at: T, checks: [], bots: [] }] }, { ts: T + 500 });
+
+    it('a report that names an id the earlier rounds never had is a review, even marking others fixed; one that names only known ids with a fix is a fixer\'s', () => {
+      plugin([start('plugin'), review, rep(T + 5000, [F('F1', 'fixed'), F('F9', 'open')], { agent: 'rv2' }), rep(T + 6000, [F('F1', 'fixed'), F('F9', 'fixed')], { agent: 'fx' })]);
+      expect(marks()).toEqual([{ agent_id: 's-1:rev', reviewer: 1 }, { agent_id: 's-1:rv2', reviewer: 1 }, { agent_id: 's-1:fx', reviewer: 0 }]);
+      expect(reviewed()).toBe(T + 5000);
+    });
+
+    it('a first report on an issue (no earlier ids) is a review even when it marks findings fixed: all its ids are new', () => {
+      plugin([start('plugin'), rep(T + 1000, [F('F1', 'fixed')], { agent: 'rv2' })]);
+      expect(marks()).toEqual([{ agent_id: 's-1:rv2', reviewer: 1 }]);
+    });
+
+    it('the ids known are those of the linked refs: a review under the branch, a fix under the PR it heads (and the reverse), both known; with no PR read the PR ref is its own issue', () => {
+      plugin([start('plugin'), openPr(), review, onPr(T + 5000, [F('F1', 'fixed')], 'fx')]);
+      expect(marks()).toEqual([{ agent_id: 's-1:rev', reviewer: 1 }, { agent_id: 's-1:fx', reviewer: 0 }]);
+      db.exec('DELETE FROM findings; DELETE FROM finding_rounds; DELETE FROM finding_reports');
+      plugin([onPr(T + 6000, [F('F1', 'open')], 'rv3'), rep(T + 7000, [F('F1', 'fixed')], { agent: 'fy' })]);
+      expect(marks()).toEqual([{ agent_id: 's-1:rv3', reviewer: 1 }, { agent_id: 's-1:fy', reviewer: 0 }]);
+    });
+
+    it('the PR ref and the branch are not linked until a PR read says so: the same fix is then a review', () => {
+      plugin([start('plugin'), review, onPr(T + 5000, [F('F1', 'fixed')], 'fx')]);
+      expect(marks()).toEqual([{ agent_id: 's-1:rev', reviewer: 1 }, { agent_id: 's-1:fx', reviewer: 1 }]);
+    });
+
+    it('a re-review with a new id clears a dropped line; one that only confirms fixes (no new id) cannot', () => {
+      plugin([start('plugin'), review, rep(T + 5000, [F('F1', 'fixed')], { agent: 'fx' })]);
+      expect(q('SELECT dropped FROM finding_reports')).toEqual([{ dropped: 1 }]);
+      plugin([ev('findings.report', { branch: 'fix/409-retry', findings: [F('F1', 'fixed'), F('F9', 'open')], dropped: 0 }, { agent: 'rv2', ts: T + 6000 })]);
+      expect(q('SELECT dropped FROM finding_reports')).toEqual([{ dropped: 0 }]);
     });
 
     it('a role set at spawn wins: a reviewer is a review even when it marks a fix fixed, a developer is not even with only open findings', () => {

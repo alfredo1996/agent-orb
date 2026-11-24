@@ -39,7 +39,7 @@ const link = (session: string, ts: number, number: number) => ev(session, ts, 's
 const FIXED = { id: 'F1', severity: 'major', file: 'src/a.ts', fate: 'fixed' };
 const OPEN = { id: 'F2', severity: 'minor', file: 'src/b.ts', fate: 'open' };
 /** A findings report by a reviewer: an agent of a session of its own that wrote no file. */
-const report = (ts: number, branch: string, list: object[] = [], by = 'rev') => ev(`s-${by}`, ts, 'findings.report', { branch, findings: list, dropped: 0 }, { agent_id: by, turn_id: `t-${by}-${ts}` });
+const report = (ts: number, branch: string, list: object[] = [FIXED], by = 'rev') => ev(`s-${by}`, ts, 'findings.report', { branch, findings: list, dropped: 0 }, { agent_id: by, turn_id: `t-${by}-${ts}` });
 const gate = (ts: number, result: 'pass' | 'fail' = 'pass', commit = 'a1b2c3d') => ev('s-gate', ts, 'gate.report', { result, commit }, { agent_id: `g-${ts}`, turn_id: `tg-${ts}` });
 const pr = (number: number, over: object = {}) => ({ number, head: `fix/${number}`, head_oid: HEAD, merge_state: 'CLEAN', last_commit_at: BEFORE - DAY, checks: [], bots: [], ...over });
 const read = (ts: number, prs: object[], issues?: object[], project: Project = MOBILE) => ev(`reader-${project.name}`, ts, 'project.open_prs', { prs, ...(issues ? { issues } : {}) }, {}, project);
@@ -92,14 +92,14 @@ describe('GET /api/changes: one case per kind', () => {
 
   it('a reviewer\'s first round is a review with its open findings, and the next round of the same ref is a review again', async () => {
     await send(start('s-409', 'fix/409-retry', BEFORE - DAY), read(NOW - MIN, [], issues(409)),
-      report(BEFORE, 'fix/409-retry', [OPEN]), report(AFTER, 'fix/409-retry', [OPEN, { ...OPEN, id: 'F3' }]), report(AFTER + 10 * MIN, 'fix/409-retry'));
+      report(BEFORE, 'fix/409-retry', [OPEN]), report(AFTER, 'fix/409-retry', [OPEN, { ...OPEN, id: 'F3' }]), report(AFTER + 10 * MIN, 'fix/409-retry', [FIXED, { ...OPEN, id: 'F4' }])); // a re-review: it verifies F1 and finds F4, a new id
     expect((await changes(SINCE)).filter((c) => c.kind.startsWith('review'))).toEqual([
-      { at: AFTER + 10 * MIN, kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Issue 409', open: 0 },
+      { at: AFTER + 10 * MIN, kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Issue 409', open: 1 },
       { at: AFTER, kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Issue 409', open: 2 },
     ]);
     // from before the first round, the first is a review and not "again"
     expect((await changes(BEFORE - 1)).filter((c) => c.kind.startsWith('review')).map((c) => [c.at, c.kind, c.open])).toEqual([
-      [AFTER + 10 * MIN, 'reviewed-again', 0], [AFTER, 'reviewed-again', 2], [BEFORE, 'reviewed', 1],
+      [AFTER + 10 * MIN, 'reviewed-again', 1], [AFTER, 'reviewed-again', 2], [BEFORE, 'reviewed', 1],
     ]);
     await edge('reviewed-again', AFTER);
   });
@@ -137,7 +137,7 @@ describe('GET /api/changes: one case per kind', () => {
     await send(...READY, read(NOW - MIN, [pr(418, { head: 'fix/412-queue', issue: 412 })], issues(412)));
     expect(await of('ready')).toEqual([{ at: AFTER, kind: 'ready', project: 'mobile-app', issue: 412, title: 'Issue 412', pr: 418 }]);
     await edge('ready', AFTER);
-    await send(report(AFTER + 20 * MIN, 'fix/412-queue')); // a report after the test run: ready from then, and the gate is no longer the last word
+    await send(report(AFTER + 20 * MIN, 'fix/412-queue', [{ ...OPEN, fate: 'fixed' }])); // a report (naming a new id: a review) after the test run: ready from then, and the gate is no longer the last word
     expect((await of('ready')).map((c) => c.at)).toEqual([AFTER + 20 * MIN]);
     expect(await of('gate')).toEqual([]);
   });
@@ -176,7 +176,7 @@ describe('GET /api/changes: one case per kind', () => {
 
   it('a review of the branch and a later one naming the PR are the same issue\'s first review and a review again', async () => {
     await send(start('s-409', 'fix/409-retry', BEFORE - DAY), read(NOW - MIN, [pr(416, { head: 'fix/409-retry', issue: 409 })], issues(409)),
-      report(BEFORE, 'fix/409-retry', [OPEN]), ev('s-rev', AFTER, 'findings.report', { pr: 416, findings: [], dropped: 0 }, { agent_id: 'rev', turn_id: 't-rev-pr' }));
+      report(BEFORE, 'fix/409-retry', [OPEN]), ev('s-rev', AFTER, 'findings.report', { pr: 416, findings: [FIXED], dropped: 0 }, { agent_id: 'rev', turn_id: 't-rev-pr' }));
     expect((await changes(BEFORE - 1)).filter((c) => c.kind.startsWith('review')).map((c) => [c.at, c.kind])).toEqual([[AFTER, 'reviewed-again'], [BEFORE, 'reviewed']]);
   });
 
