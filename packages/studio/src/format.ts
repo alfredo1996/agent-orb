@@ -62,3 +62,8 @@ export const contextMeter = (percent?: number) => {
   const p = Math.round(percent);
   return { percent: p, fill: Math.min(p, 100), near: p >= 80 };
 };
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; // not toLocaleDateString: ICU spells September "Sept" in some builds
+export const DAY = 86_400_000;
+/** `3 Oct`, with the year when it is not this one. */
+export const day = (ms: number, now: number) => `${new Date(ms).getDate()} ${MONTHS[new Date(ms).getMonth()]}${new Date(ms).getFullYear() === new Date(now).getFullYear() ? '' : ` ${new Date(ms).getFullYear()}`}`;

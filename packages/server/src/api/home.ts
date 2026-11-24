@@ -18,12 +18,15 @@ import { linksOf } from './links.ts';
 // ponytail: one pass per project, in turn. If the soak goes over its ceiling, read only the projects with a session in the past 7 days in full and the rest as counts; upgrade: a cache per project, cleared when it ingests.
 
 const Query = z.object({ tz: zone.default('UTC') });
-const RECENT_MS = 30 * 86_400_000;
+export const RECENT_MS = 30 * 86_400_000;
 const NOT_ON_ISSUE_SHOWN = 5; // the newest ended sessions on no issue a card names, and every running one besides; the count is all of them
 
+/** Each project by name with its newest session's time, newest first: Home shows those with one in the past 30 days (`now - RECENT_MS`), and GET /api/changes (#108) reads the same ones. */
+export const projectsByRecent = (store: Store) => all(store, `SELECT p.name AS name, max(coalesce(s.seen_at, s.ended_at, s.started_at, 0)) AS last FROM projects p JOIN sessions s ON s.project_id = p.id
+  GROUP BY p.name ORDER BY last DESC, name`);
+
 export function homeOf(store: Store, content: ContentStore, live: LiveState, tz: string, now: number) {
-  const names = all(store, `SELECT p.name AS name, max(coalesce(s.seen_at, s.ended_at, s.started_at, 0)) AS last FROM projects p JOIN sessions s ON s.project_id = p.id
-    GROUP BY p.name ORDER BY last DESC, name`);
+  const names = projectsByRecent(store);
   const since = now - RECENT_MS;
   const projects = names.filter((p) => p.last >= since).map(({ name, last }) => {
     const reach = reachOf(store, content, name, undefined, now);

@@ -984,3 +984,31 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
   .home .hm-prog, .home .hm-also, .home .hm-foot, .home .hm-head { padding-left: 16px; padding-right: 16px; }
   .home details.hm-quiet summary { padding: 0 16px; }
 }
+
+/* Home: Since you last looked (v0.5 slice 4, #108; design/home-issue.html): the card beside the projects, a row per change with a tone dot. It stacks under them on a narrow page. */
+.home .hm-grid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+.home .hm-grid > * { min-width: 0; }
+.home .hm-stack { display: grid; gap: 16px; align-content: start; }
+.home .hm-fd { display: grid; grid-template-columns: 42px 8px minmax(0, 1fr); gap: 2px 10px; align-items: start; padding: 11px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.home .hm-head + .hm-fd { border-top: 0; }
+.home .hm-fd .t { font: 13px/21px var(--mono); color: var(--faint); }
+.home .hm-fd .t small { display: block; font: 11px/12px var(--mono); }
+.home .hm-fd .dot { width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--data); }
+.home .hm-fd.t-ok .dot { background: var(--ok-dot); }
+.home .hm-fd.t-bad .dot { background: var(--bad-dot); }
+.home .hm-fd.t-wait .dot { background: var(--wait-dot); }
+.home .hm-fd a { color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.home .hm-fd a:hover { color: var(--accent-ink); }
+.home .hm-fd .sub { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.home .hm-fd code { font: 12px var(--mono); }
+.home .hm-none { display: grid; gap: 6px; padding: 14px 20px; color: var(--muted); font-size: 14px; }
+.home .hm-none b { color: var(--text); font-weight: 600; }
+.home .hm-none p { margin: 0; }
+.home .hm-foot.pad { justify-content: flex-start; padding-block: 10px; }
+@container (max-width: 1100px) {
+  .home .hm-grid { grid-template-columns: minmax(0, 1fr); }
+  .home .hm-grid > .hm-side { order: -1; }
+}
+@container (max-width: 700px) {
+  .home .hm-fd, .home .hm-none { padding-left: 16px; padding-right: 16px; }
+}

@@ -12,6 +12,7 @@ import { goal } from './api/goal.ts';
 import { history } from './api/history.ts';
 import { openContentStore, type ContentStore } from './content-store.ts';
 import { ledger } from './api/ledger.ts';
+import { changes } from './api/changes.ts';
 import { home } from './api/home.ts';
 import { issue } from './api/issue.ts';
 import { links } from './api/links.ts';
@@ -90,6 +91,7 @@ export function buildApp({ store = openStore(':memory:'), token, logger = false,
   links(app, { store, content, now }); // v0.5 slice 1 (#66): how the board's issues touch each other, a file two of them wrote or a mention, worked out on read for the Map
   issue(app, { store, content, now }); // v0.5 slice 2 (#106): the page of one issue, its story and when it reached each stage, worked out on read
   home(app, { store, content, live, now }); // v0.5 slice 3 (#107): Home, each recent project's rows in flight, who shares files and what the month spent, worked out on read
+  changes(app, { store, content, now }); // v0.5 slice 4 (#108): what changed across Home's projects since a time, worked out on read
   machine(app, { store, now }); // v0.4 slice 3 (#29): the Mac's latest sample per host, its containers grouped and flagged
   stop(app, { store, token, now }); // v0.4 slice 5 (#31): Live's Stop, queued here and taken by the session's plugin; the clock is the one a stop's ten minutes run by
   return app;
