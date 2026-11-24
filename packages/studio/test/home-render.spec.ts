@@ -247,7 +247,7 @@ describe('quiet projects', () => {
     const html = page();
     const quiet = html.match(/<details class="card hm-quiet">.*?<\/details>/s)![0];
     expect(plain(quiet)).toBe('2 quiet projects, with no session in the past 30 days docs-site last session on 3 Oct infra-scripts last session on 21 Sep');
-    expect(html.endsWith('</details>')).toBe(true); // the last thing on the page
+    expect(html.endsWith('</details></div></div>')).toBe(true); // (the end of the projects' column in the grid) // the last thing on the page
     expect(html.lastIndexOf('hm-quiet')).toBeGreaterThan(html.lastIndexOf('home-card'));
   });
 
