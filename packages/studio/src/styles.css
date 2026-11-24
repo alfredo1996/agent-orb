@@ -992,6 +992,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .home .hm-fd { display: grid; grid-template-columns: 42px 8px minmax(0, 1fr); gap: 2px 10px; align-items: start; padding: 11px 20px; border-top: 1px solid var(--line); font-size: 14px; }
 .home .hm-head + .hm-fd { border-top: 0; }
 .home .hm-fd .t { font: 13px/21px var(--mono); color: var(--faint); }
+.home .hm-fd .t small { display: block; font: 11px/12px var(--mono); }
 .home .hm-fd .dot { width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--data); }
 .home .hm-fd.t-ok .dot { background: var(--ok-dot); }
 .home .hm-fd.t-bad .dot { background: var(--bad-dot); }
@@ -1006,6 +1007,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .home .hm-foot.pad { justify-content: flex-start; padding-block: 10px; }
 @container (max-width: 1100px) {
   .home .hm-grid { grid-template-columns: minmax(0, 1fr); }
+  .home .hm-grid > .hm-side { order: -1; }
 }
 @container (max-width: 700px) {
   .home .hm-fd, .home .hm-none { padding-left: 16px; padding-right: 16px; }

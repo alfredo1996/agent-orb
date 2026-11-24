@@ -27,7 +27,7 @@ const stalledAt = (since: number) => live('s-415', 'mobile-app', [agent('impleme
 const CHANGES: Change[] = [
   { at: at(10, 54), kind: 'merged', project: 'field-notes', issue: 84, title: 'Export notes as Markdown', pr: 88 },
   { at: at(10, 31), kind: 'gate', project: 'mobile-app', issue: 407, title: 'Compress photos before upload', pr: 414, sha: 'c0d1e2f' },
-  { at: at(10, 15), kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Retry after an expired token', who: 'reviewer', open: 2 },
+  { at: at(10, 15), kind: 'reviewed-again', project: 'mobile-app', issue: 409, title: 'Retry after an expired token', open: 2 },
   { at: at(9, 58), kind: 'opened', project: 'field-notes', issue: 86, title: 'Export notes as PDF', pr: 91 },
   { at: at(9, 31), kind: 'picked-up', project: 'mobile-app', issue: 415, title: 'Sync conflict dialog', branch: 'fix/415-sync-dialog' },
   { at: at(11, 42), kind: 'ready', project: 'mobile-app', issue: 412, title: 'Queue uploads while offline', pr: 418 },
@@ -44,7 +44,7 @@ afterEach(() => {
   expect(warn).not.toHaveBeenCalled();
   vi.restoreAllMocks();
 });
-const since = (changes: Change[], mark: number | null, onCaughtUp = () => {}): Since => ({ changes, mark, onCaughtUp });
+const since = (changes: Change[], mark: number | null, onCaughtUp = () => {}, total = changes.length): Since => ({ changes, total, mark, onCaughtUp });
 const page = (s?: Since, sessions: Session[] = []) => renderToStaticMarkup(createElement(HomeView, { data: DATA, sessions, now: NOW, ...(s ? { since: s } : {}) }));
 const card = (html: string) => html.match(/<section class="card hm-side".*?<\/section>/s)![0];
 const reading = (html: string) => plain(html.match(/<section class="card said".*?<\/section>/s)![0]);
@@ -64,6 +64,34 @@ describe('the card', () => {
     );
     expect(html).toContain('href="#/issue?project=mobile-app&amp;issue=412"');
     expect(html.match(/class="hm-fd( t-\w+)?"/g)).toEqual(['class="hm-fd t-ok"', 'class="hm-fd t-ok"', 'class="hm-fd"', 'class="hm-fd t-wait"', 'class="hm-fd"', 'class="hm-fd"']);
+  });
+
+  it('says when the server cut the list: the hint reads "50 of 63", and a stall older than the oldest change shown is left out, not set into a gap', () => {
+    expect(hintOf(50, MARK, NOW, 13)).toBe('50 of 63 changes since 09:12 today');
+    expect(hintOf(1, MARK, NOW)).toBe('1 change since 09:12 today');
+    const rows = feedOf([CHANGES[0]!, CHANGES[1]!], [{ at: at(9, 40), kind: 'stalled', project: 'mobile-app', issue: 415, who: 'implementer', session: 's-1' }, { at: at(10, 45), kind: 'stalled', project: 'mobile-app', issue: 416, who: 'implementer', session: 's-2' }], true);
+    expect(rows.map((x) => x.change.at)).toEqual([at(10, 54), at(10, 45), at(10, 31)]);
+    expect(plain(card(page(since([CHANGES[0]!], MARK, () => {}, 14)))).startsWith('Since you last looked 1 of 14 changes since 09:12 today')).toBe(true);
+  });
+
+  it('a row that is not from today shows its day before the time', () => {
+    const html = card(page(since([{ ...CHANGES[0]!, at: at(10, 54, 9) }, CHANGES[1]!], at(9, 12, 8))));
+    expect(plain(html)).toContain('9 Nov 10:54 #84');
+    expect(html.match(/<small>/g)).toHaveLength(1); // today's row has no day
+  });
+
+  it('the heading takes focus when Caught up removes the button, so a keyboard user is not dropped', () => {
+    const focus = vi.fn();
+    vi.stubGlobal('document', { getElementById: (id: string) => (id === 'since-h' ? { focus } : null) });
+    try {
+      const tree = SinceCard({ since: since(CHANGES, MARK), projects: DATA.projects, sessions: [], now: NOW });
+      const find = (n: unknown): ReactElement | undefined => (Array.isArray(n) ? n.map(find).find(Boolean) : !isValidElement(n) ? undefined : (n as ReactElement<{ children?: unknown }>).type === 'button' ? (n as ReactElement) : find((n as ReactElement<{ children?: unknown }>).props.children));
+      (find(tree)!.props as { onClick: () => void }).onClick();
+      expect(focus).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(card(page(since(CHANGES, MARK)))).toContain('id="since-h" tabindex="-1"');
   });
 
   it('names the day when the mark is not today', () => {
@@ -120,6 +148,25 @@ describe('the sentence on top gains the clause, counted from the list', () => {
     expect(reading(page(since(one, at(9, 12, 9))))).toContain('Since you last looked at 09:12 on 9 Nov, one issue merged and one became ready. Nothing waits');
     expect(reading(page(since(one, null)))).toContain('In the past 24 hours, one issue merged and one became ready.');
   });
+  it('counts issues for merged and ready, and sessions for stalls, and reads right in every combination', () => {
+    const m = (issue: number, pr: number): Change => ({ ...CHANGES[0]!, issue, pr, at: at(10, issue) });
+    const r = (issue: number): Change => ({ ...CHANGES[5]!, issue, at: at(11, issue) });
+    const sessionOf = (id: string, issue = 415): Change => ({ at: at(11, 30), kind: 'stalled', project: 'mobile-app', issue, who: 'implementer', session: id });
+    const clause = (list: Change[]) => sinceClause(feedOf(list, []), MARK, NOW);
+    expect(clause([r(412)])).toBe('Since you last looked at 09:12, one issue became ready.');
+    expect(clause([r(412), r(413)])).toBe('Since you last looked at 09:12, two issues became ready.');
+    expect(clause([m(84, 88), m(84, 89)])).toBe('Since you last looked at 09:12, one issue merged.'); // two PRs of one issue
+    expect(clause([m(84, 88), r(412)])).toBe('Since you last looked at 09:12, one issue merged and one became ready.');
+    expect(clause([m(84, 88), r(412), r(413)])).toBe('Since you last looked at 09:12, one issue merged and two became ready.');
+    expect(clause([m(84, 88), m(85, 89), r(412)])).toBe('Since you last looked at 09:12, two issues merged and one became ready.');
+    expect(clause([r(412), sessionOf('s-1')])).toBe('Since you last looked at 09:12, one issue became ready and one session stalled.');
+    expect(clause([sessionOf('s-1'), { ...sessionOf('s-1'), who: 'reviewer' }])).toBe('Since you last looked at 09:12, one session stalled.'); // two agents of one session
+    expect(clause([sessionOf('s-1'), sessionOf('s-2', 416)])).toBe('Since you last looked at 09:12, two sessions stalled.');
+    expect(clause([m(84, 88), r(412), sessionOf('s-1')])).toBe('Since you last looked at 09:12, one issue merged, one became ready and one session stalled.');
+  });
+  it('says when the list was cut: the clause counts only the newest', () => {
+    expect(sinceClause(feedOf([CHANGES[0]!], []), MARK, NOW, 13)).toBe('Since you last looked at 09:12, one issue merged. Only the newest 1 of 14 are counted.');
+  });
   it('counts what there is: two merged, none ready', () => {
     const rows = feedOf([CHANGES[0]!, { ...CHANGES[0]!, issue: 85, at: at(10, 0) }], []);
     expect(sinceClause(rows, MARK, NOW)).toBe('Since you last looked at 09:12, two issues merged.');
@@ -139,9 +186,18 @@ describe('the stalls from the stream', () => {
   const sessions = (s: number) => [stalledAt(s)];
   const projects = [project('mobile-app', [row(415, { sessions: [{ id: 's-415', at: NOW }], sessionCount: 1 })])];
   it('a stall that began after the mark is a change, from the stall\'s own time; one that began before it is not', () => {
-    expect(stalls(projects, sessions(at(11, 26)), MARK)).toEqual([{ at: at(11, 26), kind: 'stalled', project: 'mobile-app', issue: 415, title: 'Issue 415', who: 'implementer', tool: 'Bash' }]);
+    expect(stalls(projects, sessions(at(11, 26)), MARK)).toEqual([{ at: at(11, 26), kind: 'stalled', project: 'mobile-app', issue: 415, title: 'Issue 415', who: 'implementer', tool: 'Bash', session: 's-415', silentSince: at(11, 26) }]);
     expect(stalls(projects, sessions(at(9, 12)), MARK)).toEqual([]); // at the mark is not after it
     expect(stalls(projects, sessions(at(8, 0)), MARK)).toEqual([]);
+  });
+  it('a stall is news from when the plugin raised it, not from when the silence began: raised after the mark, silent since before it, it is listed at the raise time with the silence in its line', () => {
+    const raised = [live('s-415', 'mobile-app', [agent('implementer', { state: 'stalled', stalledSince: at(9, 0), stalledAt: at(11, 35) })])];
+    const [c] = stalls(projects, raised, MARK);
+    expect(c).toMatchObject({ at: at(11, 35), kind: 'stalled', issue: 415, who: 'implementer' });
+    const html = card(page(since([], MARK), raised));
+    expect(plain(html)).toContain('11:35 #415 Issue 415 stalled. mobile-app · the implementer has had no event since 09:00');
+    // raised before the mark is not news, however recent the silence
+    expect(stalls(projects, [live('s-415', 'mobile-app', [agent('implementer', { state: 'stalled', stalledSince: at(9, 10), stalledAt: at(9, 11) })])], MARK)).toEqual([]);
   });
   it('an agent that is no longer stalled, or in a session that ended, is not listed', () => {
     expect(stalls(projects, [live('s-415', 'mobile-app', [agent('implementer', { stalledSince: at(11, 26) })])], MARK)).toEqual([]);
@@ -161,17 +217,22 @@ describe('the mark in this browser', () => {
   };
   it('Caught up writes the time under orb.lookedAt, and a re-render (a new read) keeps it', () => {
     const s = memory();
-    expect(loadMark(s)).toBeNull();
+    expect(loadMark(s, NOW)).toBeNull();
     saveMark(NOW, s);
     expect(s.m.get('orb.lookedAt')).toBe(String(NOW));
-    expect(loadMark(s)).toBe(NOW);
-    expect(loadMark(s)).toBe(NOW);
+    expect(loadMark(s, NOW)).toBe(NOW);
+    expect(loadMark(s, NOW)).toBe(NOW);
   });
   it('a first look, or a value that is not a time, asks for the past 24 hours; a mark asks from itself', () => {
     expect(sinceOf(null, NOW)).toBe(NOW - 86_400_000);
     expect(loadMark(memory({ 'orb.lookedAt': 'yesterday' }))).toBeNull();
     expect(loadMark(memory({ 'orb.lookedAt': '0' }))).toBeNull();
     expect(sinceOf(MARK, NOW)).toBe(MARK);
+  });
+  it('a stored mark that is not a whole number of milliseconds, is too large to be one, or lies in the future is a first look: the server would answer 400, or Caught up could never be reached', () => {
+    for (const bad of ['1732400000000.5', '1e300', '9999999999999999', String(NOW + 1), '-5', 'NaN', '']) expect(loadMark(memory({ 'orb.lookedAt': bad }), NOW), bad).toBeNull();
+    expect(loadMark(memory({ 'orb.lookedAt': String(NOW) }), NOW)).toBe(NOW);
+    expect(loadMark(memory({ 'orb.lookedAt': String(MARK) }), NOW)).toBe(MARK);
   });
   it('a storage that throws, on a read or a write, or that the browser refuses to hand over, is a first look and never breaks the page', () => {
     const bad = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('full'); } } as unknown as Storage;

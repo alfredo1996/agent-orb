@@ -5,8 +5,8 @@ import type { HomeProject } from './Home.tsx';
 import type { Session } from './Live.tsx';
 import { agentName } from './live-cards.ts';
 
-/** A row of GET /api/changes (`open`, `sha` and `branch` are what its sub line says), or a stall from the stream (`stalled`, with the agent in `who` and what it was running in `tool`). */
-export type Change = { at: number; kind: string; project: string; issue: number; title?: string; pr?: number; who?: string; open?: number; sha?: string; branch?: string; tool?: string };
+/** A row of GET /api/changes (`open`, `sha` and `branch` are what its sub line says), or a stall from the stream (`stalled`: `at` is when the plugin raised it, `silentSince` when the silence began, `who` the agent, `tool` what it was running, `session` whose it is). */
+export type Change = { at: number; kind: string; project: string; issue: number; title?: string; pr?: number; who?: string; open?: number; sha?: string; branch?: string; tool?: string; session?: string; silentSince?: number };
 export type FeedRow = { change: Change; tone?: 'ok' | 'bad' | 'wait'; what: string; sub: string; code?: string };
 
 const KEY = 'orb.lookedAt';
@@ -17,11 +17,11 @@ const store = () => {
     return undefined; // blocked storage
   }
 };
-/** When the owner last pressed Caught up in this browser; null for a first look, and when the storage is missing, blocked or holds something that is not a time. */
-export function loadMark(storage: Storage | undefined = store()): number | null {
+/** When the owner last pressed Caught up in this browser; null for a first look, and when the storage is missing, blocked or holds something the server would refuse or that has not happened yet (not a whole number of milliseconds, or after `now`). */
+export function loadMark(storage: Storage | undefined = store(), now = Date.now()): number | null {
   try {
     const n = Number(storage?.getItem(KEY));
-    return Number.isFinite(n) && n > 0 ? n : null;
+    return Number.isSafeInteger(n) && n > 0 && n <= now ? n : null;
   } catch {
     return null;
   }
@@ -39,6 +39,8 @@ export const sinceOf = (mark: number | null, now: number) => mark ?? now - DAY;
 
 const clock = (ms: number) => `${String(new Date(ms).getHours()).padStart(2, '0')}:${String(new Date(ms).getMinutes()).padStart(2, '0')}`;
 export const timeOf = clock;
+/** A row's time: `09:12`, and its day before it when it is not today: `9 Nov` over `09:12`. */
+export const dayOf = (ms: number, now: number) => (new Date(ms).toDateString() === new Date(now).toDateString() ? null : day(ms, now));
 /** `09:12`, and the day before it when it is not today: `09:12 on 9 Nov`. */
 export const whenOf = (ms: number, now: number) => (new Date(ms).toDateString() === new Date(now).toDateString() ? clock(ms) : `${clock(ms)} on ${day(ms, now)}`);
 
@@ -55,8 +57,10 @@ export function stalls(projects: readonly HomeProject[], sessions: readonly Sess
       for (const s of sessions) {
         if (s.endedAt || !mine.has(s.id)) continue;
         for (const a of s.agents) {
-          const at = a.state === 'stalled' ? (a.stalledSince ?? a.tool?.since) : undefined;
-          if (at !== undefined && at > since) out.push({ at, kind: 'stalled', project: p.name, issue: r.number, ...(r.title ? { title: r.title } : {}), who: agentName(a.type), ...(a.tool ? { tool: a.tool.name } : {}) });
+          // News from when the plugin raised the stall (`stalledAt`, ~15 minutes after the silence began); older stores of the state have only `stalledSince`.
+          const silent = a.stalledSince ?? a.tool?.since;
+          const at = a.state === 'stalled' ? (a.stalledAt ?? silent) : undefined;
+          if (at !== undefined && at > since) out.push({ at, kind: 'stalled', project: p.name, issue: r.number, session: s.id, ...(r.title ? { title: r.title } : {}), who: agentName(a.type), ...(a.tool ? { tool: a.tool.name } : {}), ...(silent !== undefined ? { silentSince: silent } : {}) });
         }
       }
     }
@@ -71,7 +75,7 @@ export function rowOf(c: Change): FeedRow {
   switch (c.kind) {
     case 'merged': return { change: c, tone: 'ok', what: 'merged.', sub: `${c.project} · ${pr}` };
     case 'ready': return { change: c, tone: 'ok', what: 'is ready for your ok.', sub: `${c.project} · ${pr}` };
-    case 'stalled': return { change: c, tone: 'bad', what: 'stalled.', sub: `${c.project} · the ${c.who} has had no event since ${clock(c.at)}${c.tool ? ', on' : ''}`, ...(c.tool ? { code: c.tool } : {}) };
+    case 'stalled': return { change: c, tone: 'bad', what: 'stalled.', sub: `${c.project} · the ${c.who} has had no event since ${clock(c.silentSince ?? c.at)}${c.tool ? ', on' : ''}`, ...(c.tool ? { code: c.tool } : {}) };
     case 'reviewed': case 'reviewed-again':
       return { change: c, ...(c.open ? { tone: 'wait' as const } : {}), what: c.kind === 'reviewed' ? 'was reviewed.' : 'was reviewed again.', sub: `${c.project} · ${findings(c.open)}` };
     case 'gate': return { change: c, what: 'reached the gate.', sub: `${c.project} · a test run passed on ${c.sha}` };
@@ -80,23 +84,24 @@ export function rowOf(c: Change): FeedRow {
   }
 }
 
-/** The server's changes and the stalls, newest first. The server caps its own list at 50; the stalls are few (the agents stalled now). */
-export const feedOf = (changes: readonly Change[], stalled: readonly Change[]): FeedRow[] =>
-  [...changes, ...stalled].toSorted((a, b) => b.at - a.at || a.project.localeCompare(b.project) || a.issue - b.issue).map(rowOf);
+/** The server's changes and the stalls, newest first. The server caps its own list at 50; the stalls are few (the agents stalled now). When it cut the list (`capped`), a stall older than the oldest change shown is left out, not set into a gap. */
+export const feedOf = (changes: readonly Change[], stalled: readonly Change[], capped = false): FeedRow[] =>
+  [...changes, ...stalled.filter((s) => !capped || s.at >= Math.min(...changes.map((c) => c.at)))].toSorted((a, b) => b.at - a.at || a.project.localeCompare(b.project) || a.issue - b.issue).map(rowOf);
 
-/** The card's hint: `7 changes since 09:12 today`, `last looked at 11:44` when nothing changed, `the past 24 hours` on a first look. */
-export function hintOf(count: number, mark: number | null, now: number) {
+/** The card's hint: `7 changes since 09:12 today`, `50 of 63 changes since 09:12 today` when the server cut the list (`hidden` more), `last looked at 11:44` when nothing changed, `the past 24 hours` on a first look. */
+export function hintOf(count: number, mark: number | null, now: number, hidden = 0) {
   if (mark === null) return 'the past 24 hours';
   if (!count) return `last looked at ${whenOf(mark, now)}`;
-  return `${plural(count, 'change')} since ${new Date(mark).toDateString() === new Date(now).toDateString() ? `${clock(mark)} today` : whenOf(mark, now)}`;
+  return `${hidden ? `${count} of ${count + hidden} changes` : plural(count, 'change')} since ${new Date(mark).toDateString() === new Date(now).toDateString() ? `${clock(mark)} today` : whenOf(mark, now)}`;
 }
 
 const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
 const word = (n: number) => WORDS[n] ?? String(n);
-const count = (rows: readonly FeedRow[], kind: string) => rows.filter((r) => r.change.kind === kind).length;
+/** How many distinct issues (and for stalls, sessions) the rows of a kind are about: two PRs of one issue are one merge, two stalled agents of one session one stall. */
+const count = (rows: readonly FeedRow[], kind: string) => new Set(rows.filter((r) => r.change.kind === kind).map(({ change: c }) => (kind === 'stalled' ? (c.session ?? `${c.project}#${c.issue}`) : `${c.project}#${c.issue}`))).size;
 
 /** The clause the sentence on top gains, counted from the list: `Since you last looked at 09:12, one issue merged, one became ready and one session stalled.` */
-export function sinceClause(rows: readonly FeedRow[], mark: number | null, now: number): string {
+export function sinceClause(rows: readonly FeedRow[], mark: number | null, now: number, hidden = 0): string {
   const from = mark === null ? 'In the past 24 hours,' : `Since you last looked at ${whenOf(mark, now)},`;
   if (!rows.length) return mark === null ? 'Nothing has changed in the past 24 hours.' : `Nothing has changed since you last looked at ${whenOf(mark, now)}.`;
   const merged = count(rows, 'merged');
@@ -104,9 +109,9 @@ export function sinceClause(rows: readonly FeedRow[], mark: number | null, now: 
   const stalled = count(rows, 'stalled');
   const parts = [
     ...(merged ? [`${word(merged)} ${merged === 1 ? 'issue' : 'issues'} merged`] : []),
-    ...(ready ? [`${word(ready)} became ready`] : []),
+    ...(ready ? [`${word(ready)}${merged ? '' : ready === 1 ? ' issue' : ' issues'} became ready`] : []), // the noun is said once, by the first of the two
     ...(stalled ? [`${word(stalled)} ${stalled === 1 ? 'session' : 'sessions'} stalled`] : []),
   ];
   const list = parts.length ? parts.join(', ').replace(/, ([^,]*)$/, ' and $1') : plural(rows.length, 'thing') + ' changed';
-  return `${from} ${list}.`;
+  return `${from} ${list}.${hidden ? ` Only the newest ${rows.length} of ${rows.length + hidden} are counted.` : ''}`;
 }

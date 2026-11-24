@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { ageText, count, EXCLUDED_NOTE, issueHref, outsideNote, REFRESH_MS, STAGE_LABEL, titlesNote, Track, type BoardData, type BoardIssue } from './Factory.tsx';
 import { ago, DAY, day, modelLabel, usd } from './format.ts';
-import { feedOf, hintOf, loadMark, saveMark, sinceClause, sinceOf, stalls, timeOf, whenOf, type Change } from './changes-view.ts';
+import { dayOf, feedOf, hintOf, loadMark, saveMark, sinceClause, sinceOf, stalls, timeOf, whenOf, type Change } from './changes-view.ts';
 import { homeSentence, ranked, STATES } from './home-view.ts';
 import { Loading, PageHeader, Reading } from './kit.tsx';
 import type { Session } from './Live.tsx';
@@ -114,15 +114,23 @@ function Card({ project: p, sessions, now }: { project: HomeProject; sessions: r
   );
 }
 
-/** What the card needs: the server's changes since the mark (null: a first look), and what Caught up does. */
-export type Since = { changes: readonly Change[]; mark: number | null; onCaughtUp: () => void };
+/** What the card needs: the server's changes since the mark (null: a first look) and how many there were in all (the server cuts its list), and what Caught up does. */
+export type Since = { changes: readonly Change[]; total: number; mark: number | null; onCaughtUp: () => void };
+const hiddenOf = (since: Since) => Math.max(0, since.total - since.changes.length);
+const feedFor = (since: Since, projects: readonly HomeProject[], sessions: readonly Session[], now: number) =>
+  feedOf(since.changes, stalls(projects, sessions, sinceOf(since.mark, now)), hiddenOf(since) > 0);
 
-/** Since you last looked, beside the projects: a row per change, newest first, to the issue's page; Caught up moves the mark to now. */
+/** Since you last looked, beside the projects: a row per change, newest first, to the issue's page; Caught up moves the mark to when the list shown was asked for. */
 export function SinceCard({ since, projects, sessions, now }: { since: Since; projects: readonly HomeProject[]; sessions: readonly Session[]; now: number }) {
-  const rows = feedOf(since.changes, stalls(projects, sessions, sinceOf(since.mark, now)));
+  const rows = feedFor(since, projects, sessions, now);
+  // Caught up removes its own button, so the heading takes the focus (a keyboard user is not dropped on the page).
+  const caught = () => {
+    since.onCaughtUp();
+    globalThis.document?.getElementById('since-h')?.focus();
+  };
   return (
     <section className="card hm-side" aria-label="Since you last looked">
-      <div className="hm-head"><h2>Since you last looked</h2><span className="asof">{hintOf(rows.length, since.mark, now)}</span></div>
+      <div className="hm-head"><h2 id="since-h" tabIndex={-1}>Since you last looked</h2><span className="asof">{hintOf(rows.length, since.mark, now, hiddenOf(since))}</span></div>
       {!rows.length && (
         <div className="hm-none"><b>{since.mark === null ? 'Nothing changed in the past 24 hours.' : `Nothing changed since ${whenOf(since.mark, now)}.`}</b>
           <p>A PR opened or merged, a review, a test run, and a session starting or stalling all show here.</p></div>
@@ -130,18 +138,18 @@ export function SinceCard({ since, projects, sessions, now }: { since: Since; pr
       {rows.length > 0 && since.mark === null && <div className="hm-also">This is the first look from this browser, so it shows the past 24 hours.</div>}
       {rows.map(({ change: c, tone, what, sub, code }, i) => (
         <div key={`${c.kind}-${c.project}-${c.issue}-${c.at}-${i}`} className={tone ? `hm-fd t-${tone}` : 'hm-fd'}>
-          <span className="t">{timeOf(c.at)}</span><i className="dot" aria-hidden="true" />
+          <span className="t">{dayOf(c.at, now) && <small>{dayOf(c.at, now)}</small>}{timeOf(c.at)}</span><i className="dot" aria-hidden="true" />
           <div><a href={issueHref(c.project, c.issue)}>{`#${c.issue}${c.title ? ` ${c.title}` : ''}`}</a> {what}<span className="sub">{sub}{code && <> <code>{code}</code></>}</span></div>
         </div>
       ))}
-      {rows.length > 0 && <div className="hm-foot pad"><button type="button" className="btn" onClick={since.onCaughtUp}>Caught up</button><span>Moves the mark to now. A reload keeps this list.</span></div>}
+      {rows.length > 0 && <div className="hm-foot pad"><button type="button" className="btn" onClick={caught}>Caught up</button><span>Moves the mark to now. A reload keeps this list.</span></div>}
     </section>
   );
 }
 
 /** The page for an answer: the sentence, a card per project with Since you last looked beside them, the quiet ones folded at the foot. `since` is left out until /api/changes has answered. */
 export function HomeView({ data, sessions, now, since }: { data: HomeData; sessions: readonly Session[]; now: number; since?: Since }) {
-  const clause = since ? sinceClause(feedOf(since.changes, stalls(data.projects, sessions, sinceOf(since.mark, now))), since.mark, now) : undefined;
+  const clause = since ? sinceClause(feedFor(since, data.projects, sessions, now), since.mark, now, hiddenOf(since)) : undefined;
   const said = homeSentence(data.projects, sessions, clause);
   return (
     <>
@@ -165,15 +173,18 @@ export function HomeView({ data, sessions, now, since }: { data: HomeData; sessi
 
 export const HomeError = ({ message }: { message: string }) => <div className="empty" role="alert"><b>Home could not load.</b><span>{message}</span></div>;
 
-/** `sessions`: the ones Live shows, for who is on each issue and the running count. Asked for again every 30 seconds, as the Factory board is. */
+/**
+ * `sessions`: the ones Live shows, for who is on each issue and the running count. The page and the card's changes are asked for together, again every 30 seconds as the Factory board is, and at once when the mark moves.
+ * Caught up moves the mark to when the list on show was asked for, never to now: what arrived while it was on the screen is still ahead of the mark.
+ */
 export function Home({ now, sessions }: { now: number; sessions: readonly Session[] }) {
   const [data, setData] = useState<HomeData>();
   const [error, setError] = useState<string>();
   const [mark, setMark] = useState(() => loadMark());
-  const [changes, setChanges] = useState<Change[]>();
+  const [shown, setShown] = useState<{ changes: Change[]; total: number; askedAt: number }>();
   useEffect(() => {
     let alive = true;
-    const load = async () => {
+    const loadHome = async () => {
       try {
         const res = await fetch(`/api/home?${new URLSearchParams({ tz: tz() })}`);
         if (!res.ok) throw new Error(`The server answered ${res.status}.`);
@@ -183,27 +194,20 @@ export function Home({ now, sessions }: { now: number; sessions: readonly Sessio
         if (alive) setError((e as Error).message);
       }
     };
-    void load();
-    const t = setInterval(load, REFRESH_MS);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, []);
-  // The card asks again on each refresh, and at once when the mark moves (Caught up). A failed read leaves the card as it was.
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
+    // A failed read leaves the card as it was; Home's own error is the page's.
+    const loadChanges = async () => {
+      const askedAt = Date.now();
       try {
-        const res = await fetch(`/api/changes?${new URLSearchParams({ since: String(sinceOf(mark, Date.now())) })}`);
+        const res = await fetch(`/api/changes?${new URLSearchParams({ since: String(sinceOf(mark, askedAt)) })}`);
         if (!res.ok) throw new Error(String(res.status));
-        const body = (await res.json()) as { changes: Change[] };
-        if (alive) setChanges(body.changes);
+        const body = (await res.json()) as { changes: Change[]; total: number };
+        if (alive) setShown({ changes: body.changes, total: body.total, askedAt });
       } catch {
-        // the card keeps what it had; Home's own error is the page's
+        // the card keeps what it had
       }
     };
-    void load();
+    const load = () => void Promise.all([loadHome(), loadChanges()]);
+    load();
     const t = setInterval(load, REFRESH_MS);
     return () => {
       alive = false;
@@ -211,17 +215,17 @@ export function Home({ now, sessions }: { now: number; sessions: readonly Sessio
     };
   }, [mark]);
   const caughtUp = () => {
-    const at = Date.now();
-    saveMark(at);
-    setChanges([]);
-    setMark(at);
+    if (!shown) return;
+    saveMark(shown.askedAt);
+    setShown({ changes: [], total: 0, askedAt: shown.askedAt });
+    setMark(shown.askedAt);
   };
   return (
     <main className="home">
       <PageHeader title="Home" sub="What's going on, across your projects" />
       {error && <HomeError message={error} />}
       {!data && !error && <Loading>Reading your projects…</Loading>}
-      {data && <HomeView data={data} sessions={sessions} now={now} {...(changes ? { since: { changes, mark, onCaughtUp: caughtUp } } : {})} />}
+      {data && <HomeView data={data} sessions={sessions} now={now} {...(shown ? { since: { changes: shown.changes, total: shown.total, mark, onCaughtUp: caughtUp } } : {})} />}
     </main>
   );
 }
