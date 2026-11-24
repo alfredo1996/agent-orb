@@ -12,21 +12,24 @@ import { dayOf, monthBounds } from './local-time.ts';
 const Query = z.object({ project: z.string().min(1), tz: zone.default('UTC') });
 const Put = z.object({ project: z.string().min(1), usd: z.number().positive().max(1_000_000).nullable() });
 
+/** The goal and what the month has spent so far in the zone: what GET /api/goal answers, and what Home (#107) gives each project, so the two cannot differ. */
+export function goalOf(store: Store, project: string, tz: string, at: number) {
+  // The month starts at midnight on its first day in the viewer's zone, and the spend runs to now.
+  const month = dayOf(tz, at).slice(0, 7);
+  const [start] = monthBounds(tz, Number(month.slice(0, 4)), Number(month.slice(5, 7)));
+  // ponytail: a request on a model pricing.json lacks adds nothing, so spent is a floor; costPartial says so.
+  const spent = all(store, `SELECT coalesce(sum(x.cost_usd), 0) AS spent, count(*) FILTER (WHERE x.cost_usd IS NULL) > 0 AS costPartial
+    FROM api_requests x JOIN turns t ON t.id = x.turn_id JOIN agents a ON a.id = t.agent_id JOIN sessions s ON s.id = a.session_id JOIN projects p ON p.id = s.project_id
+    WHERE p.name = :project AND x.ts >= :start AND x.ts <= :now`, { project, start, now: at })[0]!;
+  const g = get(store, 'SELECT max(goal_usd) AS goal FROM projects WHERE name = :project', { project });
+  return { project, month, goal: g?.goal ?? null, spent: spent.spent, costPartial: Boolean(spent.costPartial) };
+}
+
 export function goal(app: FastifyInstance, { store, now = Date.now }: { store: Store; now?: () => number }) {
   app.get('/api/goal', async (req, reply) => {
     const q = Query.safeParse(req.query);
     if (!q.success) return reply.code(400).send({ error: 'give a project, and a time zone that exists', issues: q.error.issues });
-    const { project, tz } = q.data;
-    const at = now();
-    // The month starts at midnight on its first day in the viewer's zone, and the spend runs to now.
-    const month = dayOf(tz, at).slice(0, 7);
-    const [start] = monthBounds(tz, Number(month.slice(0, 4)), Number(month.slice(5, 7)));
-    // ponytail: a request on a model pricing.json lacks adds nothing, so spent is a floor; costPartial says so.
-    const spent = all(store, `SELECT coalesce(sum(x.cost_usd), 0) AS spent, count(*) FILTER (WHERE x.cost_usd IS NULL) > 0 AS costPartial
-      FROM api_requests x JOIN turns t ON t.id = x.turn_id JOIN agents a ON a.id = t.agent_id JOIN sessions s ON s.id = a.session_id JOIN projects p ON p.id = s.project_id
-      WHERE p.name = :project AND x.ts >= :start AND x.ts <= :now`, { project, start, now: at })[0]!;
-    const g = get(store, 'SELECT max(goal_usd) AS goal FROM projects WHERE name = :project', { project });
-    return { project, month, goal: g?.goal ?? null, spent: spent.spent, costPartial: Boolean(spent.costPartial) };
+    return goalOf(store, q.data.project, q.data.tz, now());
   });
 
   app.put('/api/goal', async (req, reply) => {

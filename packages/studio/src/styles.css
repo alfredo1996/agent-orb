@@ -172,6 +172,7 @@ tr:last-child td { border-bottom: 0; }
 .state.working { color: var(--ok); background: var(--ok-bg); --c-dot: var(--ok-dot); }
 .state.waiting, .state.model { color: var(--wait); background: var(--wait-bg); --c-dot: var(--wait-dot); }
 .state.stalled, .state.error, .state.claim { color: var(--bad); background: var(--bad-bg); --c-dot: var(--bad-dot); }
+.state.ready { color: var(--ok); background: var(--ok-bg); --c-dot: var(--ok-dot); }
 .state.done, .state.stopped { color: var(--done); background: var(--done-bg); --c-dot: var(--done-dot); }
 .av { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 600 13px/1 var(--sans); color: #fff; flex: none; }
 .av.opus { background: var(--opus); } .av.sonnet { background: var(--sonnet); } .av.haiku { background: var(--haiku); } .av.fable { background: var(--fable); } .av.other { background: var(--faint); }
@@ -943,4 +944,43 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
   .issue .iss-steps li { grid-template-columns: 96px minmax(0, 1fr); align-items: baseline; gap: 10px; padding: 6px 0 6px 12px; border-top: 0; border-left: 4px solid var(--sc); }
   .issue .iss-st { grid-template-columns: 42px 28px minmax(0, 1fr); }
   .issue .iss-st .cost { grid-column: 3; line-height: 1.4; }
+}
+
+/* Home (v0.5 slice 3, #107; design/home-issue.html, the Home board): a card per project, built from the Board band's rows (.board .brow) with its own four columns. */
+.home { display: grid; gap: 16px; align-content: start; }
+.home .hm-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.home .hm-head h2 { padding: 0; border: 0; }
+.home .asof { font-size: 13px; font-weight: 400; color: var(--muted); }
+.home .asof.stale { color: var(--wait); font-weight: 600; }
+.home .hm-ms { margin-left: 10px; font-weight: 400; color: var(--muted); }
+.home .hm-prog { display: grid; gap: 10px; padding: 14px 20px; }
+.home .hm-bar { display: flex; gap: 3px; height: 8px; }
+.home .hm-bar i { flex: 1; border-radius: 2px; background: var(--border-strong); }
+.home .hm-bar i.m { background: var(--ok-dot); }
+.home .hm-bar i.f { background: var(--accent); }
+.home .hm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.home .board .bcols.hm-cols, .home .board .brow.hm-row { grid-template-columns: minmax(150px, 1.3fr) 124px minmax(160px, 1.5fr) 140px; }
+.home .board .brow.hm-row { align-items: start; }
+.home .brow.hm-row .state { justify-self: start; }
+.home .hm-now { display: grid; gap: 2px; min-width: 0; font-size: 14px; }
+.home .hm-now .sub { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.home .hm-now .model { justify-self: start; }
+.home .hm-with { font-size: 13px; font-weight: 500; color: var(--muted); }
+.home .hm-with .together { color: var(--wait); }
+.home .hm-also { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.home .hm-also b { color: var(--ink); font-weight: 600; }
+.home .hm-also code { font: 12px var(--mono); }
+.home .hm-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; padding: 8px 20px; border-top: 1px solid var(--line); background: var(--sunk); border-radius: 0 0 14px 14px; font-size: 13px; color: var(--muted); }
+.home .hm-spend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.home .hm-spend b { color: var(--ink); font-weight: 500; }
+.home .hm-spend .bar { width: 96px; margin-top: 0; }
+.home .hm-links { display: flex; flex-wrap: wrap; gap: 0 18px; }
+.home .hm-lnk { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
+.home .hm-lnk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.home details.hm-quiet summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; font-size: 14px; font-weight: 500; color: var(--accent-ink); }
+.home details.hm-quiet .hm-also { border-top: 1px solid var(--line); }
+@container (max-width: 700px) {
+  .home .board .brow.hm-row { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 16px; }
+  .home .hm-prog, .home .hm-also, .home .hm-foot, .home .hm-head { padding-left: 16px; padding-right: 16px; }
+  .home details.hm-quiet summary { padding: 0 16px; }
 }

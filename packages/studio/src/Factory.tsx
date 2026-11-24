@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { askFor, boardFor, linksFor, linksQuery, pinAfter, type Pin } from './board-view.ts';
 import { MapBand, mapReading, type LinksData } from './FactoryMap.tsx';
-import { usd } from './format.ts';
+import { plural, usd } from './format.ts';
 import { trapTab, usePhone } from './History.tsx';
 import { Loading, PageHeader, ProjectSelect, Reading, Seg, useProject, type Said } from './kit.tsx';
 import type { Session } from './Live.tsx';
@@ -72,7 +72,7 @@ export function stateOf(p: FactoryPr): { tone: 'working' | 'stalled' | 'waiting'
 
 export const ageText = (readAt: number, now: number) => {
   const m = Math.max(0, Math.floor((now - readAt) / MIN));
-  return `GitHub data ${m < 60 ? `${m} min` : `${Math.floor(m / 60)} h`} old`;
+  return `GitHub data ${m < 60 ? `${m} min` : m < 24 * 60 ? `${Math.floor(m / 60)} h` : plural(Math.floor(m / (24 * 60)), 'day')} old`;
 };
 
 /** How old the open-PR read is. The plugin is what reads GitHub, so old data means no session runs in this repo. */
@@ -194,11 +194,11 @@ export function CostSection({ issue, cost, onSave, level = 4 }: { issue: number 
 
 export const STAGE_LABEL: Record<BoardStage, string> = { queued: 'Queued', building: 'Building', reviewing: 'Reviewing', fixing: 'Fixing', gate: 'Gate', ready: 'Ready', merged: 'Merged' };
 
-/** Seven segments, one a stage: those before the issue's stage lit, its own marked, green once the issue is ready or merged, red when the test run or a check on its head failed. */
-export function Track({ stage, bad }: { stage: BoardStage; bad?: true }) {
+/** Seven segments, one a stage: those before the issue's stage lit, its own marked, green once the issue is ready or merged, red when the test run or a check on its head failed, or (`stalled`, Home's rows) its agent is stalled. */
+export function Track({ stage, bad, stalled }: { stage: BoardStage; bad?: true; stalled?: true }) {
   const at = STAGES.indexOf(stage);
   return (
-    <span className={stage === 'ready' || stage === 'merged' ? 'trk good' : bad ? 'trk bad' : 'trk'} role="img" aria-label={`Stage ${at + 1} of ${STAGES.length}: ${STAGE_LABEL[stage]}${bad ? ', failed' : ''}`}>
+    <span className={stage === 'ready' || stage === 'merged' ? 'trk good' : bad || stalled ? 'trk bad' : 'trk'} role="img" aria-label={`Stage ${at + 1} of ${STAGES.length}: ${STAGE_LABEL[stage]}${bad ? ', failed' : stalled ? ', stalled' : ''}`}>
       {STAGES.map((s, i) => <i key={s} className={i < at ? 'on' : i === at ? 'now' : ''} />)}
     </span>
   );
@@ -257,8 +257,10 @@ function NotOnIssue({ data }: { data: BudgetData['notOnIssue'] }) {
 }
 
 /** Why no issue carries a title, once: Content is not on full, or the project is excluded and sends none. Nothing with Content on full (an issue no read has seen has none either). */
-export const titlesNote = (data: BoardData) =>
+export const titlesNote = (data: Pick<BoardData, 'issues' | 'content'>) =>
   !data.issues.some((i) => !i.title) || data.content === 'full' ? null : data.content === 'excluded' ? 'This project is in excludeProjects: issues show by number.' : 'Issue titles show with Content on full.';
+/** What an excluded project's empty board says: the plugin sends no milestones for it. */
+export const EXCLUDED_NOTE = 'This project is in excludeProjects, so the plugin sends no milestones: nothing to follow here but the issues a session is working on.';
 
 /**
  * The Board band (v0.4 slice 6, #32): one milestone's open issues, its closed ones whose PR merged, and any issue a session reached this week outside it whose PR has not merged, each with the stage the
@@ -276,7 +278,7 @@ export function BoardBand({ data, error, live, cost, notOnIssue }: { data?: Boar
       {error && <p className="nothing" role="alert">The board could not be read: {error}</p>}
       {data && (data.issues.length === 0
         ? (!error && <p className="nothing">{data.milestone !== null ? `No open issue in ${data.milestone}, and none in flight.` : data.content === 'excluded'
-          ? 'This project is in excludeProjects, so the plugin sends no milestones: nothing to follow here but the issues a session is working on.'
+          ? EXCLUDED_NOTE
           : 'No open issue has a milestone, so there is nothing to follow yet. The plugin reads the open issues from GitHub while a session runs in this repo, with gh logged in.'}</p>)
         : (
           <>
