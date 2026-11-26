@@ -43,6 +43,8 @@ export type LiveAgent = {
   stalled: boolean;
   /** v0.4 slice 5 (#31): when the stall the plugin raised began (its stall.start's `since`): what the studio's Stop is tied to, and how long the stall has lasted when no tool is running. */
   stalledSince?: number;
+  /** #108: when the plugin raised it (stall.start's own time, about 15 minutes after `stalledSince`): when the stall is news to the owner. */
+  stalledAt?: number;
   errored: boolean;
   done: boolean;
 };
@@ -96,7 +98,7 @@ function apply(s: Session, e: Event) {
   const a = agentOf(s, e.agent_id ?? 'main', e.ts);
   a.lastTs = Math.max(a.lastTs, e.ts);
   s.lastTs = Math.max(s.lastTs, e.ts);
-  if (ALIVE.has(e.kind)) (a.stalled = false), (a.stalledSince = undefined);
+  if (ALIVE.has(e.kind)) (a.stalled = false), (a.stalledSince = undefined), (a.stalledAt = undefined);
   switch (e.kind) {
     case 'session.start':
       a.model ??= e.data.model;
@@ -180,6 +182,7 @@ function apply(s: Session, e: Event) {
     case 'stall.end':
       a.stalled = e.kind === 'stall.start';
       a.stalledSince = a.stalled ? e.data.since : undefined;
+      a.stalledAt = a.stalled ? e.ts : undefined;
       break;
   }
 }

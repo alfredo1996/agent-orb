@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Event } from '../../shared/src/index.ts';
-import { build, FINDINGS_ASK, isBot, openPrsArgv, parseFindings, parseOpenPrs, type Ctx } from '../hooks/core.ts';
+import { build, FINDINGS_ASK, isBot, openPrsArgv, openPrsBareArgv, parseFindings, parseOpenPrs, type Ctx } from '../hooks/core.ts';
 
 // v0.4 slice 1 (#27, Factory): the `orb-findings` block at the end of an agent's final report, parsed on the machine, and the open PRs read from gh.
 // #34: the paragraph the plugin appends to every subagent's prompt, asking for that block.
@@ -79,6 +79,20 @@ describe('parseFindings', () => {
     expect(parseFindings('```orb-findingsX\nF1 major a.ts open\n```')).toBeUndefined(); // another block's name
   });
 
+  it('the fence line may name the branch the work is on (#118), for a review that runs before its PR exists; a token git refuses names neither, and the block still counts', () => {
+    const body = '\nF1 major a.ts open\n```';
+    const one = [{ id: 'F1', severity: 'major', file: 'a.ts', fate: 'open' }];
+    for (const b of ['feat/108-since-you-looked', 'fix/409-retry', 'v0.4.6', 'a@b', 'x.lock.y', 'docs/home-issue-mockup']) {
+      expect(parseFindings(`\`\`\`orb-findings ${b}${body}`), b).toEqual({ branch: b, dropped: 0, findings: one });
+    }
+    expect(parseFindings(`\`\`\`orb-findings #416${body}`)).toEqual({ pr: 416, dropped: 0, findings: one }); // a PR is not a branch
+    // a space (two tokens), a leading -, /, # or ., `..`, `@{`, a trailing / . or .lock, a control or ref-special character, or a number with no #
+    for (const b of ['feat/108 since', '-x', '/x', 'a..b', 'a@{u}', 'x.lock', 'x/', 'x.', 'a//b', 'a/.b', 'a~1', 'a^', 'a:b', 'a?', 'a*', 'a[1]', 'a\\b', 'a\x01b', '@', '#4x', '416', '.hidden']) {
+      expect(parseFindings(`\`\`\`orb-findings ${b}${body}`), b).toEqual({ dropped: 0, findings: one });
+    }
+    expect(parseFindings(`\`\`\`orb-findings ${'f'.repeat(201)}${body}`)!.branch).toBe('f'.repeat(201)); // whether it is a branch is git's to say, and the report cuts it to 200
+  });
+
   it('the last block counts: a report that quotes an earlier one ends with its own', () => {
     const r = parseFindings('Round 1 said:\n```orb-findings\nF1 major a.ts open\n```\nNow:\n```orb-findings\nF1 major a.ts fixed\n```\n');
     expect(r!.findings).toEqual([{ id: 'F1', severity: 'major', file: 'a.ts', fate: 'fixed' }]);
@@ -93,6 +107,7 @@ describe('parseFindings', () => {
 describe('the findings paragraph (#34)', () => {
   it('asks for the format parseFindings reads: its own example parses whole, every fate, a dismissal with its reason, and #N on the fence is no number', () => {
     const r = parseFindings(FINDINGS_ASK, (s) => s);
+    expect(FINDINGS_ASK).toMatch(/your branch/); // #118: with no PR yet
     expect(r).toEqual({ dropped: 0, findings: [
       { id: 'F1', severity: 'major', file: 'src/auth/refresh.ts', fate: 'open', title: expect.any(String) },
       { id: 'F2', severity: 'minor', file: 'src/net/client.ts', fate: 'dismissed', title: expect.any(String), why: expect.any(String) },
@@ -141,13 +156,21 @@ const OPEN = JSON.stringify([
       { oid: 'aaaaaaa'.padEnd(40, '0'), committedDate: '2026-11-01T14:00:00Z', messageHeadline: 'first try' },
       { oid: HEAD, committedDate: '2026-11-01T15:04:42Z', messageHeadline: 'fix: the retry' },
     ],
+    files: [
+      { path: 'src/auth/refresh.ts', additions: 40, deletions: 3 }, { path: 'pnpm-lock.yaml', additions: 900, deletions: 12 }, { path: 'docs/img/retry.png', additions: 0, deletions: 0 },
+      { path: 'src/net/client.ts', additions: 2, deletions: 1 },
+    ],
   },
   { number: 405, headRefName: 'feat/403-banner', headRefOid: 'c0d1e2f'.padEnd(40, '2'), mergeStateStatus: 'CLEAN', statusCheckRollup: [], comments: [], reviews: [], commits: [] },
 ]);
 
 describe('the open-PR read', () => {
   it('asks gh for at most 40 open PRs with the fields ready() needs, and the commits for the head\'s time: 50 passes GitHub\'s 500,000-node limit, and gh fails', () => {
-    expect(openPrsArgv).toEqual(['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']);
+    expect(openPrsArgv).toEqual(['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body,files']);
+  });
+
+  it('#68: the read asked again when gh fails with the files is the same read without them', () => {
+    expect(openPrsBareArgv).toEqual([...openPrsArgv.slice(0, -1), 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']);
   });
 
   it('keeps numbers, the branch, the head, the merge state, each check\'s name and result, and each bot\'s latest comment time: never a comment\'s text', () => {
@@ -157,6 +180,7 @@ describe('the open-PR read', () => {
         number: 416, head: 'fix/409-token-retry', issue: 409, head_oid: HEAD, merge_state: 'UNSTABLE', last_commit_at: Date.parse('2026-11-01T15:04:42Z'),
         checks: [{ name: 'Unit tests', state: 'pass', ci: true }, { name: 'E2E', state: 'pending' }, { name: 'Lint', state: 'fail' }, { name: 'Docs', state: 'pass' }, { name: 'SonarCloud Code Analysis', state: 'pass' }, { name: 'coverage', state: 'pending' }],
         bots: [{ author: 'coderabbitai', at: Date.parse('2026-11-01T15:40:00Z') }, { author: 'sonarqubecloud', at: Date.parse('2026-11-01T15:23:10Z') }, { author: 'dependabot[bot]', at: Date.parse('2026-11-01T15:30:00Z') }],
+        files: ['src/auth/refresh.ts', 'src/net/client.ts'], // #68: the paths it changes, a lockfile and an image left out
       },
       { number: 405, head: 'feat/403-banner', issue: 403, head_oid: 'c0d1e2f'.padEnd(40, '2'), merge_state: 'CLEAN', checks: [], bots: [] }, // no commit listed for the head: its time is unknown
     ]);
@@ -195,6 +219,68 @@ describe('the open-PR read', () => {
     expect(JSON.stringify(build.projectOpenPrs(ctx, prs)).length).toBeLessThan(1_000_000 / 3); // UTF-8 at most 3 bytes a character: under the server's 1 MB
   });
 
+  it('#68: a PR\'s paths are at most 100, each at most 300 characters (a longer one is left out, never cut); gh\'s output with no files gives none', () => {
+    const one = (files: unknown) => parseOpenPrs(JSON.stringify([{ number: 7, headRefOid: HEAD, mergeStateStatus: 'CLEAN', statusCheckRollup: [], comments: [], reviews: [], commits: [], files }]))![0]!;
+    const paths = Array.from({ length: 101 }, (_, i) => ({ path: `src/f${i}.ts`, additions: 1, deletions: 0 }));
+    expect(one(paths).files).toEqual(paths.slice(0, 100).map((f) => f.path));
+    expect(one([{ path: `src/${'d'.repeat(293)}.ts` }, { path: `src/${'d'.repeat(294)}.ts` }, { path: '' }, { path: 7 }, null]).files).toEqual([`src/${'d'.repeat(293)}.ts`]); // 300 characters, then 301
+    expect('files' in one(undefined)).toBe(false);
+    expect(one([]).files).toEqual([]); // read, and it changes no file
+  });
+
+  const bare = { headRefOid: 'a'.repeat(40), mergeStateStatus: 'CLEAN', statusCheckRollup: [], comments: [], reviews: [], commits: [] };
+  const sum = (prs: unknown[]) => prs.reduce<number>((n, p) => n + JSON.stringify(p).length + 1, 0);
+
+  it('#68: paths never cost a PR its place: past 250,000 characters the longest lists go first (whatever their place in gh\'s order), and every PR still arrives', () => {
+    // 40 PRs, the lists growing to PR 20 and shrinking after it: PR i with 3(min(i, 39 - i) + 1) paths of about 280 characters, some 350,000 characters of paths
+    const size = (i: number) => 3 * (Math.min(i, 39 - i) + 1);
+    const many = Array.from({ length: 40 }, (_, i) => ({
+      ...bare, number: 1000 - i,
+      files: Array.from({ length: size(i) }, (_, k) => ({ path: `src/${String(i).padStart(2, '0')}/${'p'.repeat(260)}-${k}.ts`, additions: 1, deletions: 1 })),
+    }));
+    const prs = parseOpenPrs(JSON.stringify(many))!;
+    expect(prs.map((p) => p.number)).toEqual(many.map((p) => p.number));
+    expect(JSON.stringify(prs).length).toBeLessThanOrEqual(250_000);
+    const dropped = prs.flatMap((p, i) => (p.files ? [] : [size(i)]));
+    const kept = prs.flatMap((p, i) => (p.files ? [size(i)] : []));
+    expect(dropped.length).toBeGreaterThan(0);
+    expect(kept.length).toBeGreaterThan(0);
+    expect(Math.min(...dropped)).toBeGreaterThanOrEqual(Math.max(...kept)); // the longest lists went, the shorter stayed whole
+    expect(prs.every((p, i) => !p.files || p.files.length === size(i))).toBe(true);
+    expect(prs[19]!.files).toBeUndefined(); // the longest, in the middle of gh's order
+  });
+
+  it('#68: the longest is by characters, not by paths, and a list is dropped only while the read is over budget: one list kept at exactly 250,000 characters', () => {
+    const check = (k: number) => Array.from({ length: k }, (_, j) => ({ __typename: 'CheckRun', name: `${'c'.repeat(190)}${j}`, status: 'COMPLETED', conclusion: 'SUCCESS' }));
+    const A = Array.from({ length: 20 }, (_, k) => ({ path: `a/${'a'.repeat(250)}${k}` })); // fewer paths, more characters
+    // 88 short paths and two whose lengths make up `extra`, so the list can be made to cost one character more at a time
+    const B = (extra: number) => [...Array.from({ length: 88 }, (_, k) => ({ path: `b/${k}.ts` })), { path: `b/${'y'.repeat(Math.min(extra, 290))}` }, { path: `c/${'z'.repeat(Math.max(0, extra - 290))}` }]; // more paths, fewer characters
+    const world = (k: number, a: unknown, b: unknown) => [
+      ...[1, 2, 3, 4, 5].map((n) => ({ ...bare, number: n, statusCheckRollup: check(200) })), { ...bare, number: 6, ...(a ? { files: a } : {}) }, { ...bare, number: 7, ...(b ? { files: b } : {}) },
+      { ...bare, number: 8, statusCheckRollup: check(k) },
+    ];
+    // the most checks the last PR can carry with B whole and A none and the read within the budget, then B's last path lengthened to land on the budget exactly
+    let k = 0;
+    const fits = (k: number, b: unknown) => { const r = parseOpenPrs(JSON.stringify(world(k, undefined, b)))!; return r.length === 8 && !!r[6]!.files && sum(r) <= 250_000; }; // over the budget, B's list goes, and then a PR
+    while (fits(k + 1, B(1))) k++;
+    let last = 1;
+    while (fits(k, B(last + 1))) last++;
+    expect(sum(parseOpenPrs(JSON.stringify(world(k, undefined, B(last))))!)).toBe(250_000);
+    const prs = parseOpenPrs(JSON.stringify(world(k, A, B(last))))!;
+    expect(prs.map((p) => p.number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(prs[5]!.files).toBeUndefined(); // A: 20 paths, more characters: it goes
+    expect(prs[6]!.files).toHaveLength(90); // B: 90 paths, fewer characters, and it fits to the character: it stays
+    expect(sum(prs)).toBe(250_000);
+  });
+
+  it('#68: the budget is bytes, not characters: paths of 3-byte characters keep the read within 250,000 bytes of JSON, the server\'s 1 MB less its issues', () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({ ...bare, number: 1000 - i, files: Array.from({ length: 100 }, (_, k) => ({ path: `src/${i}/${'漢'.repeat(100)}${k}` })) }));
+    const prs = parseOpenPrs(JSON.stringify(many))!;
+    expect(prs.map((p) => p.number)).toEqual(many.map((p) => p.number));
+    expect(new TextEncoder().encode(JSON.stringify(prs)).length).toBeLessThanOrEqual(250_000);
+    expect(prs.some((p) => p.files)).toBe(true);
+  });
+
   it('an excluded project sends no branch names', () => {
     expect(parseOpenPrs(OPEN, false)!.map((p) => 'head' in p)).toEqual([false, false]);
   });
@@ -220,6 +306,9 @@ describe('the three events speak the server schema', () => {
     build.findingsReport(ctx, { agentId: 'a-1', turnId: 't-2' }, undefined, parseFindings(REPORT.replace('```orb-findings', '```orb-findings #416'))!), // a detached head, the PR named
     build.gateReport(ctx, { agentId: 'a-2', turnId: 't-3' }, { result: 'pass', commit: 'a1b2c3d' }),
     build.projectOpenPrs(ctx, parseOpenPrs(OPEN)!),
+    // #68: the plugin's limits on a PR's paths (100 of 300 characters) are the schema's: a path the plugin kept and the schema refused would refuse every read
+    build.projectOpenPrs(ctx, parseOpenPrs(JSON.stringify([{ number: 7, headRefOid: HEAD, mergeStateStatus: 'CLEAN', statusCheckRollup: [], comments: [], reviews: [], commits: [],
+      files: Array.from({ length: 101 }, (_, i) => ({ path: `${String(i).padStart(3, '0')}${'x'.repeat(297)}` })) }]))!),
   ])('%#', (e) => {
     const parsed = Event.safeParse(e);
     expect(parsed.error).toBeUndefined();

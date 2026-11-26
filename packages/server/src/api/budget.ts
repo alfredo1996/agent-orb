@@ -17,8 +17,8 @@ const Put = z.union([
   z.strictObject({ project: z.string().min(1), issue: z.number().int().positive().max(999_999_999), usd }),
 ]);
 
-/** A PR the session linked: when it opened, and the issue it closes (none: it closes no issue). */
-export type Link = { at: number; issue: number | null };
+/** A PR the session linked: when it opened, the issue it closes (none: it closes no issue), and when that issue was opened (null: no read gave it, #69). */
+export type Link = { at: number; issue: number | null; openedAt: number | null };
 
 /**
  * The issue a PR is for: the one the open-PR read stored, else (#63) the number its head names, which only the merged list gives, so a PR merged before any read saw it open still has one. #69: not
@@ -34,17 +34,24 @@ export function prIssue(issue: number | null, head: string | null, mergedAt: num
 
 /** The PRs a session linked, by opening time: the PR's own `created_at` where the read gave one, else when the session first linked it. The board (#32) and the Map (#66) reach issues through the same list. */
 export const sessionLinks = (store: Store, id: string, open: Map<number, OpenIssue>): Link[] => all(store, `SELECT coalesce(r.created_at, sp.ts) AS at, r.issue AS issue, r.head AS head, r.merged_at AS mergedAt
-  FROM session_prs sp JOIN pull_requests r ON r.id = sp.pr_id WHERE sp.session_id = :id AND coalesce(r.created_at, sp.ts) IS NOT NULL ORDER BY at`, { id }).map((r) => ({ at: r.at, issue: prIssue(r.issue, r.head, r.mergedAt, open) }));
+  FROM session_prs sp JOIN pull_requests r ON r.id = sp.pr_id WHERE sp.session_id = :id AND coalesce(r.created_at, sp.ts) IS NOT NULL ORDER BY at`, { id }).map((r) => {
+    const issue = prIssue(r.issue, r.head, r.mergedAt, open);
+    return { at: r.at, issue, openedAt: issue === null ? null : (open.get(issue)?.openedAt ?? null) };
+  });
 
 /**
  * The issue a request belongs to in a session that is on no issue branch: the first PR the session opened at or after it (the PR's window runs from the session's previous PR up to
- * its opening), so a request in the very second of the opening is that PR's. `links` are by opening time. Past the last PR, or before a PR that closes no issue: none.
+ * its opening), so a request in the very second of the opening is that PR's. `links` are by opening time. Past the last PR, or before a PR that closes no issue: none. Nor before the PR's
+ * issue was opened (#110): a window can start at the session's previous PR, hours before the issue existed. An issue whose opening no read gave keeps its whole window.
  * ponytail: a linear scan of the session's PRs (the busiest real session links 201, the average is 15); a binary search if a route over many such sessions ever shows.
  */
 export function windowIssue(links: Link[], ts: number): number | null {
-  for (const l of links) if (l.at >= ts) return l.issue;
+  for (const l of links) if (l.at >= ts) return l.openedAt !== null && ts < l.openedAt ? null : l.issue;
   return null;
 }
+
+/** Whether a PR's window can give its issue anything: every request in it is at or before the PR's opening, so not when the issue was opened after that (#110). The board's reach asks the same. */
+export const windowGives = (l: Link) => l.openedAt === null || l.at >= l.openedAt;
 
 /**
  * An issue as the last reads left it. `goneAt` is null while the plugin's read lists it as open, else when it left the list (closed, or past gh's limit of 200): its milestone and title are kept (#32).
@@ -131,46 +138,48 @@ export function issueCosts(store: Store, project: string, start: number, now: nu
   return { issues, none };
 }
 
+/** What GET /api/budget answers, for the issue page (#106) to read an issue's row by the same figures. */
+export function budgetOf(store: Store, project: string, tz: string, at: number, open = openIssues(store, project)) {
+  const month = dayOf(tz, at).slice(0, 7); // as the goal reads it: from midnight on the month's first day in the viewer's zone, to now
+  const [start] = monthBounds(tz, Number(month.slice(0, 4)), Number(month.slice(5, 7)));
+  const { issues, none } = issueCosts(store, project, start, at, open);
+
+  // A closed issue keeps its milestone (#32), so what it cost is still held to the milestone's default; but only an open one is listed with no spend, and only an open one's milestone is offered.
+  const milestoneOf = new Map<number, string>();
+  const openNames = new Set<string>();
+  for (const [number, o] of open) {
+    if (o.milestone !== null) milestoneOf.set(number, o.milestone);
+    if (o.goneAt !== null) continue;
+    if (o.milestone !== null) openNames.add(o.milestone);
+    if (!issues.has(number)) issues.set(number, { whole: 0, windows: 0, partial: false });
+  }
+  const defaults = new Map<string, number>();
+  const overrides = new Map<number, number>();
+  for (const r of all(store, 'SELECT kind, key, usd FROM budgets WHERE project = :project', { project })) {
+    if (r.kind === 'milestone') defaults.set(r.key, r.usd);
+    else {
+      overrides.set(Number(r.key), r.usd);
+      if (!issues.has(Number(r.key))) issues.set(Number(r.key), { whole: 0, windows: 0, partial: false });
+    }
+  }
+
+  const rows = [...issues].toSorted(([a], [b]) => b - a).map(([number, b]) => {
+    const milestone = milestoneOf.get(number) ?? null;
+    const own = overrides.get(number);
+    const dflt = milestone === null ? undefined : defaults.get(milestone);
+    const budget = own ?? dflt ?? null;
+    const spent = b.whole + b.windows;
+    return { number, milestone, usd: spent, partial: b.partial, whole: b.whole, windows: b.windows, budget, milestoneBudget: dflt ?? null, source: own !== undefined ? 'issue' : dflt !== undefined ? 'milestone' : null, mark: markOf(spent, budget) };
+  });
+  const names = [...new Set([...openNames, ...defaults.keys()])].toSorted();
+  return { project, month, issues: rows, notOnIssue: none, milestones: names.map((name) => ({ name, budget: defaults.get(name) ?? null })) };
+}
+
 export function budget(app: FastifyInstance, { store, now = Date.now }: { store: Store; now?: () => number }) {
   app.get('/api/budget', async (req, reply) => {
     const q = Query.safeParse(req.query);
     if (!q.success) return reply.code(400).send({ error: 'give a project, and a time zone that exists', issues: q.error.issues });
-    const { project, tz } = q.data;
-    const at = now();
-    const month = dayOf(tz, at).slice(0, 7); // as the goal reads it: from midnight on the month's first day in the viewer's zone, to now
-    const [start] = monthBounds(tz, Number(month.slice(0, 4)), Number(month.slice(5, 7)));
-    const open = openIssues(store, project);
-    const { issues, none } = issueCosts(store, project, start, at, open);
-
-    // A closed issue keeps its milestone (#32), so what it cost is still held to the milestone's default; but only an open one is listed with no spend, and only an open one's milestone is offered.
-    const milestoneOf = new Map<number, string>();
-    const openNames = new Set<string>();
-    for (const [number, o] of open) {
-      if (o.milestone !== null) milestoneOf.set(number, o.milestone);
-      if (o.goneAt !== null) continue;
-      if (o.milestone !== null) openNames.add(o.milestone);
-      if (!issues.has(number)) issues.set(number, { whole: 0, windows: 0, partial: false });
-    }
-    const defaults = new Map<string, number>();
-    const overrides = new Map<number, number>();
-    for (const r of all(store, 'SELECT kind, key, usd FROM budgets WHERE project = :project', { project })) {
-      if (r.kind === 'milestone') defaults.set(r.key, r.usd);
-      else {
-        overrides.set(Number(r.key), r.usd);
-        if (!issues.has(Number(r.key))) issues.set(Number(r.key), { whole: 0, windows: 0, partial: false });
-      }
-    }
-
-    const rows = [...issues].toSorted(([a], [b]) => b - a).map(([number, b]) => {
-      const milestone = milestoneOf.get(number) ?? null;
-      const own = overrides.get(number);
-      const dflt = milestone === null ? undefined : defaults.get(milestone);
-      const budget = own ?? dflt ?? null;
-      const spent = b.whole + b.windows;
-      return { number, milestone, usd: spent, partial: b.partial, whole: b.whole, windows: b.windows, budget, milestoneBudget: dflt ?? null, source: own !== undefined ? 'issue' : dflt !== undefined ? 'milestone' : null, mark: markOf(spent, budget) };
-    });
-    const names = [...new Set([...openNames, ...defaults.keys()])].toSorted();
-    return { project, month, issues: rows, notOnIssue: none, milestones: names.map((name) => ({ name, budget: defaults.get(name) ?? null })) };
+    return budgetOf(store, q.data.project, q.data.tz, now());
   });
 
   app.put('/api/budget', async (req, reply) => {

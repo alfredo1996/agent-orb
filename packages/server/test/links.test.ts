@@ -49,8 +49,8 @@ const send = async (...events: unknown[]) => {
   const r = await app.inject({ method: 'POST', url: '/ingest', headers: { authorization: `Bearer ${TOKEN}` }, payload: { events: flat } });
   expect(r.json()).toMatchObject({ accepted: flat.length, rejected: 0 });
 };
-type Link = { kind: 'file'; a: number; b: number; files: string[]; count: number; together: boolean } | { kind: 'mention'; a: number; b: number };
-type Links = { project: string; milestone: string | null; links: Link[] };
+type Link = { kind: 'file'; a: number; b: number; files: string[]; count: number; together: boolean } | { kind: 'mention'; a: number; b: number; both?: true };
+type Links = { project: string; milestone: string | null; links: Link[]; common: string[] };
 const links = async (q: Record<string, string> = {}): Promise<Links> => {
   const r = await app.inject({ url: `/api/links?${new URLSearchParams({ project: 'mobile-app', ...q })}` });
   expect(r.statusCode).toBe(200);
@@ -63,7 +63,7 @@ const on = (issue: number, ...paths: string[]) => [start(`s-${issue}`, `fix/${is
 describe('GET /api/links: two issues wrote the same file', () => {
   it('a session on each wrote the same path: one link, with the path, between the two and no other', async () => {
     await send(on(409, 'src/net/client.ts', 'src/auth/refresh.ts'), on(412, 'src/net/client.ts', 'src/upload/queue.ts'), on(415, 'src/sync/dialog.ts'), read(NOW - MIN, [], issues(409, 412, 415, 417)));
-    expect(await links()).toEqual({ project: 'mobile-app', milestone: M, links: [file(409, 412, ['src/net/client.ts'])] });
+    expect(await links()).toEqual({ project: 'mobile-app', milestone: M, links: [file(409, 412, ['src/net/client.ts'])], common: [] });
   });
 
   it('a read is not a write: an issue whose session only read the file is not linked by it', async () => {
@@ -93,6 +93,15 @@ describe('GET /api/links: two issues wrote the same file', () => {
     expect((await links()).links).toEqual([file(409, 412, ['src/before.ts'])]);
   });
 
+  it('a write inside the window but before the issue was opened is not that issue\'s (#110)', async () => {
+    await send(
+      start('s-x', 'main'), write('s-x', T0 + MIN, 'src/early.ts'), write('s-x', T0 + 3 * MIN, 'src/late.ts'), link('s-x', T0 + 5 * MIN, 416), // #409 was opened at +2
+      on(412, 'src/early.ts', 'src/late.ts'),
+      read(NOW - MIN, [pr(416, { head: 'feat/retry', issue: 409, created_at: T0 + 5 * MIN })], [{ number: 409, milestone: M, created_at: T0 + 2 * MIN }, ...issues(412)]),
+    );
+    expect((await links()).links).toEqual([file(409, 412, ['src/late.ts'])]);
+  });
+
   it('a session that opened a PR for each of two issues gives each the writes of its own window', async () => {
     await send(
       start('s-x', 'main'), write('s-x', T0 + MIN, 'src/one.ts'), link('s-x', T0 + 5 * MIN, 416), write('s-x', T0 + 6 * MIN, 'src/two.ts'), link('s-x', T0 + 9 * MIN, 418),
@@ -111,7 +120,8 @@ describe('GET /api/links: two issues wrote the same file', () => {
 
   it('a link names up to 3 files and counts them all, the file fewest issues wrote first', async () => {
     const shared = ['PROJECT.md', 'src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts'];
-    await send(on(409, ...shared), on(412, ...shared), on(415, 'PROJECT.md'), read(NOW - MIN, [], issues(409, 412, 415)));
+    // three more issues with files of their own: PROJECT.md, three of six, is then not most of the board's (#68), and still ties
+    await send(on(409, ...shared), on(412, ...shared), on(415, 'PROJECT.md'), on(417, 'x.ts'), on(419, 'y.ts'), on(421, 'z.ts'), read(NOW - MIN, [], issues(409, 412, 415, 417, 419, 421)));
     expect((await links()).links).toEqual([
       file(409, 412, ['src/a.ts', 'src/b.ts', 'src/c.ts'], true, 5), // PROJECT.md is the fifth: three issues wrote it, so it says the least about these two
       file(409, 415, ['PROJECT.md']), file(412, 415, ['PROJECT.md']),
@@ -127,15 +137,95 @@ describe('GET /api/links: two issues wrote the same file', () => {
   });
 });
 
+describe('GET /api/links: two issues whose open PRs change the same file (#68)', () => {
+  const opens = (...prs: [number, number, string[] | undefined][]) => prs.map(([number, issue, files]) => pr(number, { issue, ...(files ? { files } : {}) }));
+
+  it('two shown issues whose open PRs both list a path are a file link, in flight together, with no session write at all', async () => {
+    await send(read(NOW - MIN, opens([416, 409, ['src/net/client.ts', 'src/auth/refresh.ts']], [418, 412, ['src/net/client.ts']]), issues(409, 412)));
+    expect(await links()).toEqual({ project: 'mobile-app', milestone: M, links: [file(409, 412, ['src/net/client.ts'])], common: [] });
+  });
+
+  it('a pair found from a session\'s write and from its PR\'s files is one link, each path once', async () => {
+    await send(on(409, 'src/a.ts'), on(412, 'src/a.ts'), read(NOW - MIN, opens([416, 409, ['src/a.ts', 'src/b.ts']], [418, 412, ['src/b.ts', 'src/a.ts']]), issues(409, 412)));
+    expect((await links()).links).toEqual([file(409, 412, ['src/a.ts', 'src/b.ts'])]);
+  });
+
+  it('a path that three issues change, more than half of those with any file, ties none of them and comes back in `common`; a path only two share still ties them', async () => {
+    await send(read(NOW - MIN, opens([416, 409, ['PROJECT.md', 'src/a.ts']], [418, 412, ['PROJECT.md', 'src/a.ts']], [420, 415, ['PROJECT.md']]), issues(409, 412, 415)));
+    expect(await links()).toEqual({ project: 'mobile-app', milestone: M, links: [file(409, 412, ['src/a.ts'])], common: ['PROJECT.md'] });
+    // three of seven shown is not more than half: the path ties the three
+    await send(read(NOW, opens([416, 409, ['PROJECT.md']], [418, 412, ['PROJECT.md']], [420, 415, ['PROJECT.md']], [421, 417, ['x.ts']], [422, 419, ['y.ts']], [423, 421, ['z.ts']], [424, 423, ['w.ts']]),
+      issues(409, 412, 415, 417, 419, 421, 423)));
+    const seven = await links();
+    expect(seven.common).toEqual([]);
+    expect(seven.links.map((l) => [l.a, l.b])).toEqual([[409, 412], [409, 415], [412, 415]]);
+  });
+
+  it('an issue whose newest PR merged is joined only by what its sessions wrote: an older PR of it still open, with the path, ties nothing', async () => {
+    await send(merged(NOW - 3 * MIN, [{ number: 420, merged_at: NOW - 3 * MIN, head: 'fix/409-x' }]),
+      read(NOW - MIN, opens([416, 409, ['src/a.ts']], [418, 412, ['src/a.ts']]), issues(409, 412)));
+    expect((await links()).links).toEqual([]);
+    await send(on(409, 'src/a.ts')); // what its own session wrote still ties it, and no longer together
+    expect((await links()).links).toEqual([file(409, 412, ['src/a.ts'], false)]);
+  });
+
+  it('`common` counts the issues that change a path by a session\'s write and by a PR\'s files together: one writes it, two PRs list it, and it is common', async () => {
+    await send(on(409, 'PROJECT.md'), read(NOW - MIN, opens([418, 412, ['PROJECT.md']], [420, 415, ['PROJECT.md']]), issues(409, 412, 415)));
+    expect(await links()).toEqual({ project: 'mobile-app', milestone: M, links: [], common: ['PROJECT.md'] });
+  });
+
+  it('`common` is sorted by path, whatever order the paths were read in', async () => {
+    const both = ['PROJECT.md', 'PLAN.md'];
+    await send(read(NOW - MIN, opens([416, 409, both], [418, 412, both], [420, 415, both]), issues(409, 412, 415)));
+    expect((await links()).common).toEqual(['PLAN.md', 'PROJECT.md']);
+  });
+
+  it('another project\'s open PRs, with the same issue numbers and the same path, tie nothing here', async () => {
+    const OTHER: Project = { cwd: '/Users/a/web', name: 'web', git_remote: 'github.com/o/web' };
+    await send(read(NOW - MIN, opens([416, 409, ['src/a.ts']]), issues(409, 412)),
+      ev('reader', NOW - MIN, 'project.open_prs', { prs: opens([418, 412, ['src/a.ts']]), issues: issues(409, 412) }, {}, OTHER));
+    expect((await links()).links).toEqual([]);
+  });
+
+  it('`common` is measured against the issues the board shows, files or none: three open PRs on an eight-issue board change src/core.ts, and it ties them; four of six is most of the board, and is common', async () => {
+    const core = ['src/core.ts'];
+    await send(read(NOW - MIN, opens([416, 409, core], [418, 412, core], [420, 415, core]), issues(409, 412, 415, 417, 419, 421, 423, 425)));
+    const eight = await links();
+    expect(eight.common).toEqual([]);
+    expect(eight.links.map((l) => [l.a, l.b])).toEqual([[409, 412], [409, 415], [412, 415]]);
+    // exactly half (three of six, here with one issue that has no file) is not more than half; four of six is
+    await send(read(NOW, opens([416, 409, core], [418, 412, core], [420, 415, core]), issues(409, 412, 415, 417, 419, 421)));
+    expect((await links()).common).toEqual([]);
+    await send(read(NOW + MIN, opens([416, 409, core], [418, 412, core], [420, 415, core], [422, 417, core]), issues(409, 412, 415, 417, 419, 421)));
+    expect(await links()).toMatchObject({ links: [], common: core });
+  });
+
+  it('a read whose PRs carry no files (a plugin from before #68) leaves the column null, and the route answers from the sessions\' writes as before', async () => {
+    await send(on(409, 'src/a.ts'), on(412, 'src/a.ts'), read(NOW - MIN, opens([416, 409, undefined], [418, 412, undefined]), issues(409, 412)));
+    expect(all(store, 'SELECT number, files FROM open_prs ORDER BY number').map((r) => ({ ...r }))).toEqual([{ number: 416, files: null }, { number: 418, files: null }]);
+    expect((await links()).links).toEqual([file(409, 412, ['src/a.ts'])]);
+  });
+
+  it('a lockfile or an image two PRs list ties nothing, as for a session\'s write; a PR whose issue the board does not show ties nothing', async () => {
+    await send(read(NOW - MIN, opens([416, 409, ['pnpm-lock.yaml', 'docs/a.png']], [418, 412, ['pnpm-lock.yaml', 'docs/a.png', 'src/q.ts']], [430, 500, ['src/q.ts']]), issues(409, 412)));
+    expect((await links()).links).toEqual([]);
+  });
+});
+
 describe('GET /api/links: one issue mentions another', () => {
   it('a mention between two shown issues comes back in its direction; one to an issue not shown, or to itself, is left out', async () => {
     await send(read(NOW - MIN, [], [{ number: 417, milestone: M, mentions: [409, 500, 417] }, { number: 409, milestone: M, mentions: [300] }, { number: 412, milestone: M }, { number: 300, milestone: 'v9' }]));
     expect((await links()).links).toEqual([{ kind: 'mention', a: 417, b: 409 }]);
   });
 
-  it('two issues that mention each other are two links, and a pair can be tied by a file too: file links first', async () => {
-    await send(on(409, 'src/a.ts'), on(412, 'src/a.ts'), read(NOW - MIN, [], [{ number: 409, milestone: M, mentions: [412] }, { number: 412, milestone: M, mentions: [409] }]));
-    expect((await links()).links).toEqual([file(409, 412, ['src/a.ts']), { kind: 'mention', a: 409, b: 412 }, { kind: 'mention', a: 412, b: 409 }]);
+  it('two issues that mention each other are one link, the lower number first, with `both` (#70: one line on the Map); one named back by none keeps its direction; a pair can be tied by a file too: file links first', async () => {
+    await send(on(409, 'src/a.ts'), on(412, 'src/a.ts'), read(NOW - MIN, [], [{ number: 409, milestone: M, mentions: [412] }, { number: 412, milestone: M, mentions: [409] }, { number: 415, milestone: M, mentions: [409] }]));
+    expect((await links()).links).toEqual([file(409, 412, ['src/a.ts']), { kind: 'mention', a: 409, b: 412, both: true }, { kind: 'mention', a: 415, b: 409 }]);
+  });
+
+  it('a mention stored twice (the ingest keeps the list as the plugin sent it) is one link, and a pair that names each other twice over is one `both` link', async () => {
+    await send(read(NOW - MIN, [], [{ number: 409, milestone: M, mentions: [412, 412] }, { number: 412, milestone: M }, { number: 415, milestone: M, mentions: [409, 409] }, { number: 417, milestone: M, mentions: [415, 415] }, { number: 420, milestone: M, mentions: [421, 421] }, { number: 421, milestone: M, mentions: [420, 420] }]));
+    expect((await links()).links).toEqual([{ kind: 'mention', a: 409, b: 412 }, { kind: 'mention', a: 415, b: 409 }, { kind: 'mention', a: 417, b: 415 }, { kind: 'mention', a: 420, b: 421, both: true }]);
   });
 
   it('an event with no mentions (a plugin from before #66) leaves the column null, and the route still answers', async () => {
@@ -151,11 +241,11 @@ describe('GET /api/links: the route', () => {
   });
 
   it('a project nothing was read for answers no links and no milestone', async () => {
-    expect(await links({ project: 'nowhere' })).toEqual({ project: 'nowhere', milestone: null, links: [] });
+    expect(await links({ project: 'nowhere' })).toEqual({ project: 'nowhere', milestone: null, links: [], common: [] });
   });
 
   it('shows the links of the board\'s own issues: every issue a link names is a row of GET /api/board for the same milestone', async () => {
-    await send(on(409, 'src/a.ts'), on(412, 'src/a.ts'), on(415, 'src/a.ts'), read(NOW - MIN, [], [...issues(409, 412), { number: 415, milestone: 'v2.4' }, { number: 417, milestone: 'v2.4', mentions: [415, 409] }]));
+    await send(on(409, 'src/a.ts', 'src/b.ts'), on(412, 'src/a.ts'), on(415, 'src/b.ts'), read(NOW - MIN, [], [...issues(409, 412), { number: 415, milestone: 'v2.4' }, { number: 417, milestone: 'v2.4', mentions: [415, 409] }]));
     for (const milestone of [M, 'v2.4']) {
       const board = (await app.inject({ url: `/api/board?${new URLSearchParams({ project: 'mobile-app', milestone })}` })).json() as { issues: { number: number }[] };
       const shown = new Set(board.issues.map((i) => i.number));

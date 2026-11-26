@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ContentStore } from '../content-store.ts';
 import { each, get, type Store } from '../store/store.ts';
-import { openIssues, prIssue, sessionLinks, windowIssue, type Link } from './budget.ts';
+import { openIssues, prIssue, sessionLinks, windowGives, windowIssue, type Link } from './budget.ts';
 import { openPrs } from './factory.ts';
 
 // v0.4 slice 6 (#32, Factory; PROJECT.md §15, 2026-11-03): each issue of a milestone, followed from queued to merged on one board.
@@ -29,23 +29,25 @@ const WRITES = `FROM agents a JOIN turns t ON t.agent_id = a.id JOIN tool_calls 
  * in front of its number. So they are found by the range of that key (`id >= 'p:' AND id < 'p;'`, a primary-key search), not by joining on `p.id || ':' || number`, which made SQLite scan every PR of every
  * project. The last term keeps another project whose id merely begins with this one's from reading this one's rows.
  */
-export const PRS_OF = `SELECT r.number AS number, r.issue AS issue, r.head AS head, r.merged_at AS mergedAt FROM projects p
+export const PRS_OF = `SELECT r.number AS number, r.issue AS issue, r.head AS head, r.merged_at AS mergedAt, r.created_at AS createdAt FROM projects p
   JOIN pull_requests r ON r.id >= p.id || ':' AND r.id < p.id || ';' AND r.id = p.id || ':' || r.number WHERE p.name = :project`;
 
 /** A session that reaches issues: `issues` are those it reaches (its branch's alone, else those of the PRs it linked), and `at` its own last event, which is how recently it reached each. */
-type Reach = { id: string; branch: string | null; at: number; own: number | null; links: Link[]; issues: Set<number> };
-type PrRow = { number: number; head: string | null; mergedAt: number | null };
-const newest = <T extends { number: number }>(list: T[] | undefined) => list?.reduce<T | undefined>((a, b) => (a && a.number > b.number ? a : b), undefined);
+export type Reach = { id: string; branch: string | null; at: number; own: number | null; links: Link[]; issues: Set<number> };
+type PrRow = { number: number; head: string | null; mergedAt: number | null; createdAt: number | null };
+/** When an open PR became ready: its test run and findings report, the later, and with no test run (ready by CI checks) the later of its report and when it opened. Shared by the issue page and GET /api/changes. */
+export const readyAt = (p: { gate: { ts: number } | null; reportAt: number | null }, created: number | null) =>
+  p.gate ? Math.max(p.gate.ts, p.reportAt ?? 0) : Math.max(p.reportAt ?? 0, created ?? 0);
+export const newest = <T extends { number: number }>(list: T[] | undefined) => list?.reduce<T | undefined>((a, b) => (a && a.number > b.number ? a : b), undefined);
 
 /**
  * Which sessions reach which issue, and which issues show for a milestone: what the board works its stages out from, and (#66) what GET /api/links ties together, so the two never disagree on
  * the issues or on who reached them. `shown` is each issue to show, with whether it is outside the milestone; `mergedPr` an issue's merged PR when that is the newest it has.
  */
-export function reachOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number) {
+export function reachOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number, { detail = false, open = openIssues(store, project) } = {}) {
   const week = now - FLIGHT_MS;
 
-  // The issues as the plugin last read them: the open ones, and those that have left the list since, with the milestone and title they had.
-  const open = openIssues(store, project);
+  // The issues as the plugin last read them: the open ones, and those that have left the list since, with the milestone and title they had (`open`: a caller that has read them already).
   const isOpen = (issue: number) => open.get(issue)?.goneAt === null;
   const isGone = (issue: number) => open.get(issue)?.goneAt != null;
 
@@ -63,7 +65,7 @@ export function reachOf(store: Store, content: ContentStore, project: string, ch
     const links = own === null && s.links ? sessionLinks(store, s.id, open) : [];
     const issues = new Set<number>();
     if (own !== null) issues.add(own);
-    else for (const l of links) if (l.issue !== null) issues.add(l.issue);
+    else for (const l of links) if (l.issue !== null && windowGives(l)) issues.add(l.issue);
     for (const issue of issues) if (isOpen(issue)) touched.set(issue, Math.max(touched.get(issue) ?? 0, s.at));
     if ([...issues].some((issue) => open.has(issue) || s.at >= week)) reaches.push({ id: s.id, branch: s.branch, at: s.at, own, links, issues });
   }
@@ -83,10 +85,11 @@ export function reachOf(store: Store, content: ContentStore, project: string, ch
   const prsOf = new Map<number, PrRow[]>();
   for (const r of each(store, PRS_OF, { project })) {
     const issue = prIssue(r.issue, r.head, r.mergedAt, open);
-    if (issue !== null) prsOf.set(issue, [...(prsOf.get(issue) ?? []), { number: r.number, head: r.head, mergedAt: r.mergedAt }]);
+    if (issue !== null) prsOf.set(issue, [...(prsOf.get(issue) ?? []), { number: r.number, head: r.head, mergedAt: r.mergedAt, createdAt: r.createdAt }]);
   }
   const openOf = new Map<number, ReturnType<typeof openPrs>['prs']>();
-  for (const p of openPrs(store, content, now, project, null, false).prs) if (p.issue !== null) openOf.set(p.issue, [...(openOf.get(p.issue) ?? []), p]);
+  const read = openPrs(store, content, now, project, null, detail); // `detail`: the findings of each PR too (the issue page shows one's)
+  for (const p of read.prs) if (p.issue !== null) openOf.set(p.issue, [...(openOf.get(p.issue) ?? []), p]);
   /** The issue's merged PR, when it is the newest it has: a newer open PR means it is in flight again. */
   const mergedPr = (issue: number) => {
     const m = newest(prsOf.get(issue)?.filter((p) => p.mergedAt !== null));
@@ -99,17 +102,46 @@ export function reachOf(store: Store, content: ContentStore, project: string, ch
   const shown = new Map<number, boolean>(); // → outside the milestone
   for (const [number, o] of open) if (milestone !== null && o.milestone === milestone && (o.goneAt === null || mergedPr(number))) shown.set(number, false);
   for (const r of reaches) if (r.at >= week) for (const issue of r.issues) if (!shown.has(issue) && !isGone(issue) && !mergedPr(issue)) shown.set(issue, true);
-  return { open, reaches, counts, milestone, mode, prsOf, openOf, mergedPr, shown };
+  return { open, reaches, counts, milestone, mode, prsOf, openOf, mergedPr, shown, readAt: read.readAt };
 }
 
-export function boardOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number) {
-  const { open, reaches, counts, milestone, mode, prsOf, openOf, mergedPr, shown } = reachOf(store, content, project, chosenParam, now);
+/** What is known of an issue as of a moment (#106): the story reads each moment of an issue through this, the board reads now, so the two cannot differ. */
+export type StageFacts = { exists: boolean; written?: number; review?: number; gate?: number; ready?: boolean; merged?: boolean };
 
-  // The last file written for each shown issue: all of a session's on the issue's branch, else those inside the window of a PR the session linked. GET /api/links (#66) gives an issue its files by the same rule.
+/**
+ * The latest stage that holds. Queued: no session reached it and it has no open PR. Fixing is a file written after the reviewer's last report (a fix needs a review before it); Gate a test run on
+ * the PR's head (`gate`, its time) newer than both the last file written and that report (an earlier run tested code that has since changed, or was run before the review); Ready is slice 1's ready(); Merged the PR's merge.
+ */
+export function stageOf(f: StageFacts): Stage {
+  if (f.merged) return 'merged';
+  let stage: Stage = 'queued';
+  if (f.exists) stage = 'building';
+  if (f.review !== undefined) stage = f.written !== undefined && f.written > f.review ? 'fixing' : 'reviewing';
+  if (f.gate !== undefined && f.gate >= Math.max(f.written ?? 0, f.review ?? 0)) stage = 'gate';
+  if (f.ready) stage = 'ready';
+  return stage;
+}
+
+/** Where a findings report for an issue can have been filed: the PRs it has had by number (an open PR's row is among them), the branches of those, and the branches of the sessions on it. */
+export function refsOf(number: number, prsOf: Map<number, PrRow[]>, openOf: Map<number, { head: string | null }[]>, sessions: { own: number | null; branch: string | null }[]) {
+  return [...(prsOf.get(number) ?? []).flatMap((p) => [`pr:${p.number}`, ...(p.head ? [p.head] : [])]), ...(openOf.get(number) ?? []).flatMap((p) => (p.head ? [p.head] : [])),
+    ...sessions.flatMap((s) => (s.own === number && s.branch ? [s.branch] : []))];
+}
+
+/** The open PR's readiness as the board gives it, and the red mark at Gate: shared with the issue page. */
+export function verdict(stage: Stage, pr: { ready: boolean; reason: string | null; conditions: { gate: { ok: boolean | null } } } | undefined, merged: unknown) {
+  return { ...(stage === 'gate' && pr?.conditions.gate.ok === false ? { bad: true as const } : {}), ready: merged || !pr ? null : pr.ready, reason: merged || !pr ? null : pr.reason };
+}
+
+/**
+ * The last file written for each wanted issue: all of a session's on the issue's branch, else those inside the window of a PR the session linked. GET /api/links (#66) gives an issue its files by the same
+ * rule. Shared with GET /api/changes (#108), which asks for the few issues whose gate came after its mark.
+ */
+export function lastWrites(store: Store, reaches: Reach[], wanted: (issue: number) => boolean) {
   const lastWrite = new Map<number, number>();
   const bump = (issue: number, ts: number) => lastWrite.set(issue, Math.max(lastWrite.get(issue) ?? 0, ts));
   for (const r of reaches) {
-    if (![...r.issues].some((i) => shown.has(i))) continue;
+    if (![...r.issues].some(wanted)) continue;
     if (r.own !== null) {
       const last = get(store, `SELECT max(c.ts) AS last ${WRITES}`, { id: r.id })?.last;
       if (last != null) bump(r.own, last);
@@ -120,39 +152,53 @@ export function boardOf(store: Store, content: ContentStore, project: string, ch
       }
     }
   }
-  // The last review each ref (a PR as `pr:416`, or a branch) has had: the reviewer's report, which the writer marks. A report by an agent that wrote code (a fixer saying what it did) is not a review.
+  return lastWrite;
+}
+
+/** The last review each ref (a PR as `pr:416`, or a branch) has had: the reviewer's report, which the writer marks. A report by an agent that wrote code (a fixer saying what it did) is not a review. */
+export function reviewedAtOf(store: Store, project: string) {
   const reviewedAt = new Map<string, number>();
   for (const r of each(store, 'SELECT f.ref AS ref, f.reviewed_at AS ts FROM finding_reports f JOIN projects p ON p.id = f.project_id WHERE p.name = :project AND f.reviewed_at IS NOT NULL', { project })) {
     reviewedAt.set(r.ref, Math.max(reviewedAt.get(r.ref) ?? 0, r.ts));
   }
+  return reviewedAt;
+}
+
+/**
+ * The last round each ref has had from a fixer that recorded no file write (#118: it edited through Bash): its report is the only time it wrote, so the stage rule reads it as a write (the board, the issue
+ * page and GET /api/changes all read through this and lastWrites). A fixer with a recorded write is already in lastWrites, and its late report must not undo a test run after the fix.
+ * ponytail: a Bash-only fixer that ran the tests before it reported reads as Fixing until the next test run, its report being the only time known. Upgrade: read its Bash calls.
+ */
+export function fixedAtOf(store: Store, project: string) {
+  const fixedAt = new Map<string, number>();
+  for (const r of each(store, `SELECT r.ref AS ref, max(r.ts) AS ts FROM finding_rounds r JOIN projects p ON p.id = r.project_id WHERE p.name = :project AND r.reviewer = 0
+    AND NOT EXISTS (SELECT 1 FROM turns t JOIN tool_calls c ON c.turn_id = t.id JOIN files_touched f ON f.tool_use_id = c.tool_use_id AND f.mode = 'write' WHERE t.agent_id = r.agent_id) GROUP BY r.ref`, { project })) fixedAt.set(r.ref, r.ts);
+  return fixedAt;
+}
+
+/** `reach` is for a caller that has read it already (the issue page, #106, which gives the stage of the issues it relates to), so the pass over the sessions is made once. */
+export function boardOf(store: Store, content: ContentStore, project: string, chosenParam: string | undefined, now: number, reach = reachOf(store, content, project, chosenParam, now)) {
+  const { open, reaches, counts, milestone, mode, prsOf, openOf, mergedPr, shown } = reach;
+
+  const lastWrite = lastWrites(store, reaches, (i) => shown.has(i));
+  const reviewedAt = reviewedAtOf(store, project);
+  const fixedAt = fixedAtOf(store, project);
 
   const rows = [...shown].map(([number, outside]) => {
     const sessions = reaches.filter((r) => r.issues.has(number)).toSorted((a, b) => b.at - a.at);
     const pr = newest(openOf.get(number));
     const merged = mergedPr(number);
-    // Where a findings report for this issue can have been filed: the PRs it has had by number (an open PR's row is among them), the branches of those, and the branches of the sessions on it.
-    const refs = [...(prsOf.get(number) ?? []).flatMap((p) => [`pr:${p.number}`, ...(p.head ? [p.head] : [])]), ...(openOf.get(number) ?? []).flatMap((p) => (p.head ? [p.head] : [])),
-      ...sessions.flatMap((s) => (s.own === number && s.branch ? [s.branch] : []))];
+    const refs = refsOf(number, prsOf, openOf, sessions);
     const review = Math.max(0, ...refs.map((r) => reviewedAt.get(r) ?? 0)) || undefined;
-    const written = lastWrite.get(number);
+    const written = Math.max(lastWrite.get(number) ?? 0, ...refs.map((r) => fixedAt.get(r) ?? 0)) || undefined;
 
-    // The latest stage that holds. Queued: no session reached it and it has no open PR. Fixing is a file written after the reviewer's last report (a fix needs a review before it); Gate a test run on
-    // the PR's head newer than both the last file written and that report (an earlier run tested code that has since changed, or was run before the review); Ready is slice 1's ready(); Merged the PR's merge.
-    let stage: Stage = 'queued';
-    if (merged) stage = 'merged';
-    else {
-      if (sessions.length || pr) stage = 'building';
-      if (review !== undefined) stage = written !== undefined && written > review ? 'fixing' : 'reviewing';
-      if (pr?.gate && pr.gate.ts >= Math.max(written ?? 0, review ?? 0)) stage = 'gate';
-      if (pr?.ready) stage = 'ready';
-    }
+    const stage = stageOf({ exists: sessions.length > 0 || !!pr, written, review, gate: pr?.gate?.ts, ready: pr?.ready, merged: !!merged });
     const known = open.get(number);
     return {
       number, ...(known?.title ? { title: known.title } : {}), ...(known ? { milestone: known.milestone } : {}), outside, stage,
-      // a failed test run or check on the head, at the stage where it is the thing to look at: the track turns red
-      ...(stage === 'gate' && pr?.conditions.gate.ok === false ? { bad: true as const } : {}),
+      // a failed test run or check on the head, at the stage where it is the thing to look at: the track turns red (`bad`)
       pr: merged ? { number: merged.number, head: merged.head, merged: true } : pr ? { number: pr.number, head: pr.head, merged: false } : null,
-      ready: merged || !pr ? null : pr.ready, reason: merged || !pr ? null : pr.reason,
+      ...verdict(stage, pr, merged),
       sessions: sessions.slice(0, SESSIONS_SHOWN).map((s) => ({ id: s.id, at: s.at })), sessionCount: sessions.length,
       latest: sessions[0]?.at ?? 0,
     };

@@ -2,8 +2,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Factory, type BoardData, type BoardIssue } from '../src/Factory.tsx';
-import { MapBand, mapReading, nowOn, type IssueLink, type LinksData } from '../src/FactoryMap.tsx';
-import { Reading } from '../src/kit.tsx';
+import { MapBand, mapReading, type IssueLink, type LinksData } from '../src/FactoryMap.tsx';
+import { nowOn } from '../src/now-on.ts';
+import { ProjectContext, Reading } from '../src/kit.tsx';
 import type { Agent, Session } from '../src/Live.tsx';
 
 // The Map (v0.5 slice 1, #66; design/home-issue.html, the Map board): the board's issues, each a card in the column of its stage, over the lines that tie them: solid where two wrote the
@@ -34,7 +35,7 @@ const LINKS: IssueLink[] = [
   file(409, 412, ['src/net/client.ts']), file(398, 409, ['src/auth/store.ts', 'src/auth/token.ts', 'src/auth/refresh.ts'], true, 5), file(407, 412, ['src/upload/queue.ts']),
   file(403, 412, ['src/net/status.ts'], false), said(417, 409), said(409, 403), said(419, 412),
 ];
-const links = (list: IssueLink[] = LINKS): LinksData => ({ project: 'mobile-app', milestone: 'v2.3 Offline', links: list });
+const links = (list: IssueLink[] = LINKS, common: string[] = []): LinksData => ({ project: 'mobile-app', milestone: 'v2.3 Offline', links: list, common });
 
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({ id, type: id === 'main' ? 'main' : id, depth: id === 'main' ? 0 : 1, state: 'working', startedAt: NOW - 30 * MIN, lastTs: NOW - MIN, tasks: [], tokens: 0, cost: 0, skills: [], calls: 0, failed: 0, ...over });
 const live = (id: string, agents: Agent[], over: Partial<Session> = {}): Session => ({ id, project: 'mobile-app', host: 'mbp', startedAt: NOW - 30 * MIN, lastTs: NOW - MIN, tokens: 0, cost: 0, costPartial: false, agents, ...over });
@@ -126,7 +127,7 @@ describe('the Map: the lines', () => {
   });
 
   it('the legend says what each line and each mark means', () => {
-    expect(plain(band().match(/<div class="mp-legend">(.*?)<\/div>/)![1]!)).toBe('both wrote a file and both are still unmerged one mentions the other outside this milestone stalled waits on you ready');
+    expect(plain(band().match(/<div class="mp-legend">(.*?)<\/div>/)![1]!)).toBe('both wrote a file and both are still unmerged one mentions the other, or both do outside this milestone stalled waits on you ready');
   });
 });
 
@@ -135,15 +136,43 @@ describe('the Map: the list of links under it', () => {
     const html = band();
     expect(heading(html)).toBe('Every link · 7');
     expect(rows(html)).toEqual([
-      '#409 Retry after an expired token and #412 Queue uploads while offline Both wrote src/net/client.ts In flight together',
-      '#398 Crash on an empty feed and #409 Retry after an expired token Both wrote src/auth/store.ts, src/auth/token.ts, src/auth/refresh.ts and 2 more In flight together',
-      '#407 Compress photos before upload and #412 Queue uploads while offline Both wrote src/upload/queue.ts In flight together',
-      '#403 Offline banner and #412 Queue uploads while offline Both wrote src/net/status.ts',
+      '#409 Retry after an expired token and #412 Queue uploads while offline Both change src/net/client.ts In flight together',
+      '#398 Crash on an empty feed and #409 Retry after an expired token Both change src/auth/store.ts, src/auth/token.ts, src/auth/refresh.ts and 2 more In flight together',
+      '#407 Compress photos before upload and #412 Queue uploads while offline Both change src/upload/queue.ts In flight together',
+      '#403 Offline banner and #412 Queue uploads while offline Both change src/net/status.ts',
       "#417 Clear the cache on sign-out mentions #409 Retry after an expired token In #417's text",
       "#409 Retry after an expired token mentions #403 Offline banner In #409's text",
       "#419 Retry queue metrics mentions #412 Queue uploads while offline In #419's text",
     ]);
-    expect(html).toContain('Both wrote <code>src/net/client.ts</code>'); // a path shows whole, and with Content off too: it is kept as metadata
+    expect(html).toContain('Both change <code>src/net/client.ts</code>'); // a path shows whole, and with Content off too: it is kept as metadata
+  });
+
+  it('#68: the files most of the issues change are named once under the list, and only when there are some', () => {
+    const note = (html: string) => html.match(/<div class="mp-common">(.*?)<\/div>/)?.[1];
+    expect(plain(note(band({ links: links(LINKS, ['PROJECT.md', 'README.md']) }))!)).toBe('Most of these issues change PROJECT.md and README.md, so no line is drawn for them.');
+    expect(note(band({ links: links(LINKS, ['PROJECT.md', 'README.md']) }))).toContain('<code>PROJECT.md</code> and <code>README.md</code>');
+    expect(plain(note(band({ links: links(LINKS, ['PROJECT.md']) }))!)).toBe('Most of these issues change PROJECT.md, so no line is drawn for it.');
+    expect(plain(note(band({ links: links([], ['a.ts', 'b.ts', 'c.ts']) }))!)).toBe('Most of these issues change a.ts, b.ts and c.ts, so no line is drawn for them.');
+    expect(note(band())).toBeUndefined();
+    const eleven = Array.from({ length: 11 }, (_, i) => `f${i}.ts`);
+    expect(plain(note(band({ links: links(LINKS, eleven) }))!)).toBe('Most of these issues change f0.ts, f1.ts, f2.ts and 8 more, so no line is drawn for them.'); // up to 3 named, as a link row names its files
+    expect(note(band({ links: links(LINKS, eleven) }))).not.toContain('f3.ts');
+    expect(plain(note(band({ links: links(LINKS, ['a.ts', 'b.ts', 'c.ts', 'd.ts']) }))!)).toBe('Most of these issues change a.ts, b.ts, c.ts and 1 more, so no line is drawn for them.');
+    // it speaks of the whole board, so it is said under the whole list; a pressed card's list is that issue's own, and the note is left out
+    expect(note(band({ links: links(LINKS, ['PROJECT.md']), picked: 409 }))).toBeUndefined();
+    // and after the list's own rows and its empty-state line
+    const empty = band({ links: links([], ['PROJECT.md']) });
+    expect(empty.indexOf('mp-none')).toBeGreaterThan(-1);
+    expect(empty.indexOf('mp-none')).toBeLessThan(empty.indexOf('mp-common'));
+    const rows = band({ links: links(LINKS, ['PROJECT.md']) });
+    expect(rows.lastIndexOf('class="mp-link"')).toBeLessThan(rows.indexOf('mp-common'));
+    expect(note(band({ links: links(LINKS, ['PROJECT.md']), phone: true }))).toBeDefined(); // the list is all a phone shows, and the note is part of it
+  });
+
+  it('two issues that name each other are one row and one dashed line (#70)', () => {
+    const html = band({ links: links([{ kind: 'mention', a: 409, b: 417, both: true }]) });
+    expect(rows(html)).toEqual(['#409 Retry after an expired token and #417 Clear the cache on sign-out name each other']);
+    expect(paths(html)).toEqual(['said']);
   });
 
   it('a pressed card keeps its links and fades the rest, and the list shows only its links', () => {
@@ -260,5 +289,14 @@ describe('the Factory page: the Board and Map switch', () => {
     const html = renderToStaticMarkup(createElement(Factory, { now: NOW, live: new Set<string>() }));
     expect([...html.matchAll(/<button type="button" aria-pressed="(true|false)">(Board|Map)<\/button>/g)].map((m) => [m[2], m[1]])).toEqual([['Board', 'true'], ['Map', 'false']]);
     expect(html).toContain('role="group" aria-label="Factory view"');
+  });
+
+  // #106: the view and the milestone are in the hash, so a reload (or the issue page's link to a milestone's Map) opens where it was
+  it('a hash with view=map opens on the Map, with the milestone it names in the picker', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }));
+    vi.stubGlobal('location', { hash: '#/factory?project=mobile-app&milestone=v2.3+Offline&view=map' });
+    const html = renderToStaticMarkup(createElement(ProjectContext.Provider, { value: { choice: { all: false, single: 'mobile-app' }, pick: () => {} } }, createElement(Factory, { now: NOW, live: new Set<string>() })));
+    expect([...html.matchAll(/<button type="button" aria-pressed="(true|false)">(Board|Map)<\/button>/g)].map((m) => [m[2], m[1]])).toEqual([['Board', 'false'], ['Map', 'true']]);
+    expect(html).toContain('<option value="v2.3 Offline" selected="">v2.3 Offline</option>');
   });
 });

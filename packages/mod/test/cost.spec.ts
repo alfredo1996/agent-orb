@@ -14,7 +14,7 @@ const read = (...prs: Record<string, unknown>[]) => parseOpenPrs(JSON.stringify(
 
 describe('the open-PR read, for cost', () => {
   it('also asks gh for when each PR opened and its body', () => {
-    expect(openPrsArgv).toEqual(['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body']);
+    expect(openPrsArgv).toEqual(['gh', 'pr', 'list', '--state', 'open', '--limit', '40', '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body,files']);
   });
 
   it('a PR carries when it opened and the issue it closes, and nothing of its body: only the number leaves the machine', () => {

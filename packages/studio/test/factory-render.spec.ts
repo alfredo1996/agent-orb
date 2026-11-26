@@ -68,6 +68,23 @@ describe('Needs you', () => {
   });
 });
 
+describe('Needs you opens an issue\'s page, or the sheet for a PR with no issue (#106)', () => {
+  const withIssue = { ...P416, issue: 409 };
+  it('a PR that closes an issue links to its issue\'s page, in the project\'s name', () => {
+    const html = renderToStaticMarkup(createElement(NeedsYou, { prs: [withIssue], project: 'my app', onOpen: () => {} }));
+    expect(html).toContain('<a class="btn" href="#/issue?project=my+app&amp;issue=409">See findings</a>');
+    expect(html).not.toContain('<button');
+  });
+
+  it('a PR that closes none (Dependabot, say) still opens the sheet, with the checks and findings', () => {
+    const none = { ...P414, issue: null };
+    const html = renderToStaticMarkup(createElement(NeedsYou, { prs: [none], project: 'mobile-app', onOpen: () => {} }));
+    expect(html).toContain('<button type="button" class="btn">See checks</button>');
+    expect(html).not.toContain('href="#/issue');
+    expect(plain(sheet(none))).toContain('Can it merge? ✓ No finding is open Reported, none found');
+  });
+});
+
 describe('how old the GitHub data is', () => {
   const asof = (readAt: number | null) => renderToStaticMarkup(createElement(Asof, { readAt, now: NOW }));
   it('in minutes; past 10 minutes it says why it is old', () => {
@@ -112,7 +129,7 @@ describe('the findings sheet', () => {
     const unreported = { ...P414, reason: 'No findings reported yet', conditions: { ...P414.conditions, findings: cond(null, 'No findings reported yet') } };
     expect(plain(sheet(unreported))).toContain('No orb-findings block has reached this PR\'s branch yet, so ready can\'t be proved.');
     expect(plain(sheet(P414))).toContain('Reported, none found.');
-    expect(plain(sheet({ ...P418, dropped: 1 }))).toContain('1 line of the last report didn\'t parse: ask the reviewer to report it again.');
+    expect(plain(sheet({ ...P418, dropped: 1 }))).toContain('1 line of the last report didn\'t parse: ask the reviewer to report it again, with a finding it has not listed before (a report that only confirms fixes cannot clear it).');
   });
 });
 

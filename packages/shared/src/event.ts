@@ -216,6 +216,8 @@ export const Event = z.discriminatedUnion('kind', [
 // with them only with Content on full (the board names its rows with it); with Content off a read carries none, and the server drops the one it held.
 // #66 (the Map): an issue's `mentions` are the issues its text names as `#N`, found on the machine: the numbers travel, for every project, and the text never does. At most 20. Absent: the body was not read, and the server keeps what it had; an empty list: it was read and names none.
 // #69: an issue's `created_at` is when it was opened. Absent (a plugin before #69): the server keeps what it had.
+// #68: a PR's `files` are the paths it changes (less lockfiles, images and build output), at most 100 of at most 300 characters, for the Map's links. Absent: a plugin before #68, or the
+// read's size budget dropped them (the longest lists first, before any PR).
   Base.extend({ kind: z.literal('project.open_prs'), data: z.object({
     prs: z.array(z.object({
       number: z.number().int().positive(),
@@ -228,6 +230,7 @@ export const Event = z.discriminatedUnion('kind', [
       // ci: a GitHub Actions workflow's check (it names its workflow); an app's check (CodeRabbit, Sonar) has none
       checks: z.array(z.object({ name: id.max(200), state: z.enum(['pass', 'fail', 'pending']), ci: z.literal(true).optional() })).max(200),
       bots: z.array(z.object({ author: id.max(100), at: z.number().int().positive() })).max(50),
+      files: z.array(id.max(300)).max(100).optional(),
     })).max(100),
     issues: z.array(z.object({ number: z.number().int().positive(), milestone: id.max(200).optional(), title: z.string().min(1).transform((s) => s.slice(0, 200)).optional(),
       created_at: z.number().int().positive().optional(), mentions: z.array(z.number().int().positive()).max(20).optional() })).max(500).optional(),

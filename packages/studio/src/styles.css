@@ -172,6 +172,7 @@ tr:last-child td { border-bottom: 0; }
 .state.working { color: var(--ok); background: var(--ok-bg); --c-dot: var(--ok-dot); }
 .state.waiting, .state.model { color: var(--wait); background: var(--wait-bg); --c-dot: var(--wait-dot); }
 .state.stalled, .state.error, .state.claim { color: var(--bad); background: var(--bad-bg); --c-dot: var(--bad-dot); }
+.state.ready { color: var(--ok); background: var(--ok-bg); --c-dot: var(--ok-dot); }
 .state.done, .state.stopped { color: var(--done); background: var(--done-bg); --c-dot: var(--done-dot); }
 .av { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font: 600 13px/1 var(--sans); color: #fff; flex: none; }
 .av.opus { background: var(--opus); } .av.sonnet { background: var(--sonnet); } .av.haiku { background: var(--haiku); } .av.fable { background: var(--fable); } .av.other { background: var(--faint); }
@@ -752,10 +753,12 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .map .mp-link code { font: 12px var(--mono); }
 .map .mp-link .flag { justify-self: start; font-size: 12px; font-weight: 500; padding: 2px 7px; border-radius: 6px; white-space: nowrap; color: var(--wait); background: var(--wait-bg); }
 .map .mp-none { padding: 14px 20px; font-size: 14px; color: var(--muted); }
+.map .mp-common { padding: 10px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.map .mp-common code { font: 12px var(--mono); }
 .map .bnote { padding: 10px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); border-radius: 0 0 14px 14px; }
 @container (max-width: 700px) {
   .map .mp-link { grid-template-columns: minmax(0, 1fr); padding-left: 16px; padding-right: 16px; }
-  .map .nothing, .map .mp-day, .map .mp-none, .map .bnote { padding-left: 16px; padding-right: 16px; }
+  .map .nothing, .map .mp-day, .map .mp-none, .map .mp-common, .map .bnote { padding-left: 16px; padding-right: 16px; }
 }
 /* Machine (v0.4 slice 3, #29; design/v0.4-factory.html, the Machine band). Like the other bands, it narrows with its container, not the window. */
 .machine { scroll-margin-top: 16px; }
@@ -786,7 +789,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 }
 .factory-sheet .dfacts code { font: 13px var(--mono); }
 .factory-sheet .dsec { display: grid; gap: 10px; padding: 16px var(--gx); border-bottom: 1px solid var(--line); }
-.factory-sheet .dsec h4 { margin: 0; font: 600 15px/1.3 var(--sans); }
+.factory-sheet .dsec h4, .factory-sheet .dsec h2 { margin: 0; padding: 0; border: 0; display: block; font: 600 15px/1.3 var(--sans); }
 .factory-sheet .dsec > .sub { font-size: 13px; color: var(--muted); }
 .factory-sheet .dnote { margin: 0; }
 .factory-sheet .cond { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -795,7 +798,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .factory-sheet .cond .mk { font: 600 14px var(--mono); }
 .factory-sheet .cond .ok .mk { color: var(--ok); } .factory-sheet .cond .no .mk { color: var(--bad); } .factory-sheet .cond .unk .mk { color: var(--wait); }
 .factory-sheet .fgroup { display: grid; gap: 0; }
-.factory-sheet .fgroup h5, .factory-sheet .fgroup summary { margin: 0; padding: 6px 0; font: 600 13px/1.3 var(--sans); color: var(--muted); }
+.factory-sheet .fgroup h5, .factory-sheet .fgroup h3, .factory-sheet .fgroup summary { margin: 0; padding: 6px 0; font: 600 13px/1.3 var(--sans); color: var(--muted); }
 .factory-sheet details.fgroup summary { cursor: pointer; }
 .factory-sheet .fnd { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 2px 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
 .factory-sheet .fnd .id { font: 600 13px var(--mono); }
@@ -880,4 +883,132 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
   .patterns .kinds th:first-child, .patterns .kinds td:first-child { padding-left: 16px; }
   .patterns .kinds th:last-child, .patterns .kinds td:last-child { padding-right: 16px; }
   .patterns .kinds .sub td:first-child { padding-left: 28px; }
+}
+
+/* The issue page (v0.5 slice 2, #106; design/home-issue.html, the Issue board): a crumb, a sentence and seven steps, then the story beside the checks, the related issues, the findings, the cost and the sessions.
+   One column below 1100px, and the steps stack on a phone. The checks, findings and cost are the sheet's own pieces (.factory-sheet), so they look as they did there. */
+.issue .iss-head { display: grid; gap: 10px; }
+.issue .pagehead h1 { flex: 0 1 auto; min-width: 0; text-wrap: balance; overflow-wrap: anywhere; } /* an issue's title is a sentence: it wraps, where a page's one-word title never needs to */
+.issue .iss-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.issue .iss-crumb a { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
+.issue .iss-crumb a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.issue .iss-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.issue .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--sunk); border: 1px solid var(--line); color: var(--ink); font-size: 13px; white-space: nowrap; }
+.issue .chip .mono { font-family: var(--mono); color: var(--accent-ink); }
+.issue .chip.branch { font-family: var(--mono); color: var(--muted); }
+.issue .iss-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+.issue .iss-grid > *, .issue .stack > * { min-width: 0; }
+.issue .stack { display: grid; gap: 16px; }
+.issue .iss-steps { list-style: none; margin: 0; padding: 16px 20px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.issue .iss-steps li { --sc: var(--border-strong); display: grid; gap: 2px; align-content: start; padding-top: 8px; border-top: 4px solid var(--sc); color: var(--faint); font-size: 13px; }
+.issue .iss-steps li b { font: 600 14px/1.3 var(--sans); }
+.issue .iss-steps li.on { --sc: var(--data); color: var(--muted); }
+.issue .iss-steps li.on b { color: var(--ink); }
+.issue .iss-steps li.now { --sc: var(--accent); color: var(--ink); }
+.issue .iss-steps li.now b { color: var(--accent-ink); }
+.issue .iss-steps.good li.on, .issue .iss-steps.good li.now { --sc: var(--ok-dot); }
+.issue .iss-steps.good li.now b { color: var(--ok); }
+.issue .iss-note { margin: 0; padding: 0 20px 14px; font-size: 13px; color: var(--muted); }
+.issue .iss-day { padding: 8px 20px; background: var(--sunk); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 500; color: var(--muted); }
+.issue h2 + .iss-line > .iss-day { border-top: 0; }
+.issue .iss-st { display: grid; grid-template-columns: 42px 28px minmax(0, 1fr) auto; gap: 2px 12px; align-items: start; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.issue .iss-day + .iss-st { border-top: 0; }
+.issue h2 + .iss-line > .iss-st { border-top: 0; }
+.issue .iss-st .t { font: 13px/28px var(--mono); color: var(--faint); }
+.issue .iss-st b { font-weight: 600; }
+.issue .iss-st .sub { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.issue .iss-st .cost { font-size: 13px; line-height: 28px; color: var(--muted); white-space: nowrap; }
+.issue .iss-st code, .issue .iss-rel code, .issue .iss-none code { font: 12px var(--mono); }
+.issue .iss-to { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-ink); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.issue .hm-lnk { color: var(--ink); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; }
+.issue .hm-lnk:hover { color: var(--accent-ink); }
+.issue .iss-rel { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: start; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.issue h2 + .iss-rel { border-top: 0; }
+.issue .iss-rel b { font-weight: 600; }
+.issue .iss-rel .sub { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.issue .iss-rel .side { display: grid; gap: 4px; justify-items: end; font-size: 13px; color: var(--muted); }
+.issue .flag.left { font-size: 12px; font-weight: 500; padding: 2px 7px; border-radius: 6px; white-space: nowrap; color: var(--wait); background: var(--wait-bg); }
+.issue .iss-none { padding: 14px 20px; font-size: 14px; color: var(--muted); }
+.issue .iss-none p { margin: 4px 0 0; }
+.issue .iss-none .miss + .miss { margin-top: 8px; }
+.issue .iss-rel + .iss-none, .issue .iss-line + .iss-none { border-top: 1px solid var(--line); }
+.issue .hm-also { padding: 12px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.issue .card.factory-sheet { --gx: 20px; }
+.issue .card.factory-sheet > .dsec { border-bottom: 0; }
+@container (max-width: 1100px) {
+  .issue .iss-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 720px) {
+  .issue .iss-st, .issue .iss-day, .issue .iss-rel, .issue .iss-none, .issue .hm-also, .issue .iss-note { padding-left: 16px; padding-right: 16px; }
+  .issue .iss-steps { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 12px 16px; }
+  .issue .iss-steps li { grid-template-columns: 96px minmax(0, 1fr); align-items: baseline; gap: 10px; padding: 6px 0 6px 12px; border-top: 0; border-left: 4px solid var(--sc); }
+  .issue .iss-st { grid-template-columns: 42px 28px minmax(0, 1fr); }
+  .issue .iss-st .cost { grid-column: 3; line-height: 1.4; }
+}
+
+/* Home (v0.5 slice 3, #107; design/home-issue.html, the Home board): a card per project, built from the Board band's rows (.board .brow) with its own four columns. */
+.home { display: grid; gap: 16px; align-content: start; }
+.home .hm-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.home .hm-head h2 { padding: 0; border: 0; }
+.home .asof { font-size: 13px; font-weight: 400; color: var(--muted); }
+.home .asof.stale { color: var(--wait); font-weight: 600; }
+.home .hm-ms { margin-left: 10px; font-weight: 400; color: var(--muted); }
+.home .hm-prog { display: grid; gap: 10px; padding: 14px 20px; }
+.home .hm-bar { display: flex; gap: 3px; height: 8px; }
+.home .hm-bar i { flex: 1; border-radius: 2px; background: var(--border-strong); }
+.home .hm-bar i.m { background: var(--ok-dot); }
+.home .hm-bar i.f { background: var(--accent); }
+.home .hm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.home .board .bcols.hm-cols, .home .board .brow.hm-row { grid-template-columns: minmax(150px, 1.3fr) 124px minmax(160px, 1.5fr) 140px; }
+.home .board .brow.hm-row { align-items: start; }
+.home .brow.hm-row .state { justify-self: start; }
+.home .hm-now { display: grid; gap: 2px; min-width: 0; font-size: 14px; }
+.home .hm-now .sub { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.home .hm-now .model { justify-self: start; }
+.home .hm-with { font-size: 13px; font-weight: 500; color: var(--muted); }
+.home .hm-with .together { color: var(--wait); }
+.home .hm-also { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.home .hm-also b { color: var(--ink); font-weight: 600; }
+.home .hm-also code { font: 12px var(--mono); }
+.home .hm-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; padding: 8px 20px; border-top: 1px solid var(--line); background: var(--sunk); border-radius: 0 0 14px 14px; font-size: 13px; color: var(--muted); }
+.home .hm-spend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.home .hm-spend b { color: var(--ink); font-weight: 500; }
+.home .hm-spend .bar { width: 96px; margin-top: 0; }
+.home .hm-links { display: flex; flex-wrap: wrap; gap: 0 18px; }
+.home .hm-lnk { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
+.home .hm-lnk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.home details.hm-quiet summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; font-size: 14px; font-weight: 500; color: var(--accent-ink); }
+.home details.hm-quiet .hm-also { border-top: 1px solid var(--line); }
+@container (max-width: 700px) {
+  .home .board .brow.hm-row { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 16px; }
+  .home .hm-prog, .home .hm-also, .home .hm-foot, .home .hm-head { padding-left: 16px; padding-right: 16px; }
+  .home details.hm-quiet summary { padding: 0 16px; }
+}
+
+/* Home: Since you last looked (v0.5 slice 4, #108; design/home-issue.html): the card beside the projects, a row per change with a tone dot. It stacks under them on a narrow page. */
+.home .hm-grid { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+.home .hm-grid > * { min-width: 0; }
+.home .hm-stack { display: grid; gap: 16px; align-content: start; }
+.home .hm-fd { display: grid; grid-template-columns: 42px 8px minmax(0, 1fr); gap: 2px 10px; align-items: start; padding: 11px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.home .hm-head + .hm-fd { border-top: 0; }
+.home .hm-fd .t { font: 13px/21px var(--mono); color: var(--faint); }
+.home .hm-fd .t small { display: block; font: 11px/12px var(--mono); }
+.home .hm-fd .dot { width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--data); }
+.home .hm-fd.t-ok .dot { background: var(--ok-dot); }
+.home .hm-fd.t-bad .dot { background: var(--bad-dot); }
+.home .hm-fd.t-wait .dot { background: var(--wait-dot); }
+.home .hm-fd a { color: var(--ink); font-weight: 600; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.home .hm-fd a:hover { color: var(--accent-ink); }
+.home .hm-fd .sub { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.home .hm-fd code { font: 12px var(--mono); }
+.home .hm-none { display: grid; gap: 6px; padding: 14px 20px; color: var(--muted); font-size: 14px; }
+.home .hm-none b { color: var(--text); font-weight: 600; }
+.home .hm-none p { margin: 0; }
+.home .hm-foot.pad { justify-content: flex-start; padding-block: 10px; }
+@container (max-width: 1100px) {
+  .home .hm-grid { grid-template-columns: minmax(0, 1fr); }
+  .home .hm-grid > .hm-side { order: -1; }
+}
+@container (max-width: 700px) {
+  .home .hm-fd, .home .hm-none { padding-left: 16px; padding-right: 16px; }
 }

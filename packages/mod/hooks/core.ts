@@ -766,10 +766,18 @@ export function prNumbersIn(text: string, remote: string | undefined): number[] 
 export const FATES = ['fixed', 'dismissed', 'open'] as const;
 export type Fate = (typeof FATES)[number];
 export type Finding = { id: string; severity: string; file: string; fate: Fate; title?: string; why?: string };
-export type Findings = { findings: Finding[]; dropped: number; pr?: number }; // pr: the PR the fence line named, ```orb-findings #416
+export type Findings = { findings: Finding[]; dropped: number; pr?: number; branch?: string }; // pr: the PR the fence line named, ```orb-findings #416; branch: the branch it named, ```orb-findings feat/108-since
 export type Gate = { result: 'pass' | 'fail'; commit: string };
 const FINDINGS_MAX = 500;
 // `id severity file fate`: an id of letters, digits and `._#-`, a lower-case severity, a path with no space, and one of the three fates. Anything else is dropped, not guessed.
+/**
+ * #118: a branch the fence may name, as git would take it (the spirit of `git check-ref-format`): one token, none of the characters git refuses, no `..` or `@{`, no leading `-` or `/`, no
+ * trailing `/`, `.` or `.lock`. Not `#` first (a malformed PR number) and not digits alone (`416` without its `#`): both name nothing, as before. Only what can never be a branch is refused here:
+ * whether this repository has it is asked of git when the report is sent (sendReport), so a word like `none` or `origin/feat/x` falls back to the checkout's branch there.
+ */
+function isBranch(s: string): boolean {
+  return s.length > 0 && !/[\s\x00-\x1f\x7f~^:?*[\\]/.test(s) && !/\.\.|@\{|\/\/|^[-/#.]|[/.]$|\.lock$|\.lock\/|\/\.|^\d+$/.test(s) && s !== '@';
+}
 const FINDING = /^([A-Za-z0-9][\w.#-]{0,39}) ([a-z]{1,20}) (\S{1,300}) (fixed|dismissed|open)$/;
 
 /**
@@ -782,7 +790,7 @@ export const FINDINGS_ASK = [
   '',
   'agent-orb, a plugin that records this session, asks one thing, only if your task was to review code or to fix review findings: end your final report with an',
   '`orb-findings` block, one finding a line, `id severity file fate | title`, then ` | why` for a dismissed one: fate is fixed, dismissed or open, severity one',
-  "lower-case word, file a path with no space. Put the PR's number for #N, or leave #N out if you don't know it. Keep the ids a review gave you, and write an",
+  "lower-case word, file a path with no space. Put the PR's number for #N or, with no PR yet, your branch's name. Keep the ids a review gave you, and write an",
   'empty block if your review found nothing. For example:',
   '```orb-findings #N',
   'F1 major src/auth/refresh.ts open | Two refreshes can run at once',
@@ -815,8 +823,9 @@ export function parseFindings(report: string, text: (s: string) => string | unde
   const block = lastBlock(report, 'orb-findings');
   if (!block) return undefined;
   const { body, info } = block;
-  // The fence may name the PR (owner, 2026-11-03, #27): `#416` exactly. Anything else there is no number, and the block still counts.
+  // The fence may name the PR (owner, 2026-11-03, #27): `#416` exactly; or (#118) the branch the work is on, for a review that runs before its PR exists. Anything else there names neither, and the block still counts.
   const pr = /^#[1-9]\d{0,8}$/.test(info) ? Number(info.slice(1)) : undefined;
+  const branch = !pr && isBranch(info) ? info : undefined;
   const findings: Finding[] = [];
   let dropped = 0;
   for (const raw of body.split('\n')) {
@@ -834,19 +843,36 @@ export function parseFindings(report: string, text: (s: string) => string | unde
     // the file is the agent's own words too: a URL can carry a secret
     findings.push({ id: m[1]!, severity: m[2]!, file: mask(m[3]!).slice(0, 300), fate, ...(t ? { title: t } : {}), ...(w ? { why: w } : {}) });
   }
-  return { findings, dropped, ...(pr ? { pr } : {}) };
+  return { findings, dropped, ...(pr ? { pr } : {}), ...(branch ? { branch } : {}) };
 }
 
 export type Check = { name: string; state: 'pass' | 'fail' | 'pending'; ci?: true };
-// created_at is when the PR opened and issue the one it closes (#28): the body is read for `Closes #N` and goes no further.
-export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; created_at?: number; issue?: number; checks: Check[]; bots: { author: string; at: number }[] };
+// created_at is when the PR opened and issue the one it closes (#28): the body is read for `Closes #N` and goes no further. files (#68): the paths it changes, for the Map's links.
+export type OpenPr = { number: number; head?: string; head_oid: string; merge_state: string; last_commit_at?: number; created_at?: number; issue?: number; checks: Check[]; bots: { author: string; at: number }[]; files?: string[] };
 export type OpenIssue = { number: number; milestone?: string; title?: string; created_at?: number; mentions?: number[] };
 // gh's `commits` asks GitHub for 100 commits of 100 authors a PR, and GitHub refuses a query of more than 500,000 nodes before running it: 50 PRs fail, on every repo.
 const OPEN_PRS_MAX = 40;
-const OPEN_PRS_BUDGET = 250_000; // characters of JSON, as PRS_BUDGET: 100 PRs of 200 checks would pass the server's 1 MB request, and a refused event is lost
+const OPEN_PRS_BUDGET = 250_000; // bytes of JSON (a path of 3-byte characters costs 3), though PRS_BUDGET counts characters: 100 PRs of 200 checks would pass the server's 1 MB request, and a refused event is lost
 
-/** The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time; and (#28) when the PR opened and its body, for the issue it closes. */
-export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', String(OPEN_PRS_MAX), '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body'];
+/**
+ * The open PRs, with what ready() reads (#20): the head, the merge state, the checks, the bot comments, and the commits for the head's time; and (#28) when the PR opened and its body, for the issue
+ * it closes; and (#68) the files it changes, for the Map. gh asks for 100 files a PR: 4,000 nodes on 40 PRs, beside the commits' 400,000 (measured on two repos, 20 Nov: answered in 2 s).
+ */
+export const openPrsArgv = ['gh', 'pr', 'list', '--state', 'open', '--limit', String(OPEN_PRS_MAX), '--json', 'number,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,comments,reviews,commits,createdAt,body,files'];
+/** #68: the same read without the files, for when gh fails with them (GitHub cannot list one PR's files, as of a diff too large): the PRs then arrive with no paths, and stay in the merge check. */
+export const openPrsBareArgv = [...openPrsArgv.slice(0, -1), openPrsArgv.at(-1)!.replace(/,files$/, '')];
+const PR_PATHS_MAX = 100; // gh's own: it lists at most 100 files a PR
+const PATH_MAX = 300; // as shared/src/event.ts
+
+/**
+ * #68: the paths an open PR changes, less `UNCOUNTED` (a lockfile, an image, build output): two issues tied by the lockfile are not tied. At most 100, and a path past 300 characters is left
+ * out, never cut, since a cut path names no file. They travel for every project, an excluded one too: project-relative paths, as files_touched sends. None when gh gave no list.
+ */
+function pathsOf(files: unknown): string[] | undefined {
+  if (!Array.isArray(files)) return undefined;
+  return (files as Record<string, unknown>[]).map((f) => f?.path)
+    .filter((p): p is string => typeof p === 'string' && p.length > 0 && p.length <= PATH_MAX && !UNCOUNTED.test(p)).slice(0, PR_PATHS_MAX);
+}
 /**
  * The open issues' numbers and milestones (#28): what a milestone's budget default is matched to. #32: and their titles, which only name a row of the board and leave only with Content on full.
  * #66: and their bodies, read here for the issues each mentions and sent no further. gh lists at most 200 here; a read keeps at most 500.
@@ -921,7 +947,8 @@ const checkOf = (c: Record<string, unknown>): Check | undefined => {
  * The open PRs in `openPrsArgv`'s output. Only numbers, the branch (none for an excluded project), the head, the merge state, each check's name and result, and each bot's
  * latest comment or review time are kept: a comment's text, a title and a body are never read into the event. The head's time is its commit's in the list; a PR whose
  * head is not among them (gh lists at most 100 commits) has none. Nothing when the output is not gh's list; an empty list is a read of no open PRs.
- * At most 250 KB of JSON: gh lists the newest first, and the PRs past it are left out.
+ * At most 250 KB of JSON. #68: a PR's paths go before any PR does, the longest list first, since a PR left out would leave the merge check; past that, gh lists the newest
+ * first, and the PRs past it are left out.
  */
 export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined {
   let list: unknown;
@@ -949,14 +976,22 @@ export function parseOpenPrs(stdout: string, heads = true): OpenPr[] | undefined
       const t = at(c?.createdAt ?? c?.submittedAt);
       if (typeof login === 'string' && login && login.length <= 100 && isBot(login) && t > 0 && t > (bots.get(login) ?? 0)) bots.set(login, t);
     }
+    const files = pathsOf(p.files);
     prs.push({
       number: p.number, ...(head ? { head } : {}), head_oid: p.headRefOid, merge_state: state, ...(committed > 0 ? { last_commit_at: committed } : {}),
       ...(opened > 0 ? { created_at: opened } : {}), ...(issue ? { issue } : {}),
-      checks, bots: [...bots].slice(0, 50).map(([author, t]) => ({ author, at: t })),
+      checks, bots: [...bots].slice(0, 50).map(([author, t]) => ({ author, at: t })), ...(files ? { files } : {}),
     });
   }
+  const length = (x: unknown) => new TextEncoder().encode(JSON.stringify(x)).length;
+  let total = prs.reduce((n, p) => n + length(p) + 1, 0);
+  for (const p of prs.toSorted((a, b) => length(b.files ?? []) - length(a.files ?? []))) {
+    if (total <= OPEN_PRS_BUDGET || !p.files) break;
+    total -= length(p) - length({ ...p, files: undefined });
+    delete p.files;
+  }
   let size = 0;
-  return prs.filter((p) => (size += JSON.stringify(p).length + 1) <= OPEN_PRS_BUDGET);
+  return prs.filter((p) => (size += length(p) + 1) <= OPEN_PRS_BUDGET);
 }
 
 /**
@@ -1222,7 +1257,7 @@ export function statusText(t: Tracker, ctxPercent: number | undefined, now: numb
 
 // ── Event builders: one per §5 kind the mod sends; the Vitest contract test runs each through the shared schema ──
 
-export const VERSION = '0.4.6';
+export const VERSION = '0.5.0';
 // The server's ROLES (packages/shared), kept here so the plugin needs no import; a contract test keeps the two equal.
 export const MOD_ROLES = ['orchestrator', 'developer', 'researcher', 'reviewer', 'skeptic', 'tester', 'planner', 'writer', 'ops', 'consultant', 'generalist'] as const;
 export type Role = (typeof MOD_ROLES)[number];

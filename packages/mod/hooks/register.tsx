@@ -4,7 +4,7 @@ import type { EngineInterface as $, Register } from 'claude-code'
 import type { OrbAgentRow, OrbEventRow, OrbView } from '../types'
 import {
   BATCH, build, capText, changesArgv, checkStalls, commandClass, enqueue, errorClass, errorShape, filesTouched, fingerprintFiles, fingerprintsFrom, fmtTokens, goalNotice, hostName, isExcluded, mask, modelLabel, newOutbox, newTracker,
-  normalizeRemote, openIssuesArgv, openIssuesBareArgv, openPrsArgv, parseChanges, parseFactory, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, toolContent, type ContentMode, type FactoryMemory, type Goal, type GoalSent,
+  normalizeRemote, openIssuesArgv, openIssuesBareArgv, openPrsArgv, openPrsBareArgv, parseChanges, parseFactory, parseFindings, parseGoal, parseOpenIssues, parseOpenPrs, parsePrs, prNumbersIn, prsArgv, readMachine, toolContent, type ContentMode, type FactoryMemory, type Goal, type GoalSent,
   backgroundFromFrontmatter, familyOf, judgeMerge, mergesIn, modelCheck, modelFromFrontmatter, pricierNotice, remoteNamed, rejectedIn, roleFromFrontmatter, settle, statusText, stopWaits, takeBatch, tokensOf, usageOf,
   descriptionOf, FINDINGS_ASK, preloadOf, refsIn, type CatalogAgent, type CatalogSkill, type Ctx, type Ev, type Refs, type Role, type SkillLoad,
 } from './core.ts'
@@ -350,7 +350,9 @@ async function readOpenPrs($: $) {
   openPrsBusy = true
   try {
     openPrsAt = await $.clock.now()
-    const r = await $.process.run(openPrsArgv, { cwd: checkout, timeoutMs: 60_000 })
+    let r = await $.process.run(openPrsArgv, { cwd: checkout, timeoutMs: 60_000 })
+    // #68: gh fails the whole list when GitHub cannot list one PR's files (a diff too large): asked again without them, the PRs arrive with no paths and stay in the merge check.
+    if (r.exitCode !== 0 || r.isStdoutTruncated) r = await $.process.run(openPrsBareArgv, { cwd: checkout, timeoutMs: 60_000 })
     const prs = r.exitCode === 0 ? parseOpenPrs(r.stdout, !excluded) : undefined
     if (prs && ctx) {
       if ([...openNumbers].some((n) => !prs.some((p) => p.number === n)) && !(await sendPrs($, excluded).catch(() => false))) return
@@ -371,15 +373,18 @@ async function readOpenPrs($: $) {
 
 /**
  * v0.4 slice 1 (#27): a subagent's final report, read for its `orb-findings` block, whatever its role (#34: the plugin asked every subagent for it, so no role is needed).
- * The findings go to the PR the fence names (```orb-findings #416), and with the branch the checkout is on now (a session moves from its worktree's branch to its
- * issue's), which the server joins to an open PR's head when the fence names none; a detached head with no number sends nothing. A title and a dismissal's reason go only with Content on full, masked. An excluded project sends no block.
- * ponytail: the branch is the session's checkout's; a subagent isolated in a worktree of its own reports on the session's branch. Pass the agent's cwd if that is ever seen.
+ * The findings go to the PR the fence names (```orb-findings #416), and with the branch the fence names (#118: ```orb-findings feat/108-since) or else the one the checkout is on now
+ * (a session moves from its worktree's branch to its issue's), which the server joins to an open PR's head when the fence names no PR; a detached head with no number sends nothing. A title and a dismissal's reason go only with Content on full, masked. An excluded project sends no block.
+ * ponytail: with no branch on the fence the branch is the session's checkout's, so a subagent in a worktree reports on the session's branch unless it names its own (FINDINGS_ASK asks it to).
  */
 async function sendReport($: $, w: { agentId: string; turnId: string }, answer: string) {
   if (!ctx || excluded) return
   const f = parseFindings(answer, text)
   if (!f) return
-  const branch = await $.process.run(['git', '-C', checkout, 'branch', '--show-current']).then((r: { exitCode: number; stdout: string }) => (r.exitCode === 0 ? r.stdout.trim().slice(0, 200) : '')).catch(() => '') // cut as parseOpenPrs cuts a head, so the two still join
+  // #118: a fence that names a branch (a review before its PR exists, in a worktree the session's checkout is not on) sends it in place of the checkout's, when this repository has it (a worktree shares
+  // its refs): a word that is no branch (`none`, `origin/feat/x`, `HEAD`) falls back to the checkout's. Cut to 200 as the checkout's is.
+  const named = f.branch && await $.process.run(['git', '-C', checkout, 'rev-parse', '--verify', '--quiet', `refs/heads/${f.branch}`]).then((r: { exitCode: number }) => r.exitCode === 0).catch(() => false) ? f.branch.slice(0, 200) : ''
+  const branch = named || await $.process.run(['git', '-C', checkout, 'branch', '--show-current']).then((r: { exitCode: number; stdout: string }) => (r.exitCode === 0 ? r.stdout.trim().slice(0, 200) : '')).catch(() => '') // cut as parseOpenPrs cuts a head, so the two still join
   // A report that names its PR goes to it from anywhere; one that does not needs the branch to find its PR.
   if ((branch || f.pr) && ctx) push($, build.findingsReport(ctx, w, branch || undefined, f), { agent: label(w.agentId), kind: 'findings.report', detail: `${f.findings.length} on ${f.pr ? `#${f.pr}` : branch}` })
 }

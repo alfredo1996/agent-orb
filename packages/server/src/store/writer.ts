@@ -226,10 +226,12 @@ function writeRows(db: Store, ev: Event[], source: Source) {
     if (!Number(run(db, 'UPDATE projects SET prs_read_at = :ts WHERE id = :project AND (prs_read_at IS NULL OR prs_read_at < :ts)', { project, ts: e.ts }).changes)) continue;
     run(db, 'DELETE FROM open_prs WHERE project_id = :project', { project });
     for (const p of e.data.prs) {
-      run(db, `INSERT INTO open_prs (project_id, number, head, head_oid, merge_state, last_commit_at, checks, bots) VALUES (:project, :number, :head, :oid, :state, :at, :checks, :bots)
+      // #68: the paths it changes, for the Map's links; null when the read carried none
+      run(db, `INSERT INTO open_prs (project_id, number, head, head_oid, merge_state, last_commit_at, checks, bots, files) VALUES (:project, :number, :head, :oid, :state, :at, :checks, :bots, :files)
                ON CONFLICT (project_id, number) DO UPDATE SET head = excluded.head, head_oid = excluded.head_oid, merge_state = excluded.merge_state, last_commit_at = excluded.last_commit_at,
-                 checks = excluded.checks, bots = excluded.bots`,
-      { project, number: p.number, head: p.head, oid: p.head_oid, state: p.merge_state, at: p.last_commit_at, checks: JSON.stringify(p.checks), bots: JSON.stringify(p.bots) });
+                 checks = excluded.checks, bots = excluded.bots, files = excluded.files`,
+      { project, number: p.number, head: p.head, oid: p.head_oid, state: p.merge_state, at: p.last_commit_at, checks: JSON.stringify(p.checks), bots: JSON.stringify(p.bots),
+        files: p.files ? JSON.stringify(p.files) : null });
       // #28: when it opened and the issue it closes, kept on the PR (which outlives the snapshot above) for the cost windows. Neither is ever erased by a read that lacks it.
       run(db, `INSERT INTO pull_requests (id, number, created_at, issue) VALUES (:id, :number, :created_at, :issue)
                ON CONFLICT (id) DO UPDATE SET created_at = coalesce(excluded.created_at, pull_requests.created_at), issue = coalesce(excluded.issue, pull_requests.issue)`,
@@ -253,17 +255,37 @@ function writeRows(db: Store, ev: Event[], source: Source) {
     }
   }
   // A line a report dropped may have been an open finding, so the count stays until a reviewer reports again with none dropped: a developer's report lists what it
-  // handled, not what the review found. The role is the reporting agent's, from its spawn; with none (#34: orb-role is optional), an agent that wrote no file is the reviewer.
-  // ponytail: a fixer that changed code through Bash alone (sed, a script) wrote no file here and counts as a reviewer. Read its Bash calls if that is ever seen.
+  // handled, not what the review found. The role is the reporting agent's, from its spawn; with none (#34: orb-role is optional), the owner's rule (#118, 24 Nov) reads the report: one that names a
+  // finding id the issue's earlier rounds never had is a review; otherwise one with a `fixed` or `dismissed` finding is a fixer's (it edited through Bash and wrote no file, but says what it fixed);
+  // otherwise, an agent that wrote no file is the reviewer. "Earlier rounds" are the ids stored with an earlier ts under the report's ref and its linked refs (a `pr:N` and that PR's head branch, both ways).
+  // A first report with no earlier ids is all new ids, so it is a review even with `fixed` ones; an agent that wrote a file with no role is a fixer's whatever it names (as before #118).
+  // ponytail: a re-review that only confirms fixes (no new id) reads as a fixer's, so it cannot clear a "line didn't parse" (`dropped`) count; the role at spawn, which wins, or one new id, does. Upgrade: read the round's text.
+  const linkedRefs = (project: string, ref: string) => {
+    const refs = new Set([ref]);
+    if (ref.startsWith('pr:')) {
+      const n = Number(ref.slice(3));
+      for (const r of [...all(db, 'SELECT head FROM pull_requests WHERE project_id = :project AND number = :n AND head IS NOT NULL', { project, n }), ...all(db, 'SELECT head FROM open_prs WHERE project_id = :project AND number = :n AND head IS NOT NULL', { project, n })]) refs.add(r.head);
+    } else {
+      for (const r of [...all(db, 'SELECT number FROM pull_requests WHERE project_id = :project AND head = :ref', { project, ref }), ...all(db, 'SELECT number FROM open_prs WHERE project_id = :project AND head = :ref', { project, ref })]) refs.add(`pr:${r.number}`);
+    }
+    return [...refs];
+  };
   for (const e of only(ev, 'findings.report')) {
     const key = { project: projectId(e), ref: findingRef(e.data), ts: e.ts }; // its PR when the fence named one, else its branch
     const role = get(db, 'SELECT role FROM agents WHERE id = :id', { id: agentKey(e) })?.role;
-    const reviewer = role === 'reviewer' || (role !== 'developer' && !get(db, `SELECT 1 AS x FROM turns t JOIN tool_calls c ON c.turn_id = t.id
-      JOIN files_touched f ON f.tool_use_id = c.tool_use_id AND f.mode = 'write' WHERE t.agent_id = :id LIMIT 1`, { id: agentKey(e) }));
+    let reviewer = role === 'reviewer';
+    if (!reviewer && role !== 'developer' && !get(db, `SELECT 1 AS x FROM turns t JOIN tool_calls c ON c.turn_id = t.id
+      JOIN files_touched f ON f.tool_use_id = c.tool_use_id AND f.mode = 'write' WHERE t.agent_id = :id LIMIT 1`, { id: agentKey(e) })) {
+      const known = new Set(linkedRefs(key.project, key.ref).flatMap((ref) => all(db, 'SELECT id FROM findings WHERE project_id = :project AND ref = :ref AND ts < :ts', { project: key.project, ref, ts: e.ts }).map((r) => r.id)));
+      reviewer = e.data.findings.some((f) => !known.has(f.id)) || e.data.findings.every((f) => f.fate === 'open');
+    }
     run(db, `INSERT INTO finding_reports (project_id, ref, ts, dropped) VALUES (:project, :ref, :ts, :dropped)
              ON CONFLICT (project_id, ref) DO UPDATE SET ts = excluded.ts,
                dropped = CASE WHEN :reviewer THEN excluded.dropped ELSE max(finding_reports.dropped, excluded.dropped) END WHERE excluded.ts >= finding_reports.ts`,
     { ...key, dropped: e.data.dropped, reviewer });
+    // #106: every round is kept, whoever sent it, for the issue page's story; the key makes the same report twice one row
+    run(db, 'INSERT OR IGNORE INTO finding_rounds (project_id, ref, ts, agent_id, reviewer, open, dropped) VALUES (:project, :ref, :ts, :agent, :reviewer, :open, :dropped)',
+      { ...key, agent: agentKey(e), reviewer, open: e.data.findings.filter((f) => f.fate === 'open').length, dropped: e.data.dropped });
     if (reviewer) run(db, 'UPDATE finding_reports SET reviewed_at = max(coalesce(reviewed_at, 0), :ts) WHERE project_id = :project AND ref = :ref', key); // #32: a fixer's report is not the review
     for (const f of e.data.findings) {
       run(db, `INSERT INTO findings (project_id, ref, id, severity, file, fate, ts) VALUES (:project, :ref, :id, :severity, :file, :fate, :ts)

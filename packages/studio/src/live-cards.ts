@@ -18,6 +18,8 @@ export type CardAgent = {
   parent?: string;
   /** v0.4 slice 5 (#31): when the stall began (the plugin's stall.start), whether or not a tool is running: what the Stop is tied to, and how long it has lasted. */
   stalledSince?: number;
+  /** #108: when the plugin raised the stall (stall.start's own time, later than `stalledSince`): when it is news. */
+  stalledAt?: number;
 };
 export type Sentence = { verb: string; arg?: string; since?: number; extra?: string; tone?: 'wait' | 'bad' };
 

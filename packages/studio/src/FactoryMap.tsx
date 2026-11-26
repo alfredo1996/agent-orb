@@ -1,9 +1,8 @@
 import { Fragment } from 'react';
 import { STAGES, STAGE_LABEL, titlesNote, type BoardData, type BoardIssue } from './Factory.tsx';
-import { modelLabel } from './format.ts';
 import type { Said } from './kit.tsx';
 import type { Session } from './Live.tsx';
-import { agentName, DELEGATES } from './live-cards.ts';
+import { nowOn } from './now-on.ts';
 import { layoutMap } from './map-layout.ts';
 
 // The Map (v0.5 slice 1, #66; the plan is #64), drawn as approved in design/home-issue.html, the Map board: a second view of the Factory board, for the same project and milestone. The board's
@@ -11,33 +10,21 @@ import { layoutMap } from './map-layout.ts';
 // ("in flight together": the second to merge may conflict), dashed where one's text mentions the other. Pressing a card keeps its links and fades the rest, and the list under the map follows.
 // On a phone the Map is that list. Nothing here acts on a session or an issue: it is read only.
 
-/** Two issues wrote the same file: `files` are up to three of them, `count` all of them, `together` while neither issue is merged. `a` is the lower number. */
+/** Two issues change the same file (a session on each wrote it, or #68 each one's open PR lists it): `files` are up to three of them, `count` all of them, `together` while neither issue is merged. `a` is the lower number. */
 export type FileLink = { kind: 'file'; a: number; b: number; files: string[]; count: number; together: boolean };
-/** The text of issue `a` mentions issue `b`. */
-export type MentionLink = { kind: 'mention'; a: number; b: number };
+/** The text of issue `a` mentions issue `b`; `both` when each names the other (#70), `a` then the lower number. */
+export type MentionLink = { kind: 'mention'; a: number; b: number; both?: true };
 export type IssueLink = FileLink | MentionLink;
-/** GET /api/links: the links between the issues GET /api/board shows for `milestone`. */
-export type LinksData = { project: string; milestone: string | null; links: IssueLink[] };
+/** GET /api/links: the links between the issues GET /api/board shows for `milestone`; `common` (#68) the files most of them change, which tie none of them. */
+export type LinksData = { project: string; milestone: string | null; links: IssueLink[]; common: string[] };
 
 const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 const list = (numbers: number[]) => numbers.map((n) => `#${n}`).join(', ').replace(/, (#\d+)$/, ' and $1');
+/** Paths as code, joined as a sentence joins them: `a`, `b` and `c`. */
+const FILES_SHOWN = 3; // as the server's links.ts: the paths a row, and the note, name
+const paths = (all: readonly string[], more = false) => all.map((f, i) => <Fragment key={f}>{i === 0 ? '' : i === all.length - 1 && !more ? ' and ' : ', '}<code>{f}</code></Fragment>);
 const MARK_WORDS = { bad: 'stalled', wait: 'waits on you', ok: 'ready' };
 const hot = (l: IssueLink) => l.kind === 'file' && l.together;
-
-/**
- * Who is on an issue now and the card's mark, from what the page already reads: the sessions Live shows (a running one that reached the issue, by the board's own list) and the board's row.
- * The agent named is the one that needs you, else one that is working (a main agent that only waits on the agents it dispatched comes last). The mark is `bad` when an agent on the issue is
- * stalled, `wait` when one waits for your OK to run a tool (the two that Live's Needs you lists), `ok` when the issue's PR is ready for your ok.
- */
-export function nowOn(issue: BoardIssue, sessions: readonly Session[]): { who?: { name: string; tone: string }; mark?: 'bad' | 'wait' | 'ok' } {
-  const mine = new Set(issue.sessions.map((s) => s.id));
-  const agents = sessions.filter((s) => !s.endedAt && mine.has(s.id)).flatMap((s) => s.agents).filter((a) => a.state !== 'done' && a.state !== 'error');
-  const asks = (a: (typeof agents)[number]) => a.state === 'waiting' && a.waitingFor === 'permission';
-  const rank = (a: (typeof agents)[number]) => (a.state === 'stalled' ? 0 : asks(a) ? 1 : a.state === 'working' && !(a.tool && DELEGATES.has(a.tool.name)) ? 2 : 3);
-  const on = agents.toSorted((a, b) => rank(a) - rank(b) || b.lastTs - a.lastTs)[0];
-  const mark = agents.some((a) => a.state === 'stalled') ? 'bad' : agents.some(asks) ? 'wait' : issue.ready ? 'ok' : undefined;
-  return { ...(on ? { who: { name: agentName(on.type), tone: modelLabel(on.model).tone || 'other' } } : {}), ...(mark ? { mark } : {}) };
-}
 
 /** The links whose two issues are both on the board: an answer read a moment before or after the board's may name one that is not. */
 const onBoard = (board: BoardData, links: readonly IssueLink[]) => {
@@ -70,10 +57,10 @@ function LinkRow({ link: l, titles }: { link: IssueLink; titles: ReadonlyMap<num
   const name = (n: number) => <><b>#{n}</b>{titles.get(n) ? ` ${titles.get(n)}` : ''}</>;
   return (
     <div className="mp-link">
-      <span>{name(l.a)} <span className="sub">{l.kind === 'file' ? 'and' : 'mentions'}</span> {name(l.b)}</span>
+      <span>{name(l.a)} <span className="sub">{l.kind === 'file' || l.both ? 'and' : 'mentions'}</span> {name(l.b)}</span>
       {l.kind === 'file'
-        ? <span className="sub">Both wrote {l.files.map((f, i) => <Fragment key={f}>{i > 0 && ', '}<code>{f}</code></Fragment>)}{l.count > l.files.length && ` and ${l.count - l.files.length} more`}</span>
-        : <span className="sub">In #{l.a}'s text</span>}
+        ? <span className="sub">Both change {l.files.map((f, i) => <Fragment key={f}>{i > 0 && ', '}<code>{f}</code></Fragment>)}{l.count > l.files.length && ` and ${l.count - l.files.length} more`}</span>
+        : <span className="sub">{l.both ? 'name each other' : `In #${l.a}'s text`}</span>}
       {hot(l) ? <span className="flag left">In flight together</span> : <span />}
     </div>
   );
@@ -116,8 +103,8 @@ export function MapBand({ board, links, error, boardError, sessions, picked, onP
                 {/* the names after every line, each on a patch of the card's own colour, so a line that runs under a name is cut by it and never crosses it out */}
                 {map.edges.map(({ link: l, label }, i) => label && (
                   <g key={i}>
-                    <rect className={`elbg${dimmed(l)}`} x={(label.anchor === 'middle' ? label.x - label.w / 2 : label.x) - 3} y={label.y - 11} width={label.w + 6} height={15} rx={3} />
-                    <text className={`el${dimmed(l)}`} x={label.x} y={label.y} textAnchor={label.anchor}>{label.text}</text>
+                    <rect className={`elbg${dimmed(l)}`} x={label.x - label.w / 2 - 3} y={label.y - 11} width={label.w + 6} height={15} rx={3} />
+                    <text className={`el${dimmed(l)}`} x={label.x} y={label.y} textAnchor="middle">{label.text}</text>
                   </g>
                 ))}
               </svg>
@@ -142,7 +129,7 @@ export function MapBand({ board, links, error, boardError, sessions, picked, onP
           <div className="mp-legend">
             <span><svg width="30" height="8" aria-hidden="true"><path className="mp-e file" d="M2 4H28" /></svg>both wrote a file</span>
             <span><svg width="30" height="8" aria-hidden="true"><path className="mp-e hot" d="M2 4H28" /></svg>and both are still unmerged</span>
-            <span><svg width="30" height="8" aria-hidden="true"><path className="mp-e said" d="M2 4H28" /></svg>one mentions the other</span>
+            <span><svg width="30" height="8" aria-hidden="true"><path className="mp-e said" d="M2 4H28" /></svg>one mentions the other, or both do</span>
             <span><i className="out" />outside this milestone</span>
             <span><i className="bad" />stalled</span>
             <span><i className="wait" />waits on you</span>
@@ -156,6 +143,10 @@ export function MapBand({ board, links, error, boardError, sessions, picked, onP
           <div className="mp-day">{sel === undefined ? `Every link · ${all.length}` : `Links of #${sel} · ${listed.length}`}</div>
           {listed.map((l) => <LinkRow key={`${l.kind}:${l.a}:${l.b}`} link={l} titles={titles} />)}
           {!listed.length && <div className="mp-none">{sel === undefined ? 'No issue here touches another: no file two of them wrote, and no mention.' : `#${sel} has no link to another issue.`}</div>}
+          {sel === undefined && links.common.length > 0 && (
+            // #68: a file most of the issues change (PROJECT.md, which every slice edits) says nothing about a pair, so the server ties none of them by it: said once, under the whole list (a pressed card's list is its own), naming up to 3 as a link row does
+            <div className="mp-common">Most of these issues change {paths(links.common.slice(0, FILES_SHOWN), links.common.length > FILES_SHOWN)}{links.common.length > FILES_SHOWN && ` and ${links.common.length - FILES_SHOWN} more`}, so no line is drawn for {links.common.length === 1 ? 'it' : 'them'}.</div>
+          )}
         </>
       )}
       {note && <div className="bnote">{note}</div>}
