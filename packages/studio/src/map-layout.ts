@@ -1,7 +1,9 @@
 // The Map's geometry (v0.5 slice 1, #66; design/home-issue.html, the Map board): a column per stage, the issues of a stage top to bottom, and the lines between them. Pure, for tests.
-// A card moves only when its stage does: its row comes from its column and its place by number among the issues of its stage, so a refresh, a new link or a pressed card never moves it.
+// A card's row comes from its column, whether its issue has a link, and its place by number among the issues of its stage that do (or do not). So a pressed card, a refresh and a reordered list never move it, but an
+// issue gaining or losing its first link does, and so do the others of its stage: it joins the linked rows at the top and the unlinked ones below move down (see the test). The page asks for the links before it lays
+// the Map out, so the cards never jump when they arrive.
 // #70: the rows alternate by column, as the mockup's hand-placed cards do. A stage's first issue sits on row 0 in an even column (Queued, Reviewing, Gate, Merged) and on row 1 in an odd one
-// (Building, Fixing, Ready), and each further issue two rows down. So two neighbouring stages are a row apart, and the line between them crosses one gap instead of running along it.
+// (Building, Fixing, Ready), and each further linked issue two rows down, then those with no link one row apart (#90). So two neighbouring stages are a row apart, and the line between them crosses one gap instead of running along it.
 // The cards are HTML over an SVG layer (as on Pipeline and Skills), so a line is drawn under them: it leaves and reaches a card on its border, and turns in the gap between two rows,
 // the one band no card is ever in. A file's name sits in that gap too, on its line. The cards of one row are tied by arcs under it, deeper the further apart the two are, so they nest.
 // A line between cards rows apart (two cards of one column always are) would cross the rows between them, where cards sit: it runs down the lane between two columns instead, the other
@@ -51,17 +53,23 @@ type Shape = 'under' | 'down' | 'lane';
 export function layoutMap<L extends MapLink>(stages: readonly string[], issues: readonly { number: number; stage: string }[], links: readonly L[], picked?: number) {
   const pos = new Map<number, MapPos>();
   const counts = stages.map(() => 0);
-  for (const i of issues.toSorted((a, b) => a.number - b.number)) {
+  // #90: an issue with no link has no line to leave room for, so those go after their stage's linked ones, one row apart.
+  // ponytail: when an issue gains or loses its first link, it and the unlinked issues of its stage, not only it, change rows (the unlinked ones are packed under the linked). Upgrade: key every card's row on its number alone and fill the gaps with the unlinked.
+  const tied = new Set(links.flatMap((l) => (l.a === l.b ? [] : [l.a, l.b])));
+  const placing = issues.toSorted((a, b) => Number(!tied.has(a.number)) - Number(!tied.has(b.number)) || a.number - b.number);
+  const linkedIn = stages.map((s) => placing.filter((i) => i.stage === s && tied.has(i.number)).length);
+  for (const i of placing) {
     const col = stages.indexOf(i.stage);
     if (col < 0 || pos.has(i.number)) continue;
-    const row = (col % 2) + 2 * counts[col]!++;
+    const n = counts[col]!++;
+    const row = (col % 2) + (n < linkedIn[col]! ? 2 * n : 2 * linkedIn[col]! + (n - linkedIn[col]!));
     pos.set(i.number, { x: LEFT + COL * col, y: TOP + ROW * row, col, row });
   }
   const width = LEFT + COL * (stages.length - 1) + MAP_NODE.w + LANE; // a lane right of the last column too, for a line between two of its cards (whether or not there is one, so a card never moves)
   const last = Math.max(0, ...[...pos.values()].map((p) => p.row));
   const laneX = (lane: number) => LEFT + COL * lane + MAP_NODE.w + LANE / 2; // the middle of the lane right of column `lane`
 
-  const tied = new Map<string, number>();
+  const arcs = new Map<string, number>();
   // Each line: its two ends, upper (or left) first, its shape, and for one rows apart the lane it runs down: beside the upper card, toward the lower one (right of it in its own column).
   const drawn = links.filter((l) => l.a !== l.b && pos.has(l.a) && pos.has(l.b)).map((link) => {
     const [a, b] = [pos.get(link.a)!, pos.get(link.b)!];
@@ -72,8 +80,8 @@ export function layoutMap<L extends MapLink>(stages: readonly string[], issues: 
     // where each end heads first: the other card (its lane, for a line that runs down one, once the lanes are spread), and for an arc one px further for each arc already between the two
     // cards, so the deeper arc is the outer one at both ends
     const pair = `${u.x}:${u.y}:${l.x}`;
-    const rank = shape === 'under' ? tied.get(pair) ?? 0 : 0;
-    if (shape === 'under') tied.set(pair, rank + 1);
+    const rank = shape === 'under' ? arcs.get(pair) ?? 0 : 0;
+    if (shape === 'under') arcs.set(pair, rank + 1);
     const toward: [number, number] = [l.x + rank, u.x - rank];
     return { link, u, l, shape, lane, sides, toward, rank, at: [0, 0] as [number, number], off: 0 };
   });

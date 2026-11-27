@@ -14,9 +14,9 @@ export const pinAfter = (asked: string | undefined, body: Pick<BoardData, 'miles
 /** The last answer, when it is for the milestone asked for (or none was asked for): a pick that failed never shows the old milestone's rows as if they were the picked one's. */
 export const boardFor = (last: BoardData | undefined, asked: string | undefined) => (last && (!asked || last.milestone === asked) ? last : undefined);
 
-/** What to ask GET /api/links for (#66): nothing unless the Map is open, a project is chosen and the board has answered; else that project and the milestone the board shows (none when it shows none). */
-export const linksQuery = (view: 'board' | 'map', project: string | undefined, boarded: Pick<BoardData, 'milestone'> | undefined) =>
-  view !== 'map' || !project || !boarded ? undefined : new URLSearchParams({ project, ...(boarded.milestone ? { milestone: boarded.milestone } : {}) }).toString();
+/** What to ask GET /api/links for (#66): nothing until a project is chosen and the board has answered; else that project and the milestone the board shows (none when it shows none). Both views ask (#90): the Board's rows say which issues share files. */
+export const linksQuery = (project: string | undefined, boarded: Pick<BoardData, 'milestone'> | undefined) =>
+  !project || !boarded ? undefined : new URLSearchParams({ project, ...(boarded.milestone ? { milestone: boarded.milestone } : {}) }).toString();
 
 /** The last links answer, when it is for this project and the milestone the board shows: the two are about the same issues. */
 export const linksFor = (last: LinksData | undefined, project: string | undefined, boarded: Pick<BoardData, 'milestone'> | undefined) =>

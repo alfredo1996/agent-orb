@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { askFor, boardFor, linksFor, linksQuery, pinAfter, type Pin } from './board-view.ts';
+import { boardGroups, boardReading, boardRows, GROUPS, otherPrs, type Group } from './factory-view.ts';
 import { MapBand, mapReading, type LinksData } from './FactoryMap.tsx';
 import { plural, usd } from './format.ts';
 import { trapTab, usePhone } from './History.tsx';
+import { Progress, Row as HomeRowView } from './Home.tsx';
 import { Loading, PageHeader, ProjectSelect, Reading, Seg, useProject, type Said } from './kit.tsx';
 import type { Session } from './Live.tsx';
 import { factoryHash, readChoice, readFactory } from './project-choice.ts';
@@ -14,7 +16,9 @@ import { factoryHash, readChoice, readFactory } from './project-choice.ts';
 // nothing is ever stopped. Slice 3 (#29) adds the Machine band (the Mac's free memory and its containers by project, from GET /api/machine) and a "Left running" row in Needs you for
 // each group the server flags; nothing here removes a container. Slice 6 (#32) adds the Board band between Needs you and the Budget card, from GET /api/board: one milestone at a time, a row
 // per issue with its stage on a track of seven, whether its PR is ready, its cost against its budget and its sessions with a link to Live. The board repeats no session's state.
-// v0.5 slice 1 (#66) adds a Board and Map switch: the Map (FactoryMap.tsx) shows the board's issues by stage with the links between them, from GET /api/links, read only while the Map is open.
+// v0.6 (#90) redraws the Board view as approved in design/factory.html: the Board grouped by whose move it is, in Home's rows, beside short PRs, Machine and Budget cards; Needs you is gone (its ready PRs head the board, its
+// not-ready ones say why in their rows, what is left running is on Machine), and the Board reads /api/links too, for the files its rows share.
+// v0.5 slice 1 (#66) adds a Board and Map switch: the Map (FactoryMap.tsx) shows the board's issues by stage with the links between them, from GET /api/links (the Board reads it too since #90, see Factory()).
 
 type Cond = { ok: boolean | null; note: string };
 export type FactoryFinding = { id: string; severity: string; file: string; fate: 'open' | 'dismissed' | 'fixed'; title?: string; why?: string };
@@ -82,18 +86,6 @@ export function Asof({ readAt, now }: { readAt: number | null; now: number }) {
   return <span className={stale ? 'asof stale' : 'asof'}>{ageText(readAt, now)}{stale && ': it updates while a session runs in this repo'}</span>;
 }
 
-/** The reading on top: what the band below adds up to. */
-export function factoryReading(d: FactoryData): Said {
-  if (!d.prs.length) return [d.readAt === null ? 'Nothing read from GitHub for ' : 'No open PR in ', { b: d.project }, '.'];
-  const ready = d.prs.filter((p) => p.ready).length;
-  const open = d.prs.filter((p) => p.conditions.findings.ok === false).length;
-  const said: Said = [{ b: count(ready, 'PR') }, ` ${ready === 1 ? 'is' : 'are'} ready for your ok`];
-  if (ready < d.prs.length) said.push(', ', { b: String(d.prs.length - ready) }, ` ${d.prs.length - ready === 1 ? "isn't" : "aren't"}`);
-  if (open) said.push(': ', { b: count(open, 'PR') }, ` with open findings`);
-  said.push('.');
-  return said;
-}
-
 /** What a budget field holds, as the server wants it (above 0, at most 1,000,000), or nothing at all, which removes the budget; else what is wrong with it. */
 export function budgetInput(text: string): { usd: number | null } | { error: string } {
   if (!text.trim()) return { usd: null };
@@ -102,22 +94,29 @@ export function budgetInput(text: string): { usd: number | null } | { error: str
   return n > 1_000_000 ? { error: 'A budget is at most $1,000,000' } : { usd: n };
 }
 
-/** An issue's cost against its budget: the figure (a floor when a request had no price), a bar, and how far it is. The bar's colour is the server's mark, never a percent worked out here. */
-export function CostCell({ issue, cost }: { issue: number | null | undefined; cost?: IssueCost }) {
-  const lab = <span className="lab">Cost, estimate</span>;
-  if (!issue) return <div className="costcell">{lab}<span className="why none">No issue</span></div>;
-  if (!cost || (cost.usd === 0 && !cost.partial)) return <div className="costcell">{lab}<span className="why none">Nothing spent</span></div>;
-  if (cost.budget === null) return <div className="costcell">{lab}<span className="num">{usd(cost.usd, cost.partial)}</span><small>No budget set</small></div>;
-  const pct = Math.round((100 * cost.usd) / cost.budget);
-  const note = cost.mark === 'at100' ? `${pct}% of the budget: reached, nothing is stopped` : cost.mark === 'at80' ? `${pct}% of the budget: nearly spent` : `${pct}% of the budget`;
+/**
+ * An issue's spend, as the board's cost cell holds it: the figure (a floor when a request had no price), "of $budget" and a meter when it has a budget. The meter's colour is the server's mark, never a
+ * percent worked out here. Nothing at all when nothing was spent: an empty cell says nothing of what an issue has not got (#90).
+ */
+export function costFig(cost?: IssueCost): ReactNode {
+  if (!cost || (cost.usd === 0 && !cost.partial)) return null;
+  const pct = cost.budget === null ? 0 : Math.round((100 * cost.usd) / cost.budget);
   return (
-    <div className="costcell">
-      {lab}<span className="num">{usd(cost.usd, cost.partial)} of {usd(cost.budget)}</span>
-      <div className={cost.mark === 'at100' ? 'bar over' : cost.mark === 'at80' ? 'bar warn' : 'bar'} role="img" aria-label={`${pct}% of the budget`}><i style={{ width: `${Math.min(pct, 100)}%` }} /></div>
-      <small>{note}</small>
-    </div>
+    <>
+      <span className="lab">Cost, estimate</span>
+      <span><span className="num">{usd(cost.usd, cost.partial)}</span>{cost.budget !== null && <span className="of"> of {usd(cost.budget)}</span>}</span>
+      {cost.budget !== null && <div className={cost.mark === 'at100' ? 'bar over' : cost.mark === 'at80' ? 'bar warn' : 'bar'} role="img" aria-label={`${pct}% of the budget`}><i style={{ width: `${Math.min(pct, 100)}%` }} /></div>}
+    </>
   );
 }
+
+/** The small `i` beside a heading or a figure: it opens its text in place and closes it again, as a figure's does (kit.tsx), by keyboard and by touch. The text is `id`'s element, `hidden` until then. */
+function Info({ label, id, open, onToggle }: { label: string; id: string; open: boolean; onToggle: () => void }) {
+  return <button type="button" className="info" aria-label={label} aria-expanded={open} aria-controls={id} onClick={onToggle}>i</button>;
+}
+const BOARD_TIP = 'Agent view lists sessions. This lists issues, with what each has spent and how far it is from your ok. A background session is answered in agent view: claude agents.';
+const SPEND_TIP = "Sessions with no PR, and turns after a session's last PR. Cost is an estimate by time windows.";
+
 
 /** One budget: a dollar amount to save, or to leave empty and save to remove. `value` is what is stored; a refusal shows the server's words. */
 export function BudgetField({ label, value, placeholder, onSave }: { label: string; value: number | null; placeholder?: number | null; onSave: (usd: number | null) => Promise<string | undefined> }) {
@@ -148,24 +147,6 @@ export function BudgetField({ label, value, placeholder, onSave }: { label: stri
   );
 }
 
-/** What the milestones' defaults are and where to set them. The numbers and warnings are the server's; the month's spend on no issue is on the board (#32). */
-export function BudgetCard({ data, onSave }: { data: BudgetData; onSave: Save }) {
-  const own = data.issues.filter((i) => i.source === 'issue');
-  const none = !own.length && data.milestones.every((m) => m.budget === null);
-  return (
-    <section className="card budget" aria-labelledby="fbudget-h">
-      <h2 id="fbudget-h">Budget per issue <span className="hint">warns at 80% and 100%, never stops anything</span></h2>
-      <div className="bbody">
-        {!data.milestones.length && <p className="dnote">No open issue has a milestone, so there is no default to set. An issue's own budget is on its page.</p>}
-        {data.milestones.map((m) => <BudgetField key={m.name} label={`Default for ${m.name}`} value={m.budget} onSave={(u) => onSave({ milestone: m.name }, u)} />)}
-        {none && <span className="sub">No budget is set, so rows show cost only and nothing warns.</span>}
-        {own.length > 0 && (
-          <span className="sub">{own.length === 1 ? 'One issue has its own budget' : `${own.length} issues have their own budget`}: {own.map((i) => `#${i.number}, ${usd(i.budget!)}`).join('; ')}. Set it on the issue's page.</span>
-        )}
-      </div>
-    </section>
-  );
-}
 
 /** The heading a shared section opens with: the sheet's own are h4 (under its h3), the issue page's h2 (under its h1), and a group inside one is the next level down. */
 type HeadingLevel = 2 | 3 | 4 | 5;
@@ -204,77 +185,42 @@ export function Track({ stage, bad, stalled }: { stage: BoardStage; bad?: true; 
   );
 }
 
-/**
- * The issue's sessions: a link to Live for each one Live shows (a session that ended more than ten minutes ago is not there, so it is counted, not linked). The link carries the project so the page
- * you come back to is the one you left. The state of a session is Live's, never repeated here; and no session is marked as a background one, since the plugin cannot tell (a real `claude --bg`
- * session is recorded as interactive, #32): the band's footer says where those are.
- */
-function SessionsCell({ issue, live, project }: { issue: BoardIssue; live: ReadonlySet<string>; project: string }) {
-  const here = issue.sessions.filter((s) => live.has(s.id));
-  const earlier = issue.sessionCount - here.length;
-  return (
-    <div>
-      <span className="lab">Sessions</span>
-      <div className="links">
-        {here.map((s) => <a key={s.id} href={`#/live?session=${encodeURIComponent(s.id)}&project=${encodeURIComponent(project)}`}>{here.length > 1 ? `Live ${s.id.slice(0, 6)}` : 'Live'}</a>)}
-        {earlier > 0 && <span className="none">{earlier} earlier</span>}
-        {issue.sessionCount === 0 && <span className="none">None</span>}
-      </div>
-    </div>
-  );
-}
-
 /** Why an issue is on the board though it is not in the chosen milestone: in flight, and which milestone it is in when that is known (null: it has none; absent: no read has seen it). */
 export const outsideNote = (i: BoardIssue, chosen: string | null) =>
   !i.outside ? '' : chosen === null ? ` · in flight${i.milestone ? `, ${i.milestone}` : ''}` : ` · outside this milestone${i.milestone === undefined ? '' : `, ${i.milestone ?? 'in none'}`}`;
-
-function BoardRow({ issue: i, chosen, project, live, cost }: { issue: BoardIssue; chosen: string | null; project: string; live: ReadonlySet<string>; cost?: ReadonlyMap<number, IssueCost> }) {
-  const name = <b>{`#${i.number}${i.title ? ` ${i.title}` : ''}`}</b>;
-  const ready = i.pr?.merged ? <span className="why none">Merged</span> : !i.pr ? <span className="why none">No PR yet</span>
-    : i.ready ? <span className="why yes">Ready for your ok</span> : <span className="why no">{i.reason ?? 'Not ready'}</span>;
-  return (
-    <div className={i.stage === 'merged' ? 'brow merged' : 'brow'} data-issue={i.number}>
-      <div className="bissue">
-        <a className="open" href={issueHref(project, i.number)} aria-label={`Issue #${i.number}: open its page`}>{name}</a>
-        <small>{i.pr ? `PR #${i.pr.number}${i.pr.merged ? ', merged' : ''}` : 'No PR'}{outsideNote(i, chosen)}</small>
-      </div>
-      <div className="stagecell"><span>{STAGE_LABEL[i.stage]}</span><Track stage={i.stage} bad={i.bad} /></div>
-      <div><span className="lab">Ready</span>{ready}</div>
-      {cost ? <CostCell issue={i.number} cost={cost.get(i.number)} /> : <div />}
-      <SessionsCell issue={i} live={live} project={project} />
-    </div>
-  );
-}
-
-/** What this month spent on no issue (slice 2's line, from the page's /api/budget read): under the board's rows, and under its error when the board could not be read. */
-function NotOnIssue({ data }: { data: BudgetData['notOnIssue'] }) {
-  return (
-    <div className="notissue">
-      <span>Not on an issue: <b className="num">{usd(data.usd, data.partial)}</b> this month</span>
-      <span className="sub">Sessions with no PR, and turns after a session's last PR. Cost is an estimate by time windows.</span>
-    </div>
-  );
-}
 
 /** Why no issue carries a title, once: Content is not on full, or the project is excluded and sends none. Nothing with Content on full (an issue no read has seen has none either). */
 export const titlesNote = (data: Pick<BoardData, 'issues' | 'content'>) =>
   !data.issues.some((i) => !i.title) || data.content === 'full' ? null : data.content === 'excluded' ? 'This project is in excludeProjects: issues show by number.' : 'Issue titles show with Content on full.';
 /** What an excluded project's empty board says: the plugin sends no milestones for it. */
 export const EXCLUDED_NOTE = 'This project is in excludeProjects, so the plugin sends no milestones: nothing to follow here but the issues a session is working on.';
-
 /**
- * The Board band (v0.4 slice 6, #32): one milestone's open issues, its closed ones whose PR merged, and any issue a session reached this week outside it whose PR has not merged, each with the stage the
- * server worked out from what the agents did, whether its PR is ready, its cost against its budget and its sessions. The cost is /api/budget's, read once for the page and joined by issue number (`cost`; until it
- * is read the cells are empty rather than "nothing spent"); under the rows, what this month spent on no issue, which is that read's too and so stays when the board could not be read (`error`, with `data` the
- * last answer for the milestone asked for, if any). A title shows only if the plugin sent it (Content on full).
+ * The Board card (v0.4 slice 6, #32; redrawn for #90 as approved in design/factory.html, "Board, proposed"): one milestone's issues in flight as Home's rows, grouped by whose move it is (`groups`), then
+ * the queued and merged ones, a line each. Its cost cell is /api/budget's, joined by issue number (`costs`; until it is read the cells are empty); under it, what this month spent on no issue, which is
+ * that read's too and so stays when the board could not be read (`error`, with `data` the last answer for the milestone asked for, if any). A title shows only if the plugin sent it (Content on full).
  */
-export function BoardBand({ data, error, live, cost, notOnIssue }: { data?: BoardData; error?: string; live: ReadonlySet<string>; cost?: ReadonlyMap<number, IssueCost>; notOnIssue?: BudgetData['notOnIssue'] }) {
-  const inside = data ? data.issues.filter((i) => !i.outside).length : 0;
-  const outside = data ? data.issues.length - inside : 0;
+export function BoardCard({ data, error, groups, sessions, now, costs, notOnIssue, onMap }: {
+  data?: BoardData; error?: string; groups: readonly Group[]; sessions: readonly Session[]; now: number; costs?: ReadonlyMap<number, IssueCost>; notOnIssue?: BudgetData['notOnIssue']; onMap: () => void;
+}) {
+  const inside = data ? data.issues.filter((i) => !i.outside) : [];
+  const outside = data ? data.issues.length - inside.length : 0;
+  const stage = (s: BoardStage) => (data ? data.issues.filter((i) => i.stage === s) : []);
+  const [queued, merged] = [stage('queued'), stage('merged')];
+  const flight = groups.length > 0;
+  const counts = { merged: inside.filter((i) => i.stage === 'merged').length, queued: inside.filter((i) => i.stage === 'queued').length, flight: inside.filter((i) => i.stage !== 'merged' && i.stage !== 'queued').length, outside };
   const note = data && titlesNote(data);
+  const name = (i: BoardIssue) => `#${i.number}${i.title ? ` ${i.title}` : ''}`;
+  const [tip, setTip] = useState<'board' | 'spend'>();
+  const uid = useId();
+  const tipId = (k: 'board' | 'spend') => `${uid}-${k}`;
+  const toggle = (k: 'board' | 'spend') => () => setTip(tip === k ? undefined : k);
   return (
-    <section className="card board" aria-labelledby="fboard-h">
-      <h2 id="fboard-h">Board{data?.milestone != null && ` · ${data.milestone}`} {data && data.issues.length > 0 && <span className="hint">{data.milestone === null ? `${outside} in flight` : `${count(inside, 'issue')}${outside > 0 ? `, plus ${outside} in flight outside it` : ''}`}</span>}</h2>
+    <section className="card board fx-board" aria-labelledby="fboard-h">
+      <h2 id="fboard-h">
+        <span className="fx-title">Board{data?.milestone != null && ` · ${data.milestone}`}<Info label="About the board" id={tipId('board')} open={tip === 'board'} onToggle={toggle('board')} /></span>
+        {data && data.issues.length > 0 && <span className="hint">{data.milestone === null ? `${outside} in flight` : `${count(inside.length, 'issue')}${outside > 0 ? `, plus ${outside} in flight outside it` : ''}`}</span>}
+      </h2>
+      <p className="fx-tip" id={tipId('board')} hidden={tip !== 'board'}>{BOARD_TIP}</p>
       {error && <p className="nothing" role="alert">The board could not be read: {error}</p>}
       {data && (data.issues.length === 0
         ? (!error && <p className="nothing">{data.milestone !== null ? `No open issue in ${data.milestone}, and none in flight.` : data.content === 'excluded'
@@ -282,16 +228,35 @@ export function BoardBand({ data, error, live, cost, notOnIssue }: { data?: Boar
           : 'No open issue has a milestone, so there is nothing to follow yet. The plugin reads the open issues from GitHub while a session runs in this repo, with gh logged in.'}</p>)
         : (
           <>
-            <div className="bcols" aria-hidden="true"><span>Issue</span><span>Stage</span><span>Ready</span><span>Cost, estimate</span><span>Sessions</span></div>
-            {data.issues.map((i) => <BoardRow key={i.number} issue={i} chosen={data.milestone} project={data.project} live={live} cost={cost} />)}
+            {note && <p className="nothing">{note}</p>}
+            <Progress counts={counts} />
+            {flight && <div className="bcols hm-cols fx-cols" aria-hidden="true"><span>Issue</span><span>Stage</span><span>Now</span><span>Cost, estimate</span><span>State</span></div>}
+            {groups.map((g) => (
+              <Fragment key={g.id}>
+                <div className={`fx-gh g-${GROUPS[g.id].tone}`}><b>{GROUPS[g.id].name}</b><span className="num">{g.rows.length}</span><span>{GROUPS[g.id].hint}</span></div>
+                {g.rows.map(({ row, key }) => <HomeRowView key={row.number} row={row} state={key} project={{ name: data.project, milestone: data.milestone }} sessions={sessions} now={now} cost={costs ? costFig(costs.get(row.number)) : null} />)}
+              </Fragment>
+            ))}
+            {!flight && queued.length > 0 && <div className="fx-gh"><b>Queued</b><span className="num">{queued.length}</span><span>Nothing is in flight. No session has started on these.</span></div>}
+            {!flight && queued.map((i) => <div key={i.number} className="fx-q"><span className="num">#{i.number}</span><span>{i.title ?? ''}</span></div>)}
+            {!flight && queued.length === 0 && <div className="hm-also">Nothing is in flight.</div>}
+            {flight && queued.length > 0 && <div className="hm-also"><b>Queued</b>{queued.map((i) => <a key={i.number} className="hm-lnk" href={issueHref(data.project, i.number)}>{name(i)}</a>)}</div>}
+            {merged.length > 0 && <div className="hm-also"><b>Merged</b>{merged.map((i) => <a key={i.number} className="hm-lnk" href={issueHref(data.project, i.number)}>{name(i)}</a>)}</div>}
           </>
         ))}
-      {notOnIssue && <NotOnIssue data={notOnIssue} />}
-      {note && <div className="bnote">{note}</div>}
-      <div className="bnote">Agent view lists sessions. This lists issues, with what each has spent and how far it is from your ok. A background session is answered in agent view: <code>claude agents</code>.</div>
+      <div className="hm-foot">
+        {notOnIssue ? (
+          <span className="hm-spend"><span>Not on an issue this month <b className="num">{usd(notOnIssue.usd, notOnIssue.partial)}</b></span>
+            <Info label="What this counts" id={tipId('spend')} open={tip === 'spend'} onToggle={toggle('spend')} /></span>
+        ) : <span />}
+        <span className="hm-links"><button type="button" className="hm-lnk" onClick={onMap}>Open the map</button></span>
+      </div>
+      <p className="fx-tip" id={tipId('spend')} hidden={tip !== 'spend'}>{SPEND_TIP}</p>
     </section>
   );
 }
+
+
 
 /** The header's milestone slot: the milestones with an open issue, the one shown selected. A milestone asked for that has none (every issue of it closed) is still listed, as the one shown. */
 export function MilestoneSelect({ milestones, value, onChange }: { milestones: { name: string; open: number }[]; value: string | null; onChange: (name: string) => void }) {
@@ -314,63 +279,6 @@ export const idleText = (ms: number) => {
 };
 const readAgo = (ms: number) => (ms < MIN ? 'read just now' : `read ${idleText(ms)} ago`);
 
-/** A group the server flagged "Left running", with the Mac it is on, when that Mac's sample was read, and whether the page has more than one Mac (so the row names it). */
-export type Left = { group: MachineGroup; host: string; at: number; named: boolean };
-/** The groups the server flagged "Left running", across the hosts: each is a row in Needs you. The server flags only containers a test run left behind, and never a group with no project; an unhealthy one is flagged in the band alone. */
-export const leftRunning = (data?: MachineData): Left[] => {
-  const hosts = data?.hosts ?? [];
-  return hosts.flatMap((h) => h.groups.filter((g) => g.leftRunning).map((group) => ({ group, host: h.host, at: h.at, named: hosts.length > 1 })));
-};
-
-const bandId = (host: string) => `machine-${host}`;
-const seeMachine = (host: string) => {
-  const band = document.getElementById(bandId(host));
-  band?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  band?.focus({ preventScroll: true });
-};
-
-/** Each open PR, worst first (the server's order): its state, the first reason it isn't ready or "Ready for your ok", its issue's cost once read, and its dismissed findings to read. */
-export function NeedsYou({ prs, costs, onOpen, left = [], now = Date.now(), project }: { prs: FactoryPr[]; costs?: Map<number, IssueCost>; onOpen: OpenSheet; left?: Left[]; now?: number; project?: string }) {
-  return (
-    <section className={costs ? 'card needs withcost' : 'card needs'} aria-labelledby="fneeds-h">
-      <h2 id="fneeds-h">Needs you</h2>
-      {!prs.length && !left.length && <p className="nothing">Nothing needs you.</p>}
-      {prs.map((p) => {
-        const s = stateOf(p);
-        const open = p.findings.filter((f) => f.fate === 'open').length;
-        const dismissed = p.findings.filter((f) => f.fate === 'dismissed').length;
-        return (
-          <div key={p.number} className="need">
-            <span className={`state ${s.tone}`}>{s.label}</span>
-            <span className="what">
-              <b>PR #{p.number}</b>{p.head && <> <code>{p.head}</code></>}
-              <span className="sub">{p.reason ?? 'Ready for your ok'}{dismissed > 0 && ` · ${dismissed} dismissed: read ${dismissed === 1 ? 'it' : 'them'} before merging`}</span>
-            </span>
-            {costs && <CostCell issue={p.issue} cost={p.issue ? costs.get(p.issue) : undefined} />}
-            <span className="since num">{open ? `${open} open` : short(p.headOid)}</span>
-            {/* #106: a PR that closes an issue opens the issue's page; the sheet is for a PR with no issue */}
-            {p.issue && project
-              ? <a className={p.ready ? 'btn primary' : 'btn'} href={issueHref(project, p.issue)}>{open ? 'See findings' : 'See checks'}</a>
-              : <button type="button" className={p.ready ? 'btn primary' : 'btn'} onClick={(e) => onOpen(p.number, e.currentTarget)}>{open ? 'See findings' : 'See checks'}</button>}
-          </div>
-        );
-      })}
-      {left.map(({ group: g, host, at, named }) => (
-        <div key={g.id} className="need">
-          <span className="state waiting">Left running</span>
-          <span className="what">
-            <b>{g.name}: {count(g.containers, 'container')}</b>
-            <span className="sub">{leftText(g, host, at, named, now)}</span>
-          </span>
-          {costs && <span />}
-          <span className="since num">{memText(g.memory)}</span>
-          <button type="button" className="btn" onClick={() => seeMachine(host)}>See machine</button>
-        </div>
-      ))}
-    </section>
-  );
-}
-
 /** Under a "Left running" row's name: when its run began, how long its project has been quiet (at the sample), which Mac when there are several, and how old the sample is once it is not fresh. */
 const leftText = (g: MachineGroup, host: string, at: number, named: boolean, now: number) => {
   const parts = [g.since === null ? 'No session' : `Run started ${idleText(now - g.since)} ago, no session`];
@@ -379,6 +287,9 @@ const leftText = (g: MachineGroup, host: string, at: number, named: boolean, now
   if (now - at > MACHINE_STALE_MS) parts.push(readAgo(now - at));
   return parts.join(', ');
 };
+
+const unhealthyText = (g: MachineGroup) => (g.unhealthy > 1 ? `${g.unhealthy} unhealthy` : 'Unhealthy');
+const lower = (text: string) => text.slice(0, 1).toLowerCase() + text.slice(1);
 
 /** What a group is, under its name: how it was started and, for a Testcontainers run, when; and how long its project has been quiet when it is left running. */
 const howText = (g: MachineGroup, now: number) => {
@@ -389,43 +300,82 @@ const howText = (g: MachineGroup, now: number) => {
   return g.kind === 'compose' ? (g.project ? (g.compose === g.project ? 'compose' : `compose ${g.compose}`) : 'compose, not an agent-orb project')
     : g.kind === 'excluded' ? 'names left out, as the project is excluded' : 'started by hand';
 };
+/**
+ * Every open PR that is on no row of the board (`prs`, from `otherPrs`): one that closes no issue (a bot's update, say), one that closes an issue not on this board ("closes #125", with its milestone when the board read
+ * knows it) and every PR when the board could not be read. One line each: "PR #n" and its branch (the API gives no title), opening the PR's sheet. When none has findings reported the card says so once and the rows carry no
+ * state, rather than "Not known" on every one; the card is not drawn at all when there is no such PR (#90).
+ */
+export function PrsCard({ prs, board, onOpen }: { prs: FactoryPr[]; board?: Pick<BoardData, 'issues'>; onOpen: OpenSheet }) {
+  if (!prs.length) return null;
+  const reported = prs.some((p) => p.conditions.findings.ok !== null);
+  const closes = (p: FactoryPr) => {
+    if (!p.issue) return undefined;
+    const ms = board?.issues.find((i) => i.number === p.issue)?.milestone;
+    return `closes #${p.issue}${ms ? `, ${ms}` : ''}`;
+  };
+  return (
+    <section className="card fx-prs" aria-labelledby="fprs-h">
+      <h2 id="fprs-h" tabIndex={-1}>Other open PRs <span className="hint">{prs.length} open</span></h2>
+      {prs.map((p) => {
+        const s = stateOf(p);
+        const why = closes(p);
+        return (
+          <button key={p.number} type="button" className="fx-pr" onClick={(e) => onOpen(p.number, e.currentTarget)}>
+            <span className="fx-pn"><b>PR #{p.number}</b>{p.head && <code>{p.head}</code>}{why && <small>{why}</small>}</span>
+            {reported && <span className={`state ${s.tone}`}>{s.label}</span>}
+          </button>
+        );
+      })}
+      {!reported && <div className="hm-foot pad">No review reports on these, so agent-orb can't say they're ready.</div>}
+    </section>
+  );
+}
 
 /**
- * One Mac's band (v0.4 slice 3, #29): its free memory, what its containers use, and one row per group of containers with its flags. Nothing here removes a container: the clean-up stays
- * yours. With Docker absent or stopped it says so beside the memory; a sample older than 30 minutes says when it was read, since the plugin only samples while a session runs.
+ * One Mac's card (v0.4 slice 3, #29; redrawn for #90): its free memory and what its containers use, the groups the server flagged "Left running" (each as a line; they were rows of Needs you), and every group
+ * folded. Nothing here removes a container: the clean-up stays yours. With Docker absent or stopped it says so beside the memory; a sample older than 30 minutes says when it was read, since the plugin only
+ * samples while a session runs. `named`: the page has more than one Mac, so a line names its own.
  */
-export function MachineBand({ host, now }: { host: MachineHost; now: number }) {
+export function MachineCard({ host, now, named = false }: { host: MachineHost; now: number; named?: boolean }) {
   const age = now - host.at;
   const stale = age > MACHINE_STALE_MS;
+  const left = host.groups.filter((g) => g.leftRunning);
+  const flagged = host.groups.filter((g) => g.leftRunning || g.unhealthy > 0); // in view: a group left running, and one with a container that is not healthy, or both
   return (
-    <section className="card machine" id={bandId(host.host)} tabIndex={-1} aria-labelledby={`fmachine-${host.host}`}>
+    <section className="card machine" id={`machine-${host.host}`} aria-labelledby={`fmachine-${host.host}`}>
       <h2 id={`fmachine-${host.host}`}>Machine <span className={stale ? 'hint stale' : 'hint'}>{host.host} · {readAgo(age)}{stale && ': it updates while a session runs'}</span></h2>
-      <div className="mstats">
-        <div className="mstat"><span className="k">Free memory</span>{host.memFree === null ? <span className="v">Not read</span> : <span className="v">{memText(host.memFree)}</span>}{host.memTotal !== null && <span className="d">of {memText(host.memTotal)}</span>}</div>
-        {host.docker === 'ok' ? (
-          <>
-            <div className="mstat"><span className="k">Containers</span><span className="v">{host.containers}</span><span className="d">running</span></div>
-            <div className="mstat"><span className="k">They use</span><span className="v">{memText(host.memory)}</span><span className="d">by <code>docker stats</code></span></div>
-          </>
-        ) : <p className="mdown">Docker isn't running, so no containers to list.</p>}
+      <div className="fx-figs">
+        <div className="fx-fig"><span className="k">Free memory</span>{host.memFree === null ? <span className="v">Not read</span> : <span className="v num">{memText(host.memFree)}</span>}{host.memTotal !== null && <span className="d">of {memText(host.memTotal)}</span>}</div>
+        {host.docker === 'ok' && <div className="fx-fig"><span className="k">Containers</span><span className="v num">{host.containers}</span><span className="d">use {memText(host.memory)}</span></div>}
       </div>
+      {host.docker !== 'ok' && <p className="mdown">Docker isn't running, so no containers to list.</p>}
       {host.docker === 'ok' && !host.groups.length && <p className="nothing">No container is running.</p>}
-      {host.groups.length > 0 && (
+      {host.docker === 'ok' && host.groups.length > 0 && (
         <>
-          <div className="mrow head"><span>Project</span><span className="r">Containers</span><span className="r">Memory</span></div>
-          {host.groups.map((g) => (
-            <div key={g.id} className="mrow">
-              <span className="nm">
-                {g.name}
-                {g.leftRunning && <span className="flag left">Left running</span>}
-                {g.unhealthy > 0 && <span className="flag sick">{g.unhealthy > 1 ? `${g.unhealthy} unhealthy` : 'Unhealthy'}</span>}
-                <span className="sub">{howText(g, now)}</span>
-              </span>
-              <span className="r num">{g.containers}</span>
-              <span className="r num">{memText(g.memory)}</span>
+          {left.length === 0 && <div className="hm-also">Nothing is left running.</div>}
+          {flagged.map((g) => (
+            <div key={g.id} className="hm-also">
+              {g.leftRunning && <span className="flag left">Left running</span>}
+              {g.unhealthy > 0 && <span className="flag sick">{unhealthyText(g)}</span>}
+              <span><b>{g.project ?? g.name}</b>: {count(g.containers, 'container')}, {memText(g.memory)}{g.leftRunning && `, ${lower(leftText(g, host.host, host.at, named, now))}`}</span>
             </div>
           ))}
-          <div className="mfoot">agent-orb lists containers and never removes one: the clean-up stays yours.</div>
+          <details className="fx-more">
+            <summary>Every container · {plural(host.groups.length, 'project')}</summary>
+            {host.groups.map((g) => (
+              <div key={g.id} className="mrow">
+                <span className="nm">
+                  {g.name}
+                  {g.leftRunning && <span className="flag left">Left running</span>}
+                  {g.unhealthy > 0 && <span className="flag sick">{unhealthyText(g)}</span>}
+                  <span className="sub">{howText(g, now)}</span>
+                </span>
+                <span className="r num">{g.containers}</span>
+                <span className="r num">{memText(g.memory)}</span>
+              </div>
+            ))}
+            <div className="hm-also">agent-orb lists containers and never removes one: the clean-up stays yours.</div>
+          </details>
         </>
       )}
     </section>
@@ -433,11 +383,11 @@ export function MachineBand({ host, now }: { host: MachineHost; now: number }) {
 }
 
 /**
- * The page's Machine part: one band per Mac. It is the Mac's, not the project's, so it stands whatever Factory's own read did. With no sample in the last 24 hours it says so, and when the server
+ * The page's Machine part: one card per Mac. It is the Mac's, not the project's, so it stands whatever Factory's own read did. With no sample in the last 24 hours it says so, and when the server
  * could not answer it says that: an old plugin (it sends none) or an old server (it has no route) is then not taken for an idle Mac. A failed read after a good one keeps the good one.
  */
-export function MachineBands({ data, error, now }: { data?: MachineData; error?: string; now: number }) {
-  if (data?.hosts.length) return <>{data.hosts.map((h) => <MachineBand key={h.host} host={h} now={now} />)}</>;
+export function MachineCards({ data, error, now }: { data?: MachineData; error?: string; now: number }) {
+  if (data?.hosts.length) return <>{data.hosts.map((h) => <MachineCard key={h.host} host={h} now={now} named={data.hosts.length > 1} />)}</>;
   if (!data && !error) return null;
   return (
     <section className="card machine" aria-labelledby="fmachine-none">
@@ -448,6 +398,52 @@ export function MachineBands({ data, error, now }: { data?: MachineData; error?:
     </section>
   );
 }
+
+/** One budget as a line: its value ("None" with no budget) and a button that opens its field in place, so a page of milestones is not a page of fields. Saving closes it. */
+export function BudgetLine({ label, value, onSave }: { label: string; value: number | null; onSave: (usd: number | null) => Promise<string | undefined> }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <div className="fx-bud-wrap">
+      <div className="fx-bud"><span>{label}</span>{value === null ? <span className="v none">None</span> : <span className="v num">{usd(value)}</span>}
+        <button type="button" className="btn sm" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>{value === null ? 'Set' : 'Change'}</button></div>
+      {open && <div id={id} className="fx-bud-edit"><BudgetField label={label} value={value} onSave={async (u) => { const e = await onSave(u); if (!e) setOpen(false); return e; }} /></div>}
+    </div>
+  );
+}
+
+/**
+ * What the milestones' defaults are and where to set them (#28; redrawn for #90): the default of the milestone shown (`shown`, null when the board shows none) on one line with a Change button, a note under it
+ * (who is over, else that nothing warns), and the other milestones folded. The numbers and warnings are the server's; the month's spend on no issue is on the board.
+ */
+export function BudgetCard({ data, shown, inFlight, onSave }: { data: BudgetData; shown: string | null; inFlight: ReadonlySet<number>; onSave: Save }) {
+  const own = data.issues.filter((i) => i.source === 'issue');
+  const over = data.issues.filter((i) => i.mark === 'at100' && i.budget !== null && inFlight.has(i.number)); // the rows of the board as shown, each against its own budget: no other milestone's, no merged issue
+  const none = !own.length && data.milestones.every((m) => m.budget === null);
+  const others = data.milestones.filter((m) => m.name !== shown);
+  const ownNote = own.length > 0 && <div className="hm-also">{own.length === 1 ? 'One issue has its own budget' : `${own.length} issues have their own budget`}: {own.map((i) => `#${i.number}, ${usd(i.budget!)}`).join('; ')}.</div>;
+  const ownPage = <div className="hm-also">An issue's own budget is on its page.</div>;
+  const line = (name: string, value: number | null) => <BudgetLine key={name} label={`Default for ${name}`} value={value} onSave={(u) => onSave({ milestone: name }, u)} />;
+  return (
+    <section className="card budget" aria-labelledby="fbudget-h">
+      <h2 id="fbudget-h">Budget per issue <span className="hint">warns at 80% and 100%, never stops anything</span></h2>
+      {!data.milestones.length && <div className="hm-also">No open issue has a milestone, so there is no default to set.</div>}
+      {shown !== null && line(shown, data.milestones.find((m) => m.name === shown)?.budget ?? null)}
+      {over.length > 0 ? <div className="hm-also">{over.map((i) => `#${i.number} is over its budget, at ${usd(i.usd, i.partial)} of ${usd(i.budget!)}.`).join(' ')} A warning is all a budget does.</div>
+        : none && <div className="hm-also">No budget is set, so rows show cost only and nothing warns.</div>}
+      {others.length > 0 && (
+        <details className="fx-more">
+          <summary>Other milestones · {others.length}</summary>
+          {others.map((m) => line(m.name, m.budget))}
+          {ownNote}
+          {ownPage}
+        </details>
+      )}
+      {others.length === 0 && <>{ownNote}{ownPage}</>}
+    </section>
+  );
+}
+
 
 export function Row({ f }: { f: FactoryFinding }) {
   return (
@@ -532,8 +528,8 @@ export function PrSheet({ pr, readAt, now, sheet, onClose, cost, onSave }: { pr:
 
 const NO_SESSIONS: readonly Session[] = [];
 
-/** `live`: the sessions Live shows right now, which the board's links can reach. `sessions`: the same sessions with their agents, for the Map's "who is on it now". */
-export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; live: ReadonlySet<string>; sessions?: readonly Session[] }) {
+/** `sessions`: the sessions Live shows right now with their agents: who is on each issue now, on the board and on the Map. */
+export function Factory({ now, sessions = NO_SESSIONS }: { now: number; sessions?: readonly Session[] }) {
   const { project, projects } = useProject(true); // one project: the page reads one repo's PRs
   const [data, setData] = useState<FactoryData>();
   const [budget, setBudget] = useState<BudgetData>();
@@ -624,10 +620,11 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
   const costed = budget && budget.project === project ? budget : undefined;
   const costs = costed && new Map(costed.issues.map((i) => [i.number, i]));
 
-  // The Map's links are a third read, asked for only while the Map is open (it reads every written path of the board's sessions, which the board's own read every 30 seconds does not):
-  // for the milestone the board shows, so the two answers are about the same issues. A failure leaves the cards and the last links, and says so.
+  // The links are a read of their own, for the milestone the board shows, so the two answers are about the same issues: the Map draws them and the board's rows say which issues share files (#90). It walks every written
+  // path of the board's sessions, which the board's own read does not (8 to 43 ms on the owner's data, 26 Nov); it was the Map's alone, and is now asked every 30 seconds on the Board too, a cost the owner can undo by
+  // asking for it on the Map only (#90 F15). Until it has answered for this milestone the Map lays out no card. A failure leaves the cards and the last links, and says so.
   const mapped = boarded ? boarded.milestone : undefined; // undefined: the board has not answered yet; null: it shows no milestone
-  const ask = linksQuery(view, project, boarded);
+  const ask = linksQuery(project, boarded);
   useEffect(() => {
     if (!ask) return;
     let alive = true;
@@ -650,6 +647,16 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
   }, [ask]);
   useEffect(() => (setPressed(undefined), setLinksError(undefined)), [project, mapped]); // a card of another milestone is not pressed in this one, and its error is not this one's
   const linked = linksFor(links, project, boarded);
+  const groups = boarded ? boardGroups(boardRows(boarded, shown?.prs ?? [], costs, linked?.links, sessions), sessions) : [];
+  const answered = boarded !== undefined || boardError !== undefined; // the board has said what it shows, or that it could not: nothing is counted before
+  const others = shown && answered ? otherPrs(shown.prs, groups) : []; // every open PR on no row: none vanishes whatever its issue or the board's read
+  const reading = shown && answered
+    ? boardReading({
+      groups, others, project: project ?? '', milestone: boarded ? boarded.milestone : null, queued: boarded ? boarded.issues.filter((i) => i.stage === 'queued').length : 0,
+      merged: boarded ? boarded.issues.filter((i) => i.stage === 'merged').length : 0, noPr: !shown.prs.length, readAt: shown.readAt, failed: boarded === undefined,
+    })
+    : undefined;
+  const inFlight = new Set(groups.flatMap((g) => g.rows.map((r) => r.row.number)));
   const save: Save = async (target, amount) => {
     try {
       const res = await fetch('/api/budget', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project, ...target, usd: amount }) });
@@ -671,8 +678,19 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
     opener.current?.focus();
   };
   useEffect(() => {
-    if (picked !== undefined && shown && !pr) close(); // the PR left with a fresh read (merged, closed): focus goes back, not to the body
+    if (picked === undefined || !shown || pr) return;
+    // the PR left with a fresh read (merged, closed) and the button that opened its sheet left with it: focus goes to the heading of the card that lists PRs, else the page's, never the body
+    setPicked(undefined);
+    const to = document.getElementById('fprs-h') ?? document.querySelector<HTMLElement>('main.factory h1');
+    if (to) to.tabIndex = -1;
+    to?.focus();
   }, [shown, picked]);
+  const toMap = useRef(false);
+  useEffect(() => {
+    if (view !== 'map' || !toMap.current) return;
+    toMap.current = false;
+    document.getElementById('fmap-h')?.focus(); // "Open the map" removed itself: the Map's heading takes the focus
+  }, [view, boarded]);
   return (
     <main className="factory">
       <PageHeader title="Factory" sub={view === 'map' ? "How this milestone's issues touch each other" : "What's blocked, what's ready, and what's left running"}
@@ -690,16 +708,24 @@ export function Factory({ now, live, sessions = NO_SESSIONS }: { now: number; li
         </>
       )}
       {view === 'board' && project && !shown && !error && <Loading>Reading {project}'s PRs and board…</Loading>}
-      {view === 'board' && shown && (
+      {view === 'board' && (
         <>
-          <Reading said={factoryReading(shown)} />
-          <NeedsYou prs={shown.prs} costs={costs} left={leftRunning(machine)} now={now} project={project} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />
-          {!boarded && !boardError && <Loading>Reading the board…</Loading>}
-          {(boarded || boardError) && <BoardBand data={boarded} error={boardError} live={live} cost={costs} notOnIssue={costed?.notOnIssue} />}
-          {costed && <BudgetCard data={costed} onSave={save} />}
+          {reading && <Reading said={reading} by="Counted from the rows below. No model writes this." />}
+          <div className={shown ? 'fx-grid' : 'fx-stack'}>
+            {shown && (
+              <div className="fx-main">
+                {!boarded && !boardError && <Loading>Reading the board…</Loading>}
+                {(boarded || boardError) && <BoardCard data={boarded} error={boardError} groups={groups} sessions={sessions} now={now} costs={costs} notOnIssue={costed?.notOnIssue} onMap={() => { toMap.current = true; setView('map'); }} />}
+              </div>
+            )}
+            <div className="fx-stack">
+              {shown && answered && <PrsCard prs={others} board={boarded} onOpen={(n, from) => ((opener.current = from), setPicked(n))} />}
+              <MachineCards data={machine} error={machineError} now={now} />
+              {costed && <BudgetCard data={costed} shown={boarded ? boarded.milestone : null} inFlight={inFlight} onSave={save} />}
+            </div>
+          </div>
         </>
       )}
-      {view === 'board' && <MachineBands data={machine} error={machineError} now={now} />}
       {pr && createPortal(
         <>
           <div className="scrim" onClick={close} aria-hidden="true" />

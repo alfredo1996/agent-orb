@@ -1,11 +1,10 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Asof, factoryReading, NeedsYou, PrSheet, type FactoryPr } from '../src/Factory.tsx';
-import { Reading } from '../src/kit.tsx';
+import { Asof, PrSheet, PrsCard, type FactoryPr } from '../src/Factory.tsx';
 
-// The Factory page (v0.4 slice 1, #27; design/v0.4-factory.html, the Factory and Findings boards): Needs you lists each open PR with the first reason it isn't ready, or
-// "Ready for your ok", and its findings open in a sheet. The studio has no DOM library, so the pieces are rendered to markup.
+// The Factory page (v0.4 slice 1, #27; design/v0.4-factory.html, the Factory and Findings boards): each open PR's first reason it isn't ready, or "Ready for your ok", and its findings in a sheet;
+// the PRs that close no issue have a card of their own (#90). The studio has no DOM library, so the pieces are rendered to markup.
 const plain = (html: string) => html.replace(/<\/?b>/g, '').replace(/<[^>]*>/g, ' ').replace(/&#x27;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 const MIN = 60_000;
 const NOW = Date.parse('2026-11-03T10:00:00Z');
@@ -32,56 +31,56 @@ const P418: FactoryPr = {
   number: 418, head: 'feat/412-queue', headOid: 'a1b2c3d'.padEnd(40, '3'), ready: true, reason: null, dropped: 0, conditions: ALL_OK,
   findings: [{ id: 'F2', severity: 'minor', file: 'q.ts', fate: 'dismissed', why: 'Covered by the queue test' }, { id: 'F1', severity: 'major', file: 'q.ts', fate: 'fixed' }],
 };
-const needs = (prs: FactoryPr[]) => renderToStaticMarkup(createElement(NeedsYou, { prs, onOpen: () => {} }));
-const rows = (html: string) => html.split('<div class="need">').slice(1).map(plain);
 const sheet = (pr: FactoryPr, readAt = NOW - 2 * MIN) => renderToStaticMarkup(createElement(PrSheet, { pr, readAt, now: NOW, sheet: false, onClose: () => {} }));
 
-describe('Needs you', () => {
-  it('one row per open PR, in the order given: its state, the first reason it is not ready, or "Ready for your ok"', () => {
-    expect(rows(needs([P416, P414, P418]))).toEqual([
-      'Open findings PR #416 fix/409-token-retry 2 findings open: 1 major, 1 minor · 1 dismissed: read it before merging 2 open See findings',
-      'Not known PR #414 feat/407-compress E2E is running c0d1e2f See checks',
-      'Ready PR #418 feat/412-queue Ready for your ok · 1 dismissed: read it before merging a1b2c3d See checks',
-    ]);
-    expect(needs([P416, P414, P418])).toContain('<span class="state stalled">Open findings</span>');
-    expect(needs([P416, P414, P418])).toContain('<span class="state waiting">Not known</span>');
-    expect(needs([P416, P414, P418])).toContain('<span class="state working">Ready</span>');
+describe('Other open PRs (#90)', () => {
+  const none = (p: FactoryPr): FactoryPr => ({ ...p, issue: null });
+  const card = (prs: FactoryPr[]) => renderToStaticMarkup(createElement(PrsCard, { prs, onOpen: () => {} }));
+
+  it('is not drawn when no open PR is without an issue', () => {
+    expect(card([])).toBe('');
   });
 
-  it('the state is the first condition that does not hold, as the reason is: a definite no that is not a finding is Blocked', () => {
-    const p = { ...P414, reason: 'UNSTABLE: a check is not passing', conditions: { ...ALL_OK, clean: cond(false, 'UNSTABLE: a check is not passing') } };
-    expect(rows(needs([p]))[0]).toBe('Blocked PR #414 feat/407-compress UNSTABLE: a check is not passing c0d1e2f See checks');
-  });
-
-  it('a PR that was ready when GitHub was last read, and is old now, is Not known, with the server\'s reason', () => {
-    const was = { ...P418, ready: false, reason: 'Was ready when GitHub was last read, 47 min ago' };
-    expect(rows(needs([was]))[0]).toBe('Not known PR #418 feat/412-queue Was ready when GitHub was last read, 47 min ago · 1 dismissed: read it before merging a1b2c3d See checks');
-    expect(plain(sheet(was))).toContain('PR #418 Not known');
-  });
-
-  it('nothing open says "Nothing needs you." and the card stays', () => {
-    expect(plain(needs([]))).toBe('Needs you Nothing needs you.');
-  });
-
-  it('says the same with Content off: the band holds no title or reason', () => {
-    expect(rows(needs([{ ...P416, findings: OFF }]))[0]).toBe(rows(needs([P416]))[0]);
-  });
-});
-
-describe('Needs you opens an issue\'s page, or the sheet for a PR with no issue (#106)', () => {
-  const withIssue = { ...P416, issue: 409 };
-  it('a PR that closes an issue links to its issue\'s page, in the project\'s name', () => {
-    const html = renderToStaticMarkup(createElement(NeedsYou, { prs: [withIssue], project: 'my app', onOpen: () => {} }));
-    expect(html).toContain('<a class="btn" href="#/issue?project=my+app&amp;issue=409">See findings</a>');
-    expect(html).not.toContain('<button');
-  });
-
-  it('a PR that closes none (Dependabot, say) still opens the sheet, with the checks and findings', () => {
-    const none = { ...P414, issue: null };
-    const html = renderToStaticMarkup(createElement(NeedsYou, { prs: [none], project: 'mobile-app', onOpen: () => {} }));
-    expect(html).toContain('<button type="button" class="btn">See checks</button>');
+  it('one line a PR: "PR #n" and its branch, a button that opens the PR\'s sheet, and its state as the page has always said it', () => {
+    const html = card([none(P416), none(P418)]);
+    expect(html.match(/<button type="button" class="fx-pr">/g)).toHaveLength(2);
     expect(html).not.toContain('href="#/issue');
-    expect(plain(sheet(none))).toContain('Can it merge? ✓ No finding is open Reported, none found');
+    expect([...html.matchAll(/<button type="button" class="fx-pr">(.*?)<\/button>/g)].map((m) => plain(m[1]!))).toEqual(['PR #416 fix/409-token-retry Open findings', 'PR #418 feat/412-queue Ready']);
+    expect(html).toContain('<span class="state stalled">Open findings</span>');
+    expect(html).toContain('<span class="state working">Ready</span>');
+    expect(plain(html)).toContain('Other open PRs 2 open');
+    expect(plain(html)).not.toContain("No review reports on these");
+  });
+
+  it('a PR that closes an issue not on the board says which, and its milestone when the board read knows it (F1)', () => {
+    const mine = (p: FactoryPr, n: number): FactoryPr => ({ ...p, issue: n });
+    const board = { issues: [{ number: 125, milestone: 'v0.7 Share', outside: true, stage: 'building' as const, pr: null, ready: null, reason: null, sessions: [], sessionCount: 0 }] };
+    const html = renderToStaticMarkup(createElement(PrsCard, { prs: [mine(P418, 125), mine(P416, 999), none(P414)], board, onOpen: () => {} }));
+    expect([...html.matchAll(/<button type="button" class="fx-pr">(.*?)<\/button>/g)].map((m) => plain(m[1]!))).toEqual(['PR #418 feat/412-queue closes #125, v0.7 Share Ready', 'PR #416 fix/409-token-retry closes #999 Open findings', 'PR #414 feat/407-compress Not known']);
+    expect(renderToStaticMarkup(createElement(PrsCard, { prs: [mine(P418, 125)], onOpen: () => {} }))).toContain('<small>closes #125</small>'); // with no board read, no milestone is guessed
+  });
+
+  it('a ready PR says Ready here too, and is counted in the card\'s heading', () => {
+    expect(card([none(P418)])).toContain('<span class="state working">Ready</span>');
+    expect(card([none(P418)])).toContain('id="fprs-h"');
+  });
+
+  it('with no review reported on any of them it says so once, and the rows carry no state', () => {
+    const html = card([none({ ...P414, conditions: { ...ALL_OK, findings: cond(null, 'No review report') } }), none({ ...P418, ready: false, conditions: { ...ALL_OK, findings: cond(null, 'No review report') } })]);
+    expect(html).not.toContain('class="state');
+    expect(html.match(/No review reports on these, so agent-orb can&#x27;t say they&#x27;re ready\./g)).toHaveLength(1);
+  });
+
+  it('one PR with findings reported keeps every row\'s state, and the single line is left out', () => {
+    const html = card([none(P416), none({ ...P414, conditions: { ...ALL_OK, findings: cond(null, 'No review report') } })]);
+    expect(html.match(/class="state/g)).toHaveLength(2);
+    expect(plain(html)).not.toContain('No review reports on these');
+  });
+
+  it('a PR that was ready when GitHub was last read, and is old now, is Not known in its sheet', () => {
+    const was = { ...P418, ready: false, reason: 'Was ready when GitHub was last read, 47 min ago' };
+    expect(plain(sheet(was))).toContain('PR #418 Not known');
+    expect(plain(sheet(none(P414)))).toContain('Can it merge? ✓ No finding is open Reported, none found');
   });
 });
 
@@ -130,16 +129,5 @@ describe('the findings sheet', () => {
     expect(plain(sheet(unreported))).toContain('No orb-findings block has reached this PR\'s branch yet, so ready can\'t be proved.');
     expect(plain(sheet(P414))).toContain('Reported, none found.');
     expect(plain(sheet({ ...P418, dropped: 1 }))).toContain('1 line of the last report didn\'t parse: ask the reviewer to report it again, with a finding it has not listed before (a report that only confirms fixes cannot clear it).');
-  });
-});
-
-describe('the reading', () => {
-  const said = (prs: FactoryPr[], readAt: number | null = NOW) => plain(renderToStaticMarkup(createElement(Reading, { said: factoryReading({ project: 'mobile-app', readAt, prs }) }))).replace(/ Written from.*$/, '');
-  it('counts what is ready and what is not, from the PRs below it', () => {
-    expect(said([P416, P414, P418])).toBe('1 PR is ready for your ok, 2 aren\'t: 1 PR with open findings.');
-    expect(said([P418, { ...P418, number: 419 }])).toBe('2 PRs are ready for your ok.');
-    expect(said([P414])).toBe('0 PRs are ready for your ok, 1 isn\'t.');
-    expect(said([])).toBe('No open PR in mobile-app.');
-    expect(said([], null)).toBe('Nothing read from GitHub for mobile-app.');
   });
 });

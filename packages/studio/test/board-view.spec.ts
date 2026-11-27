@@ -37,13 +37,12 @@ describe('boardFor', () => {
 });
 
 describe('linksQuery', () => {
-  it('asks for nothing unless the Map is open, a project is chosen and the board has answered; else for that project and the milestone the board shows, none when the board shows none', () => {
-    expect(linksQuery('board', 'mobile-app', board('v2.3'))).toBeUndefined(); // the Board view never reads the links
-    expect(linksQuery('map', undefined, board('v2.3'))).toBeUndefined();
-    expect(linksQuery('map', 'mobile-app', undefined)).toBeUndefined();
-    expect(linksQuery('map', 'mobile-app', board('v2.3'))).toBe('project=mobile-app&milestone=v2.3');
-    expect(linksQuery('map', 'mobile-app', board('v2.3 Offline'))).toBe('project=mobile-app&milestone=v2.3+Offline');
-    expect(linksQuery('map', 'mobile-app', board(null))).toBe('project=mobile-app');
+  it('asks for nothing until a project is chosen and the board has answered, on the Board view as on the Map (#90); else for that project and the milestone the board shows, none when the board shows none', () => {
+    expect(linksQuery(undefined, board('v2.3'))).toBeUndefined();
+    expect(linksQuery('mobile-app', undefined)).toBeUndefined();
+    expect(linksQuery('mobile-app', board('v2.3'))).toBe('project=mobile-app&milestone=v2.3');
+    expect(linksQuery('mobile-app', board('v2.3 Offline'))).toBe('project=mobile-app&milestone=v2.3+Offline');
+    expect(linksQuery('mobile-app', board(null))).toBe('project=mobile-app');
   });
 });
 

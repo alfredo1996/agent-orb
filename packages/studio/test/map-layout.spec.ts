@@ -91,7 +91,7 @@ describe('layoutMap: where each issue sits', () => {
   });
 
   it('a line between two cards of the last column, rows apart, runs down the lane right of it, inside the canvas and behind no card, and names its file', () => {
-    const three = layoutMap(STAGES, [...ISSUES, { number: 404, stage: 'merged' }, { number: 405, stage: 'merged' }], [file(403, 405, 'src/net/status.ts')]);
+    const three = layoutMap(STAGES, [...ISSUES, { number: 404, stage: 'merged' }, { number: 405, stage: 'merged' }], [file(403, 405, 'src/net/status.ts'), said(404, 417)]); // #404 is linked too, so it keeps the row between the two
     const e = three.edges[0]!;
     const right = three.pos.get(403)!.x + MAP_NODE.w;
     const down = along(e.d).filter((pt) => pt.y > three.pos.get(404)!.y && pt.y < three.pos.get(404)!.y + MAP_NODE.h); // beside #404, the card between the two
@@ -101,10 +101,17 @@ describe('layoutMap: where each issue sits', () => {
     expect(e.label?.text).toBe('net/status.ts');
   });
 
-  it('a card stays where it is whatever links it has, whichever is pressed and whatever order the board lists it in: only its stage and the numbers beside it place it', () => {
+  it('a card stays where it is whichever is pressed and whatever order the board lists it in: only its stage, whether it has a link and the numbers beside it place it (#90: gaining its first link moves it)', () => {
     const place = (x: ReturnType<typeof layoutMap>) => Object.fromEntries([...x.pos].map(([n, p]) => [n, [p.x, p.y]]));
-    expect(place(layoutMap(STAGES, ISSUES, []))).toEqual(place(m));
+    expect(place(layoutMap(STAGES, ISSUES, LINKS, 417))).toEqual(place(m));
     expect(place(layoutMap(STAGES, ISSUES.toReversed(), LINKS, 409))).toEqual(place(m));
+  });
+
+  it('an issue gaining its first link moves it and the unlinked issues of its stage, and no card of another stage that gains no link (#90)', () => {
+    const issues = [1, 2, 3, 4].map((number) => ({ number, stage: 'building' })).concat([{ number: 5, stage: 'queued' }, { number: 6, stage: 'gate' }]);
+    const rows = (links: L[]) => Object.fromEntries([...layoutMap(STAGES, issues, links).pos].map(([n, p]) => [n, p.row]));
+    expect(rows([])).toEqual({ 1: 1, 2: 2, 3: 3, 4: 4, 5: 0, 6: 0 }); // packed one row apart
+    expect(rows([{ a: 3, b: 5, kind: 'mention' }])).toEqual({ 3: 1, 1: 3, 2: 4, 4: 5, 5: 0, 6: 0 }); // #3 joins the linked rows; #1, #2 and #4 move down; #5 (linked either way) and #6 stay
   });
 
   it('a stage it does not know is not drawn, and a board with no issue is an empty canvas of seven columns', () => {
@@ -155,11 +162,22 @@ describe('layoutMap: the lines', () => {
 });
 
 describe('layoutMap: the rows alternate by column, so a line crosses a gap instead of running along it (#70)', () => {
-  it('a stage\'s first issue sits on the top row in Queued, Reviewing, Gate and Merged, on the second in Building, Fixing and Ready; each further issue two rows down', () => {
+  it('a stage\'s first issue sits on the top row in Queued, Reviewing, Gate and Merged, on the second in Building, Fixing and Ready; each further linked issue two rows down', () => {
     const m = layoutMap(STAGES, ISSUES, LINKS);
     expect(Object.fromEntries([...m.pos].map(([n, p]) => [n, p.row]))).toEqual({ 417: 0, 419: 2, 421: 4, 415: 1, 398: 0, 409: 1, 407: 0, 412: 1, 403: 0 });
-    const twice = layoutMap(STAGES, [{ number: 1, stage: 'fixing' }, { number: 2, stage: 'fixing' }, { number: 3, stage: 'gate' }, { number: 4, stage: 'gate' }], []);
+    const twice = layoutMap(STAGES, [{ number: 1, stage: 'fixing' }, { number: 2, stage: 'fixing' }, { number: 3, stage: 'gate' }, { number: 4, stage: 'gate' }], [{ a: 1, b: 2, kind: 'mention' }, { a: 3, b: 4, kind: 'mention' }]);
     expect(Object.fromEntries([...twice.pos].map(([n, p]) => [n, p.row]))).toEqual({ 1: 1, 2: 3, 3: 0, 4: 2 });
+  });
+
+  it('issues with no link go after their stage\'s linked ones, one row apart, so five queued ones are not a 1,300px column (#90); linked issues keep their rows', () => {
+    const queued = [1, 2, 3, 4, 5].map((number) => ({ number, stage: 'queued' }));
+    const m = layoutMap(STAGES, queued, []);
+    expect([1, 2, 3, 4, 5].map((n) => m.pos.get(n)!.row)).toEqual([0, 1, 2, 3, 4]);
+    expect(m.pos.get(2)!.y - m.pos.get(1)!.y).toBe(140);
+    // #2 and #3 are tied to a card in Building: they keep rows 0 and 2, and the unlinked #1, #4 and #5 follow them
+    const mixed = layoutMap(STAGES, [...queued, { number: 9, stage: 'building' }], [{ a: 2, b: 9, kind: 'mention' }, { a: 3, b: 9, kind: 'mention' }]);
+    expect([2, 3, 1, 4, 5].map((n) => mixed.pos.get(n)!.row)).toEqual([0, 2, 4, 5, 6]);
+    expect(mixed.pos.get(9)!.row).toBe(1);
   });
 
   it('on #67\'s fixture one line is an arc under a row, #409 to #412 (both in odd columns); the other six each cross one gap', () => {

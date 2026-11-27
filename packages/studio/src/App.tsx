@@ -129,7 +129,7 @@ export function App() {
       </header>
 
       <ProjectContext.Provider value={{ projects, choice, pick }}>
-        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} live={new Set(list.map((s) => s.id))} sessions={list} /> : view === 'analysis' ? <Analysis /> : view === 'issue' ? <Issue now={now} issue={readIssue(hash)} /> : view === 'home' ? <Home now={now} sessions={list} /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} ready={ready} />}
+        {view === 'ledger' ? <Ledger /> : view === 'pipeline' ? <Pipeline now={now} /> : view === 'factory' ? <Factory now={now} sessions={list} /> : view === 'analysis' ? <Analysis /> : view === 'issue' ? <Issue now={now} issue={readIssue(hash)} /> : view === 'home' ? <Home now={now} sessions={list} /> : <Live list={list} all={sessions} now={now} wanted={readSession(hash)} ready={ready} />}
       </ProjectContext.Provider>
     </div>
   );
