@@ -731,8 +731,6 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
   .map .nothing, .map .mp-day, .map .mp-none, .map .mp-common, .map .bnote { padding-left: 16px; padding-right: 16px; }
 }
 /* Machine (v0.4 slice 3, #29; design/v0.4-factory.html, the Machine band). Like the other bands, it narrows with its container, not the window. */
-.machine { scroll-margin-top: 16px; }
-.machine:focus-visible { outline: 2px solid var(--accent-ink, var(--ink)); outline-offset: 2px; }
 .machine .hint.stale { color: var(--wait); font-weight: 600; }
 .machine .mdown, .machine .nothing { margin: 0; font-size: 14px; color: var(--muted); }
 .machine .nothing { padding: 0 20px 16px; }
@@ -911,11 +909,11 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 
 /* Home (v0.5 slice 3, #107; design/home-issue.html, the Home board): a card per project, built from the Board band's rows (.board .brow) with its own four columns. */
 .home { display: grid; gap: 16px; align-content: start; }
-.home .hm-head, .factory .hm-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
-.home .hm-head h2, .factory .hm-head h2 { padding: 0; border: 0; }
+.home .hm-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.home .hm-head h2 { padding: 0; border: 0; }
 .home .asof { font-size: 13px; font-weight: 400; color: var(--muted); }
 .home .asof.stale { color: var(--wait); font-weight: 600; }
-.home .hm-ms, .factory .hm-ms { margin-left: 10px; font-weight: 400; color: var(--muted); }
+.home .hm-ms { margin-left: 10px; font-weight: 400; color: var(--muted); }
 .home .hm-prog, .factory .hm-prog { display: grid; gap: 10px; padding: 14px 20px; }
 .home .hm-bar, .factory .hm-bar { display: flex; gap: 3px; height: 8px; }
 .home .hm-bar i, .factory .hm-bar i { flex: 1; border-radius: 2px; background: var(--border-strong); }
@@ -944,7 +942,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .home details.hm-quiet .hm-also { border-top: 1px solid var(--line); }
 @container (max-width: 700px) {
   .home .board .brow.hm-row, .factory .board .brow.hm-row { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 16px; }
-  .home .hm-prog, .factory .hm-prog, .home .hm-also, .factory .hm-also, .home .hm-foot, .factory .hm-foot, .home .hm-head, .factory .hm-head { padding-left: 16px; padding-right: 16px; }
+  .home .hm-prog, .factory .hm-prog, .home .hm-also, .factory .hm-also, .home .hm-foot, .factory .hm-foot, .home .hm-head { padding-left: 16px; padding-right: 16px; }
   .home details.hm-quiet summary { padding: 0 16px; }
 }
 
@@ -1004,8 +1002,13 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .factory .fx-pr { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 6px 20px; border: 0; border-top: 1px solid var(--line); background: none; color: var(--text); font: 400 14px/1.4 var(--sans); text-align: left; cursor: pointer; }
 .factory .fx-pr:hover { background: var(--sunk); }
 .factory .fx-pr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.factory .fx-pn { display: grid; gap: 1px; min-width: 0; }
 .factory .fx-pr b { font-weight: 600; }
-.factory .fx-pr code { font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.factory .fx-pr:hover b, .factory .fx-pr:focus-visible b { color: var(--accent-ink); }
+.factory .fx-pr code { font: 13px var(--mono); color: var(--muted); overflow-wrap: break-word; } /* a long branch wraps at its - and / before it breaks inside a word */
+.factory .fx-pr small { font-size: 13px; color: var(--muted); }
+.factory .fx-tip { margin: 0; padding: 10px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); }
+.factory .fx-tip[hidden] { display: none; }
 .factory .fx-prs h2 + .fx-pr { border-top: 0; }
 .factory .fx-figs { display: flex; flex-wrap: wrap; gap: 12px 40px; padding: 14px 20px; }
 .factory .fx-fig { display: grid; gap: 1px; }
@@ -1024,11 +1027,15 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .factory details.fx-more summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; border-top: 1px solid var(--line); font-size: 14px; font-weight: 500; color: var(--accent-ink); }
 .factory details.fx-more summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .factory details.fx-more .mrow:first-of-type { border-top: 1px solid var(--line); }
-@container (max-width: 1100px) {
+/* The widths a board row needs, so none is wider than its card (#90 F10). The five columns are at least 170 + 112 + 170 + 108 + 124 = 684px, with four 16px gaps (64) and 20px of padding each side (40): 788px, and the
+   card's own border makes it 790. The container is the frame, and the page's main pads it by 20px each side, so a one-column page has a card of (frame - 40)px: it holds a row from a frame of 830px, and below that the
+   row is the phone's. Two columns put the 340px side cards and a 16px gap beside it, a board of (frame - 396)px: it holds a row from a frame of 1186px, and below that the page is one column. */
+@container (max-width: 1185px) {
   .factory .fx-grid { grid-template-columns: minmax(0, 1fr); }
 }
-@container (max-width: 700px) {
+@container (max-width: 829px) {
   /* a row stacks: the name, then the stage and the state pill on one line, then what it is doing and what it cost */
+  .factory .bcols.fx-cols { display: none; }
   .factory .board .brow.fx-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
   .factory .brow.fx-row .bissue, .factory .brow.fx-row .hm-now, .factory .brow.fx-row .fx-cost { grid-column: 1 / -1; }
   .factory .brow.fx-row .stagecell { grid-column: 1; grid-row: 2; }
@@ -1037,8 +1044,12 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
   .factory .fx-cost { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
   .factory .fx-cost .lab { display: inline; }
   .factory .fx-cost:empty { display: none; }
-  .factory .fx-gh, .factory .fx-q, .factory .fx-pr, .factory .fx-figs, .factory .fx-bud, .factory .fx-bud-edit, .factory .machine .mdown { padding-left: 16px; padding-right: 16px; }
+}
+@container (max-width: 700px) {
+  .factory .fx-gh, .factory .fx-q, .factory .fx-pr, .factory .fx-tip, .factory .fx-figs, .factory .fx-bud, .factory .fx-bud-edit, .factory .machine .mdown { padding-left: 16px; padding-right: 16px; }
   .factory details.fx-more summary { padding: 0 16px; }
-  .factory .btn.sm, .factory button.hm-lnk, .factory .hm-also .hm-lnk { min-height: 44px; }
-  .factory button.hm-lnk, .factory .hm-also .hm-lnk { display: inline-flex; align-items: center; }
+  .factory .btn.sm, .factory button.hm-lnk { min-height: 44px; }
+  .factory button.hm-lnk { display: inline-flex; align-items: center; }
+  .factory .hm-also a.hm-lnk { position: relative; } /* links that flow on wrapped lines keep their spacing; a 44px target is a pad round each, not a line each */
+  .factory .hm-also a.hm-lnk::after { content: ""; position: absolute; inset: -10px -4px; }
 }

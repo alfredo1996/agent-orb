@@ -107,6 +107,13 @@ describe('layoutMap: where each issue sits', () => {
     expect(place(layoutMap(STAGES, ISSUES.toReversed(), LINKS, 409))).toEqual(place(m));
   });
 
+  it('an issue gaining its first link moves it and the unlinked issues of its stage, and no card of another stage that gains no link (#90)', () => {
+    const issues = [1, 2, 3, 4].map((number) => ({ number, stage: 'building' })).concat([{ number: 5, stage: 'queued' }, { number: 6, stage: 'gate' }]);
+    const rows = (links: L[]) => Object.fromEntries([...layoutMap(STAGES, issues, links).pos].map(([n, p]) => [n, p.row]));
+    expect(rows([])).toEqual({ 1: 1, 2: 2, 3: 3, 4: 4, 5: 0, 6: 0 }); // packed one row apart
+    expect(rows([{ a: 3, b: 5, kind: 'mention' }])).toEqual({ 3: 1, 1: 3, 2: 4, 4: 5, 5: 0, 6: 0 }); // #3 joins the linked rows; #1, #2 and #4 move down; #5 (linked either way) and #6 stay
+  });
+
   it('a stage it does not know is not drawn, and a board with no issue is an empty canvas of seven columns', () => {
     expect(layoutMap(STAGES, [{ number: 1, stage: 'shipped' }], []).pos.size).toBe(0);
     const empty = layoutMap(STAGES, [], []);

@@ -1,8 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Asof, factoryReading, PrSheet, PrsCard, type FactoryPr } from '../src/Factory.tsx';
-import { Reading } from '../src/kit.tsx';
+import { Asof, PrSheet, PrsCard, type FactoryPr } from '../src/Factory.tsx';
 
 // The Factory page (v0.4 slice 1, #27; design/v0.4-factory.html, the Factory and Findings boards): each open PR's first reason it isn't ready, or "Ready for your ok", and its findings in a sheet;
 // the PRs that close no issue have a card of their own (#90). The studio has no DOM library, so the pieces are rendered to markup.
@@ -34,7 +33,7 @@ const P418: FactoryPr = {
 };
 const sheet = (pr: FactoryPr, readAt = NOW - 2 * MIN) => renderToStaticMarkup(createElement(PrSheet, { pr, readAt, now: NOW, sheet: false, onClose: () => {} }));
 
-describe('PRs on no issue (#90)', () => {
+describe('Other open PRs (#90)', () => {
   const none = (p: FactoryPr): FactoryPr => ({ ...p, issue: null });
   const card = (prs: FactoryPr[]) => renderToStaticMarkup(createElement(PrsCard, { prs, onOpen: () => {} }));
 
@@ -49,8 +48,21 @@ describe('PRs on no issue (#90)', () => {
     expect([...html.matchAll(/<button type="button" class="fx-pr">(.*?)<\/button>/g)].map((m) => plain(m[1]!))).toEqual(['PR #416 fix/409-token-retry Open findings', 'PR #418 feat/412-queue Ready']);
     expect(html).toContain('<span class="state stalled">Open findings</span>');
     expect(html).toContain('<span class="state working">Ready</span>');
-    expect(plain(html)).toContain('2 open');
+    expect(plain(html)).toContain('Other open PRs 2 open');
     expect(plain(html)).not.toContain("No review reports on these");
+  });
+
+  it('a PR that closes an issue not on the board says which, and its milestone when the board read knows it (F1)', () => {
+    const mine = (p: FactoryPr, n: number): FactoryPr => ({ ...p, issue: n });
+    const board = { issues: [{ number: 125, milestone: 'v0.7 Share', outside: true, stage: 'building' as const, pr: null, ready: null, reason: null, sessions: [], sessionCount: 0 }] };
+    const html = renderToStaticMarkup(createElement(PrsCard, { prs: [mine(P418, 125), mine(P416, 999), none(P414)], board, onOpen: () => {} }));
+    expect([...html.matchAll(/<button type="button" class="fx-pr">(.*?)<\/button>/g)].map((m) => plain(m[1]!))).toEqual(['PR #418 feat/412-queue closes #125, v0.7 Share Ready', 'PR #416 fix/409-token-retry closes #999 Open findings', 'PR #414 feat/407-compress Not known']);
+    expect(renderToStaticMarkup(createElement(PrsCard, { prs: [mine(P418, 125)], onOpen: () => {} }))).toContain('<small>closes #125</small>'); // with no board read, no milestone is guessed
+  });
+
+  it('a ready PR says Ready here too, and is counted in the card\'s heading', () => {
+    expect(card([none(P418)])).toContain('<span class="state working">Ready</span>');
+    expect(card([none(P418)])).toContain('id="fprs-h"');
   });
 
   it('with no review reported on any of them it says so once, and the rows carry no state', () => {
@@ -117,16 +129,5 @@ describe('the findings sheet', () => {
     expect(plain(sheet(unreported))).toContain('No orb-findings block has reached this PR\'s branch yet, so ready can\'t be proved.');
     expect(plain(sheet(P414))).toContain('Reported, none found.');
     expect(plain(sheet({ ...P418, dropped: 1 }))).toContain('1 line of the last report didn\'t parse: ask the reviewer to report it again, with a finding it has not listed before (a report that only confirms fixes cannot clear it).');
-  });
-});
-
-describe('the reading', () => {
-  const said = (prs: FactoryPr[], readAt: number | null = NOW) => plain(renderToStaticMarkup(createElement(Reading, { said: factoryReading({ project: 'mobile-app', readAt, prs }) }))).replace(/ Written from.*$/, '');
-  it('counts what is ready and what is not, from the PRs below it', () => {
-    expect(said([P416, P414, P418])).toBe('1 PR is ready for your ok, 2 aren\'t: 1 PR with open findings.');
-    expect(said([P418, { ...P418, number: 419 }])).toBe('2 PRs are ready for your ok.');
-    expect(said([P414])).toBe('0 PRs are ready for your ok, 1 isn\'t.');
-    expect(said([])).toBe('No open PR in mobile-app.');
-    expect(said([], null)).toBe('Nothing read from GitHub for mobile-app.');
   });
 });

@@ -14,8 +14,8 @@ import { factoryHash, hashWith } from './project-choice.ts';
 // so a card stays short. The sentence on top is counted from the rows and the stream, and no model writes it. Read only: a row opens its issue's page, and the card links to the milestone's Map and board.
 // Since you last looked (slice 4, #108) is the card beside the projects: GET /api/changes since a mark kept in this browser, and the stalls the stream shows, until Caught up moves the mark.
 
-/** A row of GET /api/home: the board's own row for an issue in flight, with the branch of its newest session, the issues it shares files with (`together`: both in flight), a PR's open findings, and its budget when one is set (`mark` is /api/budget's). */
-export type HomeRow = BoardIssue & { branch?: string; shares: { issue: number; together: boolean }[]; openFindings?: true; budget?: { usd: number; budget: number; mark: 'at80' | 'at100' | null; partial: boolean } };
+/** A row of GET /api/home: the board's own row for an issue in flight, with the branch of its newest session, the issues it shares files with (`together`: both in flight), a PR's open findings (and, on the Factory board, how many it dismissed), and its budget when one is set (`mark` is /api/budget's). */
+export type HomeRow = BoardIssue & { branch?: string; shares: { issue: number; together: boolean }[]; openFindings?: true; dismissed?: number; budget?: { usd: number; budget: number; mark: 'at80' | 'at100' | null; partial: boolean } };
 export type HomeProject = {
   name: string; last: number; milestone: string | null; content: BoardData['content']; counts: { merged: number; flight: number; queued: number; outside: number }; rows: HomeRow[]; readAt: number | null;
   notOnIssue: { count: number; sessions: { id: string; branch: string | null; at: number }[] }; month: string; goal: number | null; spent: number; costPartial: boolean;
@@ -38,13 +38,16 @@ export function Row({ row, state, project, sessions, now, cost }: { row: HomeRow
   const doing = doingOn(row, sessions, now);
   const spent = cost === undefined && row.budget && row.budget.mark ? ` · ${usd(row.budget.usd, row.budget.partial)} of ${usd(row.budget.budget)}` : '';
   const why = row.ready === false && row.reason ? row.reason : undefined;
-  const text = doing ? `${doing}${why ? ` · ${why}` : ''}` : `No session is on it.${why ? ` ${why}` : row.ready ? ' Ready for your ok.' : ''}`;
+  const read = row.ready && row.dismissed ? `${row.dismissed} dismissed: read ${row.dismissed === 1 ? 'it' : 'them'} before merging.` : ''; // the Factory board's rows only: a dismissed finding is a decision to read before the merge
+  const base = doing ? `${doing}${why ? ` · ${why}` : ''}` : `No session is on it.${why ? ` ${why}` : row.ready ? ' Ready for your ok.' : ''}`;
+  const text = read ? `${base}${doing ? ' · ' : ' '}${read}` : base;
+  const note = outsideNote(row, project.milestone);
   const ref = row.pr ? `PR #${row.pr.number}` : (row.branch ?? (cost === undefined ? 'No PR' : undefined));
   return (
     <div className={cost === undefined ? 'brow hm-row' : 'brow hm-row fx-row'} data-issue={row.number}>
       <div className="bissue">
         <a className="open" href={issueHref(project.name, row.number)} aria-label={`Issue #${row.number}: open its page`}><b>{`#${row.number}${row.title ? ` ${row.title}` : ''}`}</b></a>
-        <small>{ref}{outsideNote(row, project.milestone)}</small>
+        <small>{ref}{ref ? note : note.replace(/^ · /, '')}</small>
         {row.shares.length > 0 && <span className="hm-with">Same files as {row.shares.map((x, i) => <Fragment key={x.issue}>{i === 0 ? '' : i === row.shares.length - 1 ? ' and ' : ', '}<span className={x.together ? 'together' : undefined}>#{x.issue}</span></Fragment>)}</span>}
       </div>
       <div className="stagecell"><span>{STAGE_LABEL[row.stage]}</span><Track stage={row.stage} bad={row.bad} {...(state === 'stalled' ? { stalled: true as const } : {})} /></div>

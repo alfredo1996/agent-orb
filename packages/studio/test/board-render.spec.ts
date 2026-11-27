@@ -75,6 +75,25 @@ describe('the Board card, with issues in flight', () => {
     expect(plain(rowOf(html, 407))).toContain('UNSTABLE: a check is not passing'); // a PR that is not ready says why in its Now line, as Home's does
   });
 
+  it('a ready PR with dismissed findings says so in its Now line, to read them before merging; with none, nothing is said (F2)', () => {
+    const f = (id: string, fate: 'dismissed' | 'fixed') => ({ id, severity: 'minor', file: 'a.ts', fate });
+    const ready = (findings: ReturnType<typeof f>[]) => ({ ...pr(418, 412, true), ready: true, findings });
+    const d = data();
+    const html2 = (prs: ReturnType<typeof ready>[]) => card(d, { groups: boardGroups(boardRows(d, prs, COSTS, undefined), SESSIONS) });
+    expect(plain(rowOf(html2([ready([f('F1', 'dismissed')])]), 412))).toContain('No session is on it. Ready for your ok. 1 dismissed: read it before merging.');
+    expect(plain(rowOf(html2([ready([f('F1', 'dismissed'), f('F2', 'dismissed')])]), 412))).toContain('2 dismissed: read them before merging.');
+    expect(plain(rowOf(html2([ready([f('F1', 'fixed')])]), 412))).not.toContain('dismissed');
+    expect(plain(rowOf(html, 412))).not.toContain('dismissed');
+  });
+
+  it('a row with no PR shows the branch of its session the page has, as Home does (F11)', () => {
+    const d = data({ issues: [issue(415, { stage: 'building', sessions: [sess('s-415')], sessionCount: 1 })] });
+    const withBranch = [{ ...live('s-415', [agent()]), branch: 'fix/415-sync-dialog' }];
+    const h2 = card(d, { groups: boardGroups(boardRows(d, [], COSTS, undefined, withBranch), withBranch) }, withBranch);
+    expect(rowOf(h2, 415)).toContain('<small>fix/415-sync-dialog</small>');
+    expect(rowOf(card(d, {}, []), 415)).toContain('<small></small>');
+  });
+
   it('every row\'s name is a link to its issue\'s page, with the project in the link', () => {
     const named = card(data({ project: 'my app/v2' }));
     expect(rowOf(named, 409)).toContain('<a class="open" href="#/issue?project=my+app%2Fv2&amp;issue=409" aria-label="Issue #409: open its page">');
@@ -135,10 +154,13 @@ describe('the Board card, with issues in flight', () => {
     expect(plain(card(data({ issues: [ALL[0]!] })))).toContain('1 issue');
   });
 
-  it('the note about agent view is behind an i button, which the heading carries as its title; so is what "not on an issue" counts', () => {
-    expect(html).toContain('<button type="button" class="info" aria-label="About the board" title="Agent view lists sessions. This lists issues, with what each has spent and how far it is from your ok. A background session is answered in agent view: claude agents.">i</button>');
-    expect(plain(html)).not.toContain('Agent view lists sessions'); // not as text of the page
-    expect(html).toContain('title="Sessions with no PR, and turns after a session&#x27;s last PR. Cost is an estimate by time windows."');
+  it('the note about agent view is behind an i button that opens it in place (aria-expanded, aria-controls, hidden); so is what "not on an issue" counts (F3)', () => {
+    const id = (k: string) => html.match(new RegExp(`aria-label="${k}" aria-expanded="false" aria-controls="([^"]+)"`))![1]!;
+    expect(html).toContain('class="info" aria-label="About the board" aria-expanded="false"');
+    expect(html).toContain(`<p class="fx-tip" id="${id('About the board')}" hidden="">Agent view lists sessions. This lists issues, with what each has spent and how far it is from your ok. A background session is answered in agent view: claude agents.</p>`);
+    expect(html).toContain(`<p class="fx-tip" id="${id('What this counts')}" hidden="">Sessions with no PR, and turns after a session&#x27;s last PR. Cost is an estimate by time windows.</p>`);
+    expect(html).not.toContain('title="Agent view');
+    expect(id('About the board')).not.toBe(id('What this counts'));
   });
 
   it('the foot: this month\'s spend on no issue (a floor when a request had no price), and Open the map', () => {
@@ -214,8 +236,8 @@ describe('what the card says when it has nothing to show, or could not read', ()
     expect(plain(html)).toContain('Board i 2 in flight');
     expect(plain(html)).not.toContain('0 issues');
     expect(plain(html)).not.toContain('outside');
-    expect(plain(rowOf(html, 398))).toContain('in flight Building');
-    expect(plain(rowOf(html, 399))).toContain('in flight, v2.2.1 Building');
+    expect(rowOf(html, 398)).toContain('<small>in flight</small>'); // no PR and no branch: the note alone, with no separator before it (F8)
+    expect(rowOf(html, 399)).toContain('<small>in flight, v2.2.1</small>');
     expect(outsideNote(issue(5), 'v2')).toBe('');
   });
 

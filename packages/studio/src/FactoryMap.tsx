@@ -84,10 +84,11 @@ export function MapBand({ board, links, error, boardError, sessions, picked, onP
   const inside = board.issues.filter((i) => !i.outside).length;
   const outside = board.issues.length - inside;
   const note = titlesNote(board);
-  const map = phone || !board.issues.length ? undefined : layoutMap(STAGES, board.issues, all, sel);
+  // not laid out until the links have answered (or failed): a layout with no links packs every card, and the linked ones would jump when they arrived
+  const map = phone || !board.issues.length || (!links && !error) ? undefined : layoutMap(STAGES, board.issues, all, sel);
   return (
     <section className="card map" aria-labelledby="fmap-h">
-      <h2 id="fmap-h">Map{board.milestone != null && ` · ${board.milestone}`} {board.issues.length > 0 && (
+      <h2 id="fmap-h" tabIndex={-1}>Map{board.milestone != null && ` · ${board.milestone}`} {board.issues.length > 0 && (
         <span className="hint">{board.milestone === null ? `${outside} in flight` : `${count(inside, 'issue')}${outside > 0 ? `, plus ${outside} in flight outside it` : ''}`}{links && ` · ${count(all.length, 'link')}`}</span>
       )}</h2>
       {boardError && <p className="nothing" role="alert">The board could not be read: {boardError}</p>}

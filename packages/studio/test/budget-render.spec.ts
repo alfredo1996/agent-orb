@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { BudgetCard, BudgetLine, budgetInput, costFig, PrSheet, type BudgetData, type FactoryPr, type IssueCost } from '../src/Factory.tsx';
+import { BudgetCard, budgetInput, costFig, PrSheet, type BudgetData, type FactoryPr, type IssueCost } from '../src/Factory.tsx';
 
 // Issue cost against budget on the Factory page (v0.4 slice 2, #28; design/v0.4-factory.html, the cost cell and the Budget board): each PR row says what its issue cost, labelled an
 // estimate, against its budget; the card under it sets a default per milestone and says what was spent on no issue; a PR's sheet sets the issue's own budget. Warnings never stop anything.
@@ -58,7 +58,8 @@ const pr = (number: number, issue: number | null): FactoryPr => ({ number, head:
 const data = (over: Partial<BudgetData> = {}): BudgetData => ({
   project: 'mobile-app', month: '2026-11', issues: [], notOnIssue: { usd: 15, partial: false }, milestones: [{ name: 'v0.4 Factory', budget: null }], ...over,
 });
-const card = (d: BudgetData) => renderToStaticMarkup(createElement(BudgetCard, { data: d, shown: d.milestones[0]?.name ?? null, onSave: async () => undefined }));
+const ROWS = new Set([407, 412, 409]); // the issues of the board's rows
+const card = (d: BudgetData, inFlight: ReadonlySet<number> = ROWS) => renderToStaticMarkup(createElement(BudgetCard, { data: d, shown: d.milestones[0]?.name ?? null, inFlight, onSave: async () => undefined }));
 
 describe('the budget card', () => {
   it('the milestone shown has one line: its default, or None, and a button; the field is not drawn until the button opens it', () => {
@@ -70,23 +71,28 @@ describe('the budget card', () => {
     expect(none).toContain('Default for v0.4 Factory None Set');
   });
 
-  it('Change reveals today\'s field in place, holding the value, and saving goes through the card\'s save', () => {
-    const h = renderToStaticMarkup(createElement(BudgetLine, { label: 'Default for v0.4 Factory', value: 150, defaultOpen: true, onSave: async () => undefined }));
-    expect(h).toContain('aria-expanded="true"');
-    expect(h).toContain('aria-label="Default for v0.4 Factory"');
-    expect(h).toContain('value="150"');
-    expect(h).toContain('>Save</button>');
-  });
-
   it('under it, one note: who is over their budget, else that nothing warns, else nothing', () => {
     const over = plain(card(data({ milestones: [{ name: 'v0.4 Factory', budget: 80 }], issues: [cost({ number: 407, usd: 96, budget: 80, mark: 'at100' }), cost({ number: 412, usd: 38, budget: 80 })] })));
-    expect(over).toContain('#407 is over it, at $96.00 of $80.00.');
+    expect(over).toContain('#407 is over its budget, at $96.00 of $80.00. A warning is all a budget does.');
     expect(over).not.toContain('#412 is over');
     expect(over).not.toContain('No budget is set');
     expect(plain(card(data()))).toContain('No budget is set, so rows show cost only and nothing warns.');
     const quiet = plain(card(data({ milestones: [{ name: 'v0.4 Factory', budget: 150 }], issues: [cost()] })));
     expect(quiet).not.toContain('No budget is set');
-    expect(quiet).not.toContain('is over it');
+    expect(quiet).not.toContain('is over its budget');
+  });
+
+  it('the over note names only the issues of the rows shown, each against its own budget: not another milestone\'s issue, not a merged one, and it reads alone with no milestone shown (F6)', () => {
+    const d = data({ milestones: [{ name: 'v1', budget: null }], issues: [cost({ number: 500, milestone: 'v2', usd: 60, budget: 50, source: 'milestone', mark: 'at100' }), cost({ number: 407, usd: 96, budget: 80, mark: 'at100' }), cost({ number: 399, usd: 90, budget: 80, mark: 'at100' })] });
+    const t = plain(card(d));
+    expect(t).toContain('Default for v1 None Set');
+    expect(t).toContain('#407 is over its budget, at $96.00 of $80.00.');
+    expect(t).not.toContain('#500');
+    expect(t).not.toContain('#399 is over');
+    expect(t).not.toContain('is over it,');
+    expect(plain(card(d, new Set()))).not.toContain('is over its budget'); // nothing on the board, nothing named
+    const alone = plain(renderToStaticMarkup(createElement(BudgetCard, { data: d, shown: null, inFlight: ROWS, onSave: async () => undefined })));
+    expect(alone).toContain('#407 is over its budget, at $96.00 of $80.00.');
   });
 
   it('the other milestones are folded with a line each; an issue\'s own budget is named there', () => {
@@ -95,26 +101,35 @@ describe('the budget card', () => {
     expect(open).not.toContain('v0.5 Follow');
     expect(folded).toContain('<summary>Other milestones · 2</summary>');
     expect(plain(folded)).toContain('Default for v0.5 Follow $200.00 Change Default for v0.6 Explain None Set');
-    expect(plain(folded)).toContain('One issue has its own budget: #409, $4.00. Set it on the issue\'s page.');
+    expect(plain(folded)).toContain('One issue has its own budget: #409, $4.00. An issue\'s own budget is on its page.');
+  });
+
+  it('the fold always says where an issue\'s own budget is, with none set too', () => {
+    const h = card(data({ milestones: [{ name: 'v0.4 Factory', budget: 150 }, { name: 'v0.5 Follow', budget: 200 }] }));
+    expect(plain(h.split('<details class="fx-more">')[1]!)).toContain('An issue\'s own budget is on its page.');
+    expect(plain(h.split('<details class="fx-more">')[0]!)).not.toContain('own budget is on its page');
   });
 
   it('with no milestone shown, every milestone goes under the fold', () => {
-    const h = renderToStaticMarkup(createElement(BudgetCard, { data: data({ milestones: [{ name: 'v0.4 Factory', budget: 150 }, { name: 'v0.5 Follow', budget: null }] }), shown: null, onSave: async () => undefined }));
+    const h = renderToStaticMarkup(createElement(BudgetCard, { data: data({ milestones: [{ name: 'v0.4 Factory', budget: 150 }, { name: 'v0.5 Follow', budget: null }] }), shown: null, inFlight: ROWS, onSave: async () => undefined }));
     const [open, folded] = h.split('<details class="fx-more">') as [string, string];
     expect(open).not.toContain('Default for');
     expect(plain(folded)).toContain('Other milestones · 2 Default for v0.4 Factory $150.00 Change Default for v0.5 Follow None Set');
   });
 
   it('with no milestone to set a default on, it says where a budget can still be set', () => {
-    expect(plain(card(data({ milestones: [] })))).toContain('No open issue has a milestone, so there is no default to set. An issue\'s own budget is on its page.');
+    const t = plain(card(data({ milestones: [] })));
+    expect(t).toContain('No open issue has a milestone, so there is no default to set.');
+    expect(t).toContain('An issue\'s own budget is on its page.');
+    expect(plain(card(data({ milestones: [] }))).match(/own budget is on its page/g)).toHaveLength(1);
   });
 
   it('leaves what was spent on no issue to the board (#32), which shows it in its foot', () => {
     expect(plain(card(data()))).not.toContain('Not on an issue');
   });
 
-  it('says it warns at 80% and 100%', () => {
-    expect(plain(card(data()))).toContain('warns at 80% and 100%');
+  it('says it warns at 80% and 100% and never stops anything', () => {
+    expect(plain(card(data()))).toContain('warns at 80% and 100%, never stops anything');
   });
 });
 

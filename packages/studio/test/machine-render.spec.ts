@@ -57,16 +57,28 @@ describe('the Machine card', () => {
 
   it('what is left running is a line with its flag, its project and today\'s words for how long; the rest is folded', () => {
     const h = card(host());
-    expect(h).toContain('<div class="hm-also"><span class="flag left">Left running</span><span><b>field-notes</b>: No session in that project for 2 h</span></div>');
+    expect(h).toContain('<div class="hm-also"><span class="flag left">Left running</span><span><b>field-notes</b>: 3 containers, 1.2 GB, no session in that project for 2 h</span></div>'); // as the mockup's "billing-db: 1 container, 1.9 GB, ..."
     expect(h.split('<details')[0]).toContain('class="flag left"');
-    expect(h.split('<details')[0]).not.toContain('mobile-app'); // not left running: only in the fold
+    expect(h.split('<details')[0]).not.toContain('mobile-app'); // neither left running nor unhealthy: only in the fold
     expect(plain(card(host({ groups: [group()] })))).toContain('Nothing is left running.');
     expect(plain(card(host())).includes('Nothing is left running.')).toBe(false);
   });
 
+  it('a group with an unhealthy container is in view beside what is left running, with the flag and words of the fold; one of both has both flags (F9)', () => {
+    const view = (h: MachineHost) => card(h).split('<details')[0]!;
+    const open = view(host());
+    expect(open).toContain('<div class="hm-also"><span class="flag sick">Unhealthy</span><span><b>billing</b>: 1 container, 1.9 GB</span></div>');
+    expect(plain(view(host({ groups: [group({ unhealthy: 3 })] })))).toContain('3 unhealthy mobile-app: 3 containers, 3.1 GB');
+    expect(plain(view(host({ groups: [group({ unhealthy: 1 })] })))).toContain('Nothing is left running.'); // unhealthy is not left running
+    const both = view(host({ groups: [group({ unhealthy: 1, leftRunning: true, idleMs: 2 * HOUR })] }));
+    expect(both).toContain('<span class="flag left">Left running</span><span class="flag sick">Unhealthy</span>');
+    expect(both.match(/hm-also/g)).toHaveLength(1);
+    expect(view(host({ groups: [group()] }))).not.toContain('class="flag sick"'); // a healthy group is only in the fold
+  });
+
   it('a run says when it began, which Mac when there are several, and how old the sample is once it is not fresh', () => {
     const run = group({ kind: 'testcontainers', name: 'field-notes', project: 'field-notes', compose: null, containers: 3, memory: 1.2 * GiB, leftRunning: true, idleMs: 2 * HOUR, since: NOW - 3 * HOUR });
-    expect(plain(card(host({ groups: [run] }))).split('Every container')[0]).toContain('field-notes: Run started 3 h ago, no session in that project for 2 h');
+    expect(plain(card(host({ groups: [run] }))).split('Every container')[0]).toContain('field-notes: 3 containers, 1.2 GB, run started 3 h ago, no session in that project for 2 h');
     expect(plain(card(host({ groups: [run] }), true)).split('Every container')[0]).toContain('for 2 h, on studio-mac');
     expect(plain(card(host({ groups: [run], at: NOW - 31 * MIN }))).split('Every container')[0]).toContain('for 2 h, read 31 min ago');
     expect(plain(card(host({ groups: [run], at: NOW - 30 * MIN }))).split('Every container')[0]).not.toContain('for 2 h, read');
@@ -153,7 +165,7 @@ describe('the Machine card', () => {
   it('with more than one Mac every left-running line names its own', () => {
     const t = plain(renderToStaticMarkup(createElement(MachineCards, { data: { hosts: [host(), host({ host: 'other-mac', groups: [group({ name: 'old', project: 'old', leftRunning: true, idleMs: 3 * HOUR })] })] }, now: NOW })));
     expect(t).toContain('on studio-mac');
-    expect(t).toContain('old: No session in that project for 3 h, on other-mac');
+    expect(t).toContain('old: 3 containers, 3.1 GB, no session in that project for 3 h, on other-mac');
   });
 
   it('groups with one name and one kind do not collide: each row is keyed by the group\'s id, so the 30-second refresh cannot drop or duplicate a row', () => {
