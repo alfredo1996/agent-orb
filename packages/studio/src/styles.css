@@ -645,20 +645,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 /* Factory (v0.4 slice 1, #27; design/v0.4-factory.html): Needs you reuses Live's rows; the PR sheet reuses the history drawer */
 .factory .asof { font-size: 13px; color: var(--muted); }
 .factory .asof.stale { color: var(--wait); font-weight: 600; }
-.factory .needs .what { display: grid; gap: 2px; min-width: 0; }
-.factory .needs .what code { justify-self: start; }
-.factory .needs .sub { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
-.factory .needs .nothing { margin: 0; padding: 14px 20px; color: var(--muted); font-size: 14px; }
 /* Issue cost and budget (v0.4 slice 2, #28; design/v0.4-factory.html, the cost cell and the Budget board). The sheet is a portal, so its rules do not hang on .factory. */
-.factory .needs.withcost .need { grid-template-columns: auto minmax(0, 1fr) minmax(0, 190px) auto auto; }
-.costcell { display: grid; gap: 5px; min-width: 0; font-size: 13px; }
-.costcell .lab { font-size: 12px; color: var(--muted); }
-.costcell small { font-size: 12px; color: var(--muted); }
-.costcell .why.none { color: var(--faint); }
-.costcell .bar { margin-top: 0; }
-.costcell .bar.over > i { background: var(--bad-dot); }
-.budget .bbody { display: grid; gap: 14px; padding: 14px 20px; }
-.budget .bbody > .sub, .budget .dnote { margin: 0; font-size: 13px; color: var(--muted); }
 .bfield { display: grid; gap: 6px; }
 .bfield .blab { font-size: 14px; font-weight: 500; }
 .bfield .bin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
@@ -668,10 +655,6 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .factory-sheet .ledger2 { display: grid; gap: 6px; }
 .factory-sheet .ledger2 > div { display: flex; justify-content: space-between; gap: 12px; }
 @container (max-width: 700px) { /* after the rules above: the same specificity, so the later one wins */
-  .factory .needs.withcost .need { grid-template-columns: minmax(0, 1fr) auto; }
-  .factory .needs .costcell { grid-column: 1; }
-  .factory .needs.withcost .need .btn { grid-row: 2 / span 3; }
-  .budget .bbody { padding-left: 16px; padding-right: 16px; }
 }
 /* The Board band (v0.4 slice 6, #32; design/v0.4-factory.html, the Board). Like the other bands, it narrows with its container: on a phone each row is a stack with its labels shown. */
 .board .nothing { margin: 0; padding: 14px 20px; color: var(--muted); font-size: 14px; }
@@ -694,24 +677,11 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .trk i.now { background: var(--accent); }
 .trk.bad i.now { background: var(--bad-dot); }
 .trk.good i.now, .trk.good i.on { background: var(--ok-dot); }
-.board .why { font-size: 13px; overflow-wrap: anywhere; }
-.board .why.no { color: var(--wait); }
-.board .why.yes { color: var(--ok); font-weight: 600; }
-.board .why.none { color: var(--faint); }
-.board .costcell .lab { display: none; }
-.board .links { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 13px; }
-.board .links a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
-.board .links .none { color: var(--faint); }
-.board .notissue { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 14px; }
-.board .notissue .sub { font-size: 13px; color: var(--muted); }
-.board .bnote { padding: 10px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); }
-.board .bnote:last-child { border-radius: 0 0 14px 14px; }
-.board .bnote code { font: 12px var(--mono); }
 @container (max-width: 700px) {
   .board .bcols { display: none; }
   .board .brow { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 16px; }
-  .board .lab, .board .costcell .lab { display: block; }
-  .board .nothing, .board .notissue, .board .bnote { padding-left: 16px; padding-right: 16px; }
+  .board .lab { display: block; }
+  .board .nothing { padding-left: 16px; padding-right: 16px; }
 }
 /* The Map (v0.5 slice 1, #66; design/home-issue.html, the Map board): cards in the column of their stage, HTML over an SVG layer that draws the lines and the file names, as on Pipeline.
    On a phone the page renders the list of links alone, so nothing here hides the canvas. */
@@ -764,12 +734,6 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .machine { scroll-margin-top: 16px; }
 .machine:focus-visible { outline: 2px solid var(--accent-ink, var(--ink)); outline-offset: 2px; }
 .machine .hint.stale { color: var(--wait); font-weight: 600; }
-.machine .mstats { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 44px; padding: 16px 20px; }
-.machine .mstat { display: grid; gap: 2px; }
-.machine .mstat .k { font-size: 12px; font-weight: 500; color: var(--muted); }
-.machine .mstat .v { font: 500 22px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
-.machine .mstat .d { font-size: 13px; color: var(--muted); }
-.machine .mstat code { font: 13px var(--mono); }
 .machine .mdown, .machine .nothing { margin: 0; font-size: 14px; color: var(--muted); }
 .machine .nothing { padding: 0 20px 16px; }
 .machine h2 + .nothing { padding-top: 16px; }
@@ -781,9 +745,8 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .machine .flag { font-size: 12px; font-weight: 500; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
 .machine .flag.left { color: var(--wait); background: var(--wait-bg); }
 .machine .flag.sick { color: var(--bad); background: var(--bad-bg); }
-.machine .mfoot { padding: 12px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
 @container (max-width: 700px) {
-  .machine .mstats, .machine .mfoot, .machine .mrow { padding-left: 16px; padding-right: 16px; }
+  .machine .mrow { padding-left: 16px; padding-right: 16px; }
   .machine .mrow { grid-template-columns: minmax(0, 1fr) 40px 76px; gap: 4px 10px; }
   .machine .nothing { padding-left: 16px; padding-right: 16px; }
 }
@@ -948,40 +911,40 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 
 /* Home (v0.5 slice 3, #107; design/home-issue.html, the Home board): a card per project, built from the Board band's rows (.board .brow) with its own four columns. */
 .home { display: grid; gap: 16px; align-content: start; }
-.home .hm-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
-.home .hm-head h2 { padding: 0; border: 0; }
+.home .hm-head, .factory .hm-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.home .hm-head h2, .factory .hm-head h2 { padding: 0; border: 0; }
 .home .asof { font-size: 13px; font-weight: 400; color: var(--muted); }
 .home .asof.stale { color: var(--wait); font-weight: 600; }
-.home .hm-ms { margin-left: 10px; font-weight: 400; color: var(--muted); }
-.home .hm-prog { display: grid; gap: 10px; padding: 14px 20px; }
-.home .hm-bar { display: flex; gap: 3px; height: 8px; }
-.home .hm-bar i { flex: 1; border-radius: 2px; background: var(--border-strong); }
-.home .hm-bar i.m { background: var(--ok-dot); }
-.home .hm-bar i.f { background: var(--accent); }
-.home .hm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 13px; color: var(--muted); }
-.home .board .bcols.hm-cols, .home .board .brow.hm-row { grid-template-columns: minmax(150px, 1.3fr) 124px minmax(160px, 1.5fr) 140px; }
-.home .board .brow.hm-row { align-items: start; }
-.home .brow.hm-row .state { justify-self: start; }
-.home .hm-now { display: grid; gap: 2px; min-width: 0; font-size: 14px; }
-.home .hm-now .sub { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
-.home .hm-now .model { justify-self: start; }
-.home .hm-with { font-size: 13px; font-weight: 500; color: var(--muted); }
-.home .hm-with .together { color: var(--wait); }
-.home .hm-also { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
-.home .hm-also b { color: var(--ink); font-weight: 600; }
-.home .hm-also code { font: 12px var(--mono); }
-.home .hm-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; padding: 8px 20px; border-top: 1px solid var(--line); background: var(--sunk); border-radius: 0 0 14px 14px; font-size: 13px; color: var(--muted); }
-.home .hm-spend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
-.home .hm-spend b { color: var(--ink); font-weight: 500; }
-.home .hm-spend .bar { width: 96px; margin-top: 0; }
-.home .hm-links { display: flex; flex-wrap: wrap; gap: 0 18px; }
-.home .hm-lnk { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
-.home .hm-lnk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.home .hm-ms, .factory .hm-ms { margin-left: 10px; font-weight: 400; color: var(--muted); }
+.home .hm-prog, .factory .hm-prog { display: grid; gap: 10px; padding: 14px 20px; }
+.home .hm-bar, .factory .hm-bar { display: flex; gap: 3px; height: 8px; }
+.home .hm-bar i, .factory .hm-bar i { flex: 1; border-radius: 2px; background: var(--border-strong); }
+.home .hm-bar i.m, .factory .hm-bar i.m { background: var(--ok-dot); }
+.home .hm-bar i.f, .factory .hm-bar i.f { background: var(--accent); }
+.home .hm-legend, .factory .hm-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 13px; color: var(--muted); }
+.home .board .bcols.hm-cols, .factory .board .bcols.hm-cols, .home .board .brow.hm-row, .factory .board .brow.hm-row { grid-template-columns: minmax(150px, 1.3fr) 124px minmax(160px, 1.5fr) 140px; }
+.home .board .brow.hm-row, .factory .board .brow.hm-row { align-items: start; }
+.home .brow.hm-row .state, .factory .brow.hm-row .state { justify-self: start; }
+.home .hm-now, .factory .hm-now { display: grid; gap: 2px; min-width: 0; font-size: 14px; }
+.home .hm-now .sub, .factory .hm-now .sub { display: block; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.home .hm-now .model, .factory .hm-now .model { justify-self: start; }
+.home .hm-with, .factory .hm-with { font-size: 13px; font-weight: 500; color: var(--muted); }
+.home .hm-with .together, .factory .hm-with .together { color: var(--wait); }
+.home .hm-also, .factory .hm-also { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.home .hm-also b, .factory .hm-also b { color: var(--ink); font-weight: 600; }
+.home .hm-also code, .factory .hm-also code { font: 12px var(--mono); }
+.home .hm-foot, .factory .hm-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; padding: 8px 20px; border-top: 1px solid var(--line); background: var(--sunk); border-radius: 0 0 14px 14px; font-size: 13px; color: var(--muted); }
+.home .hm-spend, .factory .hm-spend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.home .hm-spend b, .factory .hm-spend b { color: var(--ink); font-weight: 500; }
+.home .hm-spend .bar, .factory .hm-spend .bar { width: 96px; margin-top: 0; }
+.home .hm-links, .factory .hm-links { display: flex; flex-wrap: wrap; gap: 0 18px; }
+.home .hm-lnk, .factory .hm-lnk { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
+.home .hm-lnk:focus-visible, .factory .hm-lnk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .home details.hm-quiet summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; font-size: 14px; font-weight: 500; color: var(--accent-ink); }
 .home details.hm-quiet .hm-also { border-top: 1px solid var(--line); }
 @container (max-width: 700px) {
-  .home .board .brow.hm-row { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 16px; }
-  .home .hm-prog, .home .hm-also, .home .hm-foot, .home .hm-head { padding-left: 16px; padding-right: 16px; }
+  .home .board .brow.hm-row, .factory .board .brow.hm-row { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 16px; }
+  .home .hm-prog, .factory .hm-prog, .home .hm-also, .factory .hm-also, .home .hm-foot, .factory .hm-foot, .home .hm-head, .factory .hm-head { padding-left: 16px; padding-right: 16px; }
   .home details.hm-quiet summary { padding: 0 16px; }
 }
 
@@ -1011,4 +974,71 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 }
 @container (max-width: 700px) {
   .home .hm-fd, .home .hm-none { padding-left: 16px; padding-right: 16px; }
+}
+
+/* Factory (v0.6, #90; design/factory.html, "Board, proposed"): the Board grouped by whose move it is, in Home's rows (the .hm-* rules above hold for .factory too), beside short cards. One column at 1100px and under, the board first. */
+.factory .fx-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.factory .fx-grid > *, .factory .fx-main { min-width: 0; }
+.factory .fx-stack { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.factory .fx-title { display: inline-flex; align-items: center; gap: 8px; }
+.factory .fx-gh { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; padding: 9px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); }
+.factory .fx-gh b { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.factory .fx-gh b::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--border-strong)); }
+.factory .fx-gh .num { font-weight: 600; color: var(--ink); }
+.factory .fx-gh.g-ok { --c: var(--ok-dot); }
+.factory .fx-gh.g-bad { --c: var(--bad-dot); }
+.factory .fx-gh.g-run { --c: var(--accent); }
+.factory .board .bcols.fx-cols, .factory .board .brow.fx-row { grid-template-columns: minmax(170px, 1.4fr) 112px minmax(170px, 1.5fr) 108px 124px; }
+.factory .fx-cols + .fx-gh { border-top: 0; }
+.factory .fx-cost { display: grid; gap: 5px; align-content: start; font-size: 14px; }
+.factory .fx-cost .lab { display: none; }
+.factory .fx-cost .of { font-size: 13px; color: var(--muted); }
+.factory .fx-cost .bar { width: 88px; margin-top: 0; }
+.factory .fx-cost .bar.over > i { background: var(--bad-dot); }
+.factory .fx-q { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; padding: 9px 20px; border-top: 1px solid var(--line); font-size: 14px; overflow-wrap: anywhere; }
+.factory .fx-q .num { color: var(--muted); }
+.factory button.hm-lnk { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; }
+.factory .hm-also .hm-lnk { color: var(--ink); text-decoration-color: var(--border-strong); }
+.factory .hm-also .hm-lnk:hover { color: var(--accent-ink); }
+.factory .hm-foot .info { margin-left: 2px; }
+.factory .fx-pr { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 44px; padding: 6px 20px; border: 0; border-top: 1px solid var(--line); background: none; color: var(--text); font: 400 14px/1.4 var(--sans); text-align: left; cursor: pointer; }
+.factory .fx-pr:hover { background: var(--sunk); }
+.factory .fx-pr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.factory .fx-pr b { font-weight: 600; }
+.factory .fx-pr code { font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.factory .fx-prs h2 + .fx-pr { border-top: 0; }
+.factory .fx-figs { display: flex; flex-wrap: wrap; gap: 12px 40px; padding: 14px 20px; }
+.factory .fx-fig { display: grid; gap: 1px; }
+.factory .fx-fig .k { font-size: 13px; font-weight: 500; color: var(--muted); }
+.factory .fx-fig .v { font: 500 24px/1.15 var(--mono); font-variant-numeric: tabular-nums; }
+.factory .fx-fig .d { font-size: 13px; color: var(--muted); }
+.factory .machine .mdown { padding: 0 20px 14px; }
+.factory .machine .hm-also .flag { margin-right: 2px; }
+.factory .fx-bud { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 20px; border-top: 1px solid var(--line); font-size: 14px; }
+.factory .budget h2 + .fx-bud-wrap .fx-bud { border-top: 0; }
+.factory .fx-bud > span:first-child { flex: 1 1 auto; }
+.factory .fx-bud .v { font-weight: 500; }
+.factory .fx-bud .v.none { font-weight: 400; color: var(--muted); }
+.factory .btn.sm { min-height: 32px; padding: 0 12px; font-size: 13px; }
+.factory .fx-bud-edit { padding: 0 20px 12px; }
+.factory details.fx-more summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; padding: 0 20px; border-top: 1px solid var(--line); font-size: 14px; font-weight: 500; color: var(--accent-ink); }
+.factory details.fx-more summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.factory details.fx-more .mrow:first-of-type { border-top: 1px solid var(--line); }
+@container (max-width: 1100px) {
+  .factory .fx-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 700px) {
+  /* a row stacks: the name, then the stage and the state pill on one line, then what it is doing and what it cost */
+  .factory .board .brow.fx-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
+  .factory .brow.fx-row .bissue, .factory .brow.fx-row .hm-now, .factory .brow.fx-row .fx-cost { grid-column: 1 / -1; }
+  .factory .brow.fx-row .stagecell { grid-column: 1; grid-row: 2; }
+  .factory .brow.fx-row .state { grid-column: 2; grid-row: 2; align-self: end; }
+  .factory .brow.fx-row .hm-now .lab { display: none; }
+  .factory .fx-cost { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+  .factory .fx-cost .lab { display: inline; }
+  .factory .fx-cost:empty { display: none; }
+  .factory .fx-gh, .factory .fx-q, .factory .fx-pr, .factory .fx-figs, .factory .fx-bud, .factory .fx-bud-edit, .factory .machine .mdown { padding-left: 16px; padding-right: 16px; }
+  .factory details.fx-more summary { padding: 0 16px; }
+  .factory .btn.sm, .factory button.hm-lnk, .factory .hm-also .hm-lnk { min-height: 44px; }
+  .factory button.hm-lnk, .factory .hm-also .hm-lnk { display: inline-flex; align-items: center; }
 }

@@ -286,7 +286,7 @@ describe('the Factory page: the Board and Map switch', () => {
 
   it('opens on Board, with Map one tap away', () => {
     vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }));
-    const html = renderToStaticMarkup(createElement(Factory, { now: NOW, live: new Set<string>() }));
+    const html = renderToStaticMarkup(createElement(Factory, { now: NOW }));
     expect([...html.matchAll(/<button type="button" aria-pressed="(true|false)">(Board|Map)<\/button>/g)].map((m) => [m[2], m[1]])).toEqual([['Board', 'true'], ['Map', 'false']]);
     expect(html).toContain('role="group" aria-label="Factory view"');
   });
@@ -295,7 +295,7 @@ describe('the Factory page: the Board and Map switch', () => {
   it('a hash with view=map opens on the Map, with the milestone it names in the picker', () => {
     vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }));
     vi.stubGlobal('location', { hash: '#/factory?project=mobile-app&milestone=v2.3+Offline&view=map' });
-    const html = renderToStaticMarkup(createElement(ProjectContext.Provider, { value: { choice: { all: false, single: 'mobile-app' }, pick: () => {} } }, createElement(Factory, { now: NOW, live: new Set<string>() })));
+    const html = renderToStaticMarkup(createElement(ProjectContext.Provider, { value: { choice: { all: false, single: 'mobile-app' }, pick: () => {} } }, createElement(Factory, { now: NOW })));
     expect([...html.matchAll(/<button type="button" aria-pressed="(true|false)">(Board|Map)<\/button>/g)].map((m) => [m[2], m[1]])).toEqual([['Board', 'false'], ['Map', 'true']]);
     expect(html).toContain('<option value="v2.3 Offline" selected="">v2.3 Offline</option>');
   });

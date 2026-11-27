@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { ageText, count, EXCLUDED_NOTE, issueHref, outsideNote, REFRESH_MS, STAGE_LABEL, titlesNote, Track, type BoardData, type BoardIssue } from './Factory.tsx';
 import { ago, DAY, day, modelLabel, usd } from './format.ts';
 import { dayOf, feedOf, hintOf, loadMark, saveMark, sinceClause, sinceOf, stalls, timeOf, whenOf, type Change } from './changes-view.ts';
@@ -28,18 +28,23 @@ const modelOf = (tone: string) => (tone === 'other' ? '' : ` · ${tone[0]!.toUpp
 /** The page's link to the project's Factory: the Map or the board, for the milestone the card shows. */
 const factoryHref = (p: HomeProject, view: 'board' | 'map') => factoryHash(hashWith('#/factory', { project: p.name }), view, p.milestone === null ? undefined : { project: p.name, milestone: p.milestone }, p.name);
 
-function Row({ row, state, project, sessions, now }: { row: HomeRow; state: keyof typeof STATES; project: HomeProject; sessions: readonly Session[]; now: number }) {
+/**
+ * One issue in flight. The Factory board (#90) draws the same row with a cost cell between Now and State (`cost`: the cell's content, empty when nothing was spent); it then says nothing of what an
+ * issue has not got, so an issue with no PR and no branch has no second line, and the budget is not repeated in the Now line.
+ */
+export function Row({ row, state, project, sessions, now, cost }: { row: HomeRow; state: keyof typeof STATES; project: { name: string; milestone: string | null }; sessions: readonly Session[]; now: number; cost?: ReactNode }) {
   const s = STATES[state];
   const { who } = nowOn(row, sessions);
   const doing = doingOn(row, sessions, now);
-  const spent = row.budget && row.budget.mark ? ` · ${usd(row.budget.usd, row.budget.partial)} of ${usd(row.budget.budget)}` : '';
+  const spent = cost === undefined && row.budget && row.budget.mark ? ` · ${usd(row.budget.usd, row.budget.partial)} of ${usd(row.budget.budget)}` : '';
   const why = row.ready === false && row.reason ? row.reason : undefined;
   const text = doing ? `${doing}${why ? ` · ${why}` : ''}` : `No session is on it.${why ? ` ${why}` : row.ready ? ' Ready for your ok.' : ''}`;
+  const ref = row.pr ? `PR #${row.pr.number}` : (row.branch ?? (cost === undefined ? 'No PR' : undefined));
   return (
-    <div className="brow hm-row" data-issue={row.number}>
+    <div className={cost === undefined ? 'brow hm-row' : 'brow hm-row fx-row'} data-issue={row.number}>
       <div className="bissue">
         <a className="open" href={issueHref(project.name, row.number)} aria-label={`Issue #${row.number}: open its page`}><b>{`#${row.number}${row.title ? ` ${row.title}` : ''}`}</b></a>
-        <small>{row.pr ? `PR #${row.pr.number}` : (row.branch ?? 'No PR')}{outsideNote(row, project.milestone)}</small>
+        <small>{ref}{outsideNote(row, project.milestone)}</small>
         {row.shares.length > 0 && <span className="hm-with">Same files as {row.shares.map((x, i) => <Fragment key={x.issue}>{i === 0 ? '' : i === row.shares.length - 1 ? ' and ' : ', '}<span className={x.together ? 'together' : undefined}>#{x.issue}</span></Fragment>)}</span>}
       </div>
       <div className="stagecell"><span>{STAGE_LABEL[row.stage]}</span><Track stage={row.stage} bad={row.bad} {...(state === 'stalled' ? { stalled: true as const } : {})} /></div>
@@ -47,6 +52,7 @@ function Row({ row, state, project, sessions, now }: { row: HomeRow; state: keyo
         {who && <span className={`model ${who.tone}`}>{who.name}{modelOf(who.tone)}</span>}
         <span className="sub">{text}{spent}</span>
       </div>
+      {cost !== undefined && <div className="fx-cost">{cost}</div>}
       <span className={`state ${s.tone}`}>{s.label}</span>
     </div>
   );
@@ -75,9 +81,20 @@ function NotOnIssue({ project, sessions, now }: { project: HomeProject; sessions
   );
 }
 
+/** The bar of a milestone's issues, merged then in flight then queued, with its legend (the Factory board's too, #90). */
+export function Progress({ counts }: { counts: HomeProject['counts'] }) {
+  const total = counts.merged + counts.flight + counts.queued;
+  const bar = [...'m'.repeat(counts.merged), ...'f'.repeat(counts.flight), ...'q'.repeat(counts.queued)];
+  if (!total) return null;
+  return (
+    <div className="hm-prog">
+      <div className="hm-bar" role="img" aria-label={`${counts.merged} of ${total} issues merged, ${counts.flight} in flight, ${counts.queued} queued`}>{bar.map((k, i) => <i key={i} className={k} />)}</div>
+      <div className="hm-legend"><span>{counts.merged} of {total} merged</span><span>{counts.flight} in flight</span><span>{counts.queued} queued</span>{counts.outside > 0 && <span className="hm-out">{counts.outside} more in flight outside it</span>}</div>
+    </div>
+  );
+}
+
 function Card({ project: p, sessions, now }: { project: HomeProject; sessions: readonly Session[]; now: number }) {
-  const total = p.counts.merged + p.counts.flight + p.counts.queued;
-  const bar = [...'m'.repeat(p.counts.merged), ...'f'.repeat(p.counts.flight), ...'q'.repeat(p.counts.queued)];
   const here = sessions.some((s) => !s.endedAt && s.project === p.name); // the plugin is what reads GitHub: with no session running here, the data is as old as the last one
   const age = p.readAt === null ? 'No GitHub data yet' : ageText(p.readAt, now);
   // why there is no milestone, or why the issues have no title: the Factory page's words
@@ -91,12 +108,7 @@ function Card({ project: p, sessions, now }: { project: HomeProject; sessions: r
         {here ? <span className="asof">{age}</span> : <span className="asof stale">{age}: no session runs here</span>}
       </div>
       {notes.map((n) => <p key={n} className="nothing">{n}</p>)}
-      {total > 0 && (
-        <div className="hm-prog">
-          <div className="hm-bar" role="img" aria-label={`${p.counts.merged} of ${total} issues merged, ${p.counts.flight} in flight, ${p.counts.queued} queued`}>{bar.map((k, i) => <i key={i} className={k} />)}</div>
-          <div className="hm-legend"><span>{p.counts.merged} of {total} merged</span><span>{p.counts.flight} in flight</span><span>{p.counts.queued} queued</span>{p.counts.outside > 0 && <span className="hm-out">{p.counts.outside} more in flight outside it</span>}</div>
-        </div>
-      )}
+      <Progress counts={p.counts} />
       {p.rows.length ? (
         <>
           <div className="bcols hm-cols" aria-hidden="true"><span>Issue</span><span>Stage</span><span>Now</span><span>State</span></div>
