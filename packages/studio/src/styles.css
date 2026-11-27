@@ -1005,7 +1005,7 @@ tbody tr[tabindex]:focus-visible td { outline: 2px solid var(--accent); outline-
 .factory .fx-pn { display: grid; gap: 1px; min-width: 0; }
 .factory .fx-pr b { font-weight: 600; }
 .factory .fx-pr:hover b, .factory .fx-pr:focus-visible b { color: var(--accent-ink); }
-.factory .fx-pr code { font: 13px var(--mono); color: var(--muted); overflow-wrap: break-word; } /* a long branch wraps at its - and / before it breaks inside a word */
+.factory .fx-pr code { font: 13px var(--mono); color: var(--muted); overflow-wrap: anywhere; } /* a long branch wraps at its - before it breaks inside a word (anywhere, not break-word, so the line's least width counts those breaks and the state pill is not run into) */
 .factory .fx-pr small { font-size: 13px; color: var(--muted); }
 .factory .fx-tip { margin: 0; padding: 10px 20px; border-top: 1px solid var(--line); background: var(--sunk); font-size: 13px; color: var(--muted); }
 .factory .fx-tip[hidden] { display: none; }
