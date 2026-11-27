@@ -51,17 +51,23 @@ type Shape = 'under' | 'down' | 'lane';
 export function layoutMap<L extends MapLink>(stages: readonly string[], issues: readonly { number: number; stage: string }[], links: readonly L[], picked?: number) {
   const pos = new Map<number, MapPos>();
   const counts = stages.map(() => 0);
-  for (const i of issues.toSorted((a, b) => a.number - b.number)) {
+  // #90: an issue with no link has no line to leave room for, so those go after their stage's linked ones, one row apart.
+  // ponytail: a card moves when it gains or loses its first link (it joins or leaves the linked rows above). Upgrade: key every card's row on its number alone and fill the gaps with the unlinked.
+  const tied = new Set(links.flatMap((l) => (l.a === l.b ? [] : [l.a, l.b])));
+  const placing = issues.toSorted((a, b) => Number(!tied.has(a.number)) - Number(!tied.has(b.number)) || a.number - b.number);
+  const linkedIn = stages.map((s) => placing.filter((i) => i.stage === s && tied.has(i.number)).length);
+  for (const i of placing) {
     const col = stages.indexOf(i.stage);
     if (col < 0 || pos.has(i.number)) continue;
-    const row = (col % 2) + 2 * counts[col]!++;
+    const n = counts[col]!++;
+    const row = (col % 2) + (n < linkedIn[col]! ? 2 * n : 2 * linkedIn[col]! + (n - linkedIn[col]!));
     pos.set(i.number, { x: LEFT + COL * col, y: TOP + ROW * row, col, row });
   }
   const width = LEFT + COL * (stages.length - 1) + MAP_NODE.w + LANE; // a lane right of the last column too, for a line between two of its cards (whether or not there is one, so a card never moves)
   const last = Math.max(0, ...[...pos.values()].map((p) => p.row));
   const laneX = (lane: number) => LEFT + COL * lane + MAP_NODE.w + LANE / 2; // the middle of the lane right of column `lane`
 
-  const tied = new Map<string, number>();
+  const arcs = new Map<string, number>();
   // Each line: its two ends, upper (or left) first, its shape, and for one rows apart the lane it runs down: beside the upper card, toward the lower one (right of it in its own column).
   const drawn = links.filter((l) => l.a !== l.b && pos.has(l.a) && pos.has(l.b)).map((link) => {
     const [a, b] = [pos.get(link.a)!, pos.get(link.b)!];
@@ -72,8 +78,8 @@ export function layoutMap<L extends MapLink>(stages: readonly string[], issues: 
     // where each end heads first: the other card (its lane, for a line that runs down one, once the lanes are spread), and for an arc one px further for each arc already between the two
     // cards, so the deeper arc is the outer one at both ends
     const pair = `${u.x}:${u.y}:${l.x}`;
-    const rank = shape === 'under' ? tied.get(pair) ?? 0 : 0;
-    if (shape === 'under') tied.set(pair, rank + 1);
+    const rank = shape === 'under' ? arcs.get(pair) ?? 0 : 0;
+    if (shape === 'under') arcs.set(pair, rank + 1);
     const toward: [number, number] = [l.x + rank, u.x - rank];
     return { link, u, l, shape, lane, sides, toward, rank, at: [0, 0] as [number, number], off: 0 };
   });
